@@ -1,0 +1,862 @@
+using System.Numerics;
+using Nullwave.Audio;
+using Nullwave.Render;
+using Nullwave.UI;
+using Nullwave.World;
+using Silk.NET.Windowing;
+using GameWorld = Nullwave.World.World;
+
+namespace Nullwave.Core;
+
+public enum AppState
+{
+    Title,
+    Archive,
+    Playing,
+    Paused,
+    Attuning,
+    GameOver,
+    Settings,
+}
+
+public sealed class Game : IDisposable
+{
+    private readonly IWindow _window;
+    private readonly InputState? _input;
+    private readonly bool _capture;
+    private readonly Renderer _renderer;
+    private readonly AudioEngine _audio;
+    private readonly MetaProgress _meta;
+    private GameWorld? _world;
+    private GameWorld? _demo;
+    private AppState _state = AppState.Title;
+    private AppState _archiveReturn = AppState.Title;
+    private AppState _settingsReturn = AppState.Title;
+    private readonly SettingsMenu _settingsMenu = new();
+    private float _frameDt = 1f / 60f;
+    private readonly MusicDirector _director = new();
+    private int _backdropMovement = -1;
+    private bool _speedDemo;
+    private bool _rosterHold;
+    private bool _captureCue;
+    private int _cueFrames;
+    private float _titleReroll = 22f;
+    public MusicDirector Director => _director;
+    private Palette _palette = Palette.FromSeed(0xC0FFEE);
+    private int _paletteMovement;
+    private ulong _paletteSeed;
+    private int _menuIndex;
+    private int _pauseIndex;
+    private int _archiveIndex;
+    private int _attuneHover;
+    private bool _debug;
+    private bool _runRecorded;
+    private bool _autoPilot;
+    private readonly List<string> _unlocks = new();
+    private float _accumulator;
+    private float _elapsed;
+    private float _fps = 60f;
+    private float _runClock;
+    private float _toastTimer;
+    private string _toast = "";
+    private ulong _seed;
+    private bool _daily;
+    private Vector2 _mouseUi = new(1100, 420);
+    private bool _disposed;
+
+    public AppState State => _state;
+    public MetaProgress Meta => _meta;
+    public AudioEngine Audio => _audio;
+    public Renderer Renderer => _renderer;
+    public bool CaptureMode => _capture;
+    public string CaptureScenario { get; private set; } = "";
+    public GameWorld? ActiveWorld => _world;
+    public GameWorld? DemoWorld => _demo;
+    public float Fps => _fps;
+    /// <summary>Set from --app before the game is constructed.</summary>
+    public static string? AppOverride;
+
+    public void StartSmokeRun(ulong seed)
+    {
+        StartRun(seed, false);
+        _autoPilot = true;
+        if (_world != null) _world.Player.InvincibleDemo = true;
+    }
+
+    public Game(IWindow window, Renderer renderer, InputState? input, bool capture = false)
+    {
+        _window = window;
+        _renderer = renderer;
+        _input = input;
+        _capture = capture;
+        _audio = new AudioEngine(enableOutput: !capture, enableCapture: !capture);
+        string captureMeta = Path.Combine(Path.GetTempPath(), "nullwave-capture-meta.json");
+        if (capture)
+        {
+            try { File.Delete(captureMeta); } catch { /* best-effort disposable capture save */ }
+        }
+        _meta = MetaProgress.Load(capture ? captureMeta : null);
+        if (capture) PrepareCaptureMeta();
+        _meta.Settings ??= new GameSettings();
+        _meta.Settings.Sanitize();
+        GameSettings.Current = capture ? new GameSettings() : _meta.Settings;
+        ApplyAudioSettings();
+        if (!capture && GameSettings.Current.Fullscreen) SetFullscreen(true);
+        _settingsMenu.AudioChanged = ApplyAudioSettings;
+        _settingsMenu.FullscreenChanged = SetFullscreen;
+        _settingsMenu.CycleAudioSource = () =>
+        {
+            string label = _audio.CycleSource();
+            _meta.AudioApp = _audio.PreferredApp;
+            return label;
+        };
+        string app = AppOverride ?? _meta.AudioApp;
+        if (!capture && !string.IsNullOrWhiteSpace(app))
+        {
+            if (app.Equals("system", StringComparison.OrdinalIgnoreCase)) _meta.AudioApp = "";
+            else _audio.SelectApp(app);
+            if (AppOverride != null) { _meta.AudioApp = _audio.PreferredApp; _meta.Save(); }
+        }
+        StartDemo();
+    }
+
+    private void PrepareCaptureMeta()
+    {
+        // Capture mode is a visual review harness; do not mutate the real archive on disk.
+        if (_meta.BestWave < 12) _meta.BestWave = 12;
+        if (_meta.BestScore < 84500) _meta.BestScore = 84500;
+        _meta.TotalBossKills = Math.Max(3, _meta.TotalBossKills);
+        _meta.TotalGrazes = Math.Max(214, _meta.TotalGrazes);
+        _meta.TotalKills = Math.Max(310, _meta.TotalKills);
+        _meta.TotalShatters = Math.Max(41, _meta.TotalShatters);
+        _meta.Runs = Math.Max(4, _meta.Runs);
+        foreach (var id in new[] { "bass-bloom", "noise-floor", "phase-skin", "blind-choir", "quiet-signal", "overclocked" })
+            _meta.UnlockedModifiers.Add(id);
+    }
+
+    public void ConfigureCapture(string scenario)
+    {
+        CaptureScenario = scenario;
+        _state = AppState.Title;
+        _menuIndex = 0;
+        if (scenario == "roster")
+        {
+            // one of every enemy around a parked ship, for readability checks
+            StartRun(0x5EEDC0DEUL, false);
+            var w = _world!;
+            w.Player.InvincibleDemo = true;
+            w.BeginWave(4);
+            w.ClearSpawnQueueForCapture();
+            var roles = new[] { EnemyRole.Drifter, EnemyRole.Orbiter, EnemyRole.Sniper, EnemyRole.Dasher, EnemyRole.Turret, EnemyRole.Splitter, EnemyRole.Swarm, EnemyRole.Weaver, EnemyRole.Mortar, EnemyRole.Phantom, EnemyRole.Prism };
+            for (int i = 0; i < roles.Length; i++)
+                w.SpawnForCapture(roles[i], w.Player.Pos + M.FromAngle(i / (float)roles.Length * M.Tau, i % 2 == 0 ? 330f : 420f));
+            _rosterHold = true;
+            return;
+        }
+        if (scenario == "songlasers")
+        {
+            StartRun(0x5EEDC0DEUL, false);
+            _autoPilot = true;
+            _world!.Player.InvincibleDemo = true;
+            _world.BeginWave(3);
+            _captureCue = true;
+            return;
+        }
+        if (scenario == "speed")
+        {
+            StartRun(0x5EEDC0DEUL, false);
+            _speedDemo = true;
+            _world!.Player.InvincibleDemo = true;
+            AttunementCatalog.Apply(_world.Player, "split");
+            _world.BeginWave(4);
+            return;
+        }
+        if (scenario is "drop" or "breakdown")
+        {
+            StartRun(0x5EEDC0DEUL, false);
+            _autoPilot = true;
+            _world!.Player.InvincibleDemo = true;
+            AttunementCatalog.Apply(_world.Player, "split");
+            AttunementCatalog.Apply(_world.Player, "fan");
+            _world.BeginWave(4);
+            if (scenario == "drop")
+                _director.ForceForCapture(0.95f, 0f, 0f, 0.85f, 0.45f, 0.9f);
+            else
+                _director.ForceForCapture(0.1f, 0f, 1f, 0f, -0.6f, 0.1f);
+            return;
+        }
+        if (scenario == "settings")
+        {
+            OpenSettings(AppState.Title);
+            return;
+        }
+        if (string.Equals(scenario, "archive", StringComparison.OrdinalIgnoreCase))
+        {
+            _state = AppState.Archive;
+            _archiveReturn = AppState.Title;
+            _archiveIndex = 1;
+            return;
+        }
+
+        if (scenario is "combat" or "boss" or "laser" or "hurt")
+        {
+            StartRun(0x5EEDC0DEUL, false);
+            _autoPilot = true;
+            _world!.Player.InvincibleDemo = true;
+            AttunementCatalog.Apply(_world.Player, "split");
+            AttunementCatalog.Apply(_world.Player, "split");
+            AttunementCatalog.Apply(_world.Player, "fan");
+            AttunementCatalog.Apply(_world.Player, "pierce");
+            AttunementCatalog.Apply(_world.Player, "rapid");
+            _world.BeginWave(scenario is "combat" or "hurt" ? 4 : 5);
+            if (scenario == "hurt")
+            {
+                _world.Player.Health = 1;
+                _world.Player.HealthDisplay = 2.4f;
+            }
+            if (scenario == "laser")
+            {
+                Vector2 p = _world.Player.Pos;
+                _world.SpawnLaser(p + new Vector2(-900, -540), p + new Vector2(600, 100), 0.4f, 4f, 42f, 0.66f, 0.10f, true);
+                _world.SpawnLaser(p + new Vector2(900, -540), p + new Vector2(-600, 100), 0.5f, 4f, 28f, 0.92f, -0.07f, true);
+                _world.SpawnLaser(p + new Vector2(-400, -540), p, 0.7f, 4f, 20f, 0.52f, 0f, false);
+            }
+        }
+        else if (scenario == "attune")
+        {
+            StartRun(0x5EEDC0DEUL, false);
+            _world!.Score = 3_200;
+            _world.Player.Resonance = 45f;
+            _world.Combo = 7;
+            AttunementCatalog.Apply(_world!.Player, "split");
+            _world.ForceAttunementForTest();
+            _state = AppState.Attuning;
+            _attuneHover = 0;
+        }
+        else if (scenario == "pause")
+        {
+            StartRun(0x5EEDC0DEUL, false);
+            _world!.Player.InvincibleDemo = true;
+            _world.BeginWave(4);
+            _world.Score = 12_500;
+            _world.Kills = 41;
+            _world.Player.Resonance = 62f;
+            _state = AppState.Paused;
+            _pauseIndex = 0;
+        }
+        else if (scenario == "gameover")
+        {
+            StartRun(0xDEADBEEFUL, false);
+            _autoPilot = false;
+            var w = _world!;
+            w.BeginWave(12);
+            w.Player.InvincibleDemo = false;
+            w.StartGrace = 0f;
+            w.Player.Health = 1;
+            w.BossKills = 2;
+            w.Kills = 137;
+            w.Grazes = 88;
+            w.Shatters = 19;
+            w.Bursts = 3;
+            w.MaxCombo = 42;
+            w.Score = 73_400;
+            AttunementCatalog.Apply(w.Player, "split");
+            AttunementCatalog.Apply(w.Player, "rapid");
+            w.ForceDeathForTest();
+        }
+    }
+
+    public void CaptureWarmup(int frames)
+    {
+        for (int i = 0; i < frames; i++) Update(1f / 60f);
+    }
+
+    private void StartDemo()
+    {
+        if (_demo != null) return;
+        _demo = new GameWorld(new RunConfig
+        {
+            Seed = 0xC0FFEE1234UL,
+            Demo = true,
+            Sfx = _audio.Sfx,
+            UnlockedAttunements = new HashSet<string>(_meta.UnlockedAttunements),
+        });
+        _demo.Player.InvincibleDemo = true;
+        AttunementCatalog.Apply(_demo.Player, "split");
+        AttunementCatalog.Apply(_demo.Player, "fan");
+        _demo.BeginWave(3);
+        _palette = Palette.FromSeed(_demo.Seed, _demo.Movement);
+        _paletteMovement = _demo.Movement;
+        _paletteSeed = _demo.Seed;
+        _renderer.Palette = _palette;
+    }
+
+    private void ResetDemo()
+    {
+        _demo = null;
+        StartDemo();
+    }
+
+    public void StartRun(ulong seed, bool daily)
+    {
+        _seed = seed;
+        _daily = daily;
+        _world = new GameWorld(new RunConfig
+        {
+            Seed = seed,
+            Daily = daily,
+            Sfx = _audio.Sfx,
+            SelectedModifiers = new HashSet<string>(_meta.SelectedModifiers),
+            UnlockedAttunements = new HashSet<string>(_meta.UnlockedAttunements),
+        });
+        _state = AppState.Playing;
+        _runRecorded = false;
+        _unlocks.Clear();
+        _accumulator = 0f;
+        _runClock = 0f;
+        _attuneHover = 0;
+        _autoPilot = false;
+        _palette = Palette.FromSeed(seed, 0);
+        _paletteMovement = 0;
+        _paletteSeed = seed;
+        _renderer.Palette = _palette;
+        _audio.SetQuiet(_world.Mods.SynthDisabled);
+        _renderer.ResetBackdrop();
+        _backdropMovement = 0;
+        _audio.Sfx.Trigger(SfxType.Wave, 0.6f);
+        _toast = "";
+        _toastTimer = 0f;
+    }
+
+    public void Update(float dt)
+    {
+        if (_disposed) return;
+        dt = Math.Clamp(dt, 0.0005f, 0.08f);
+        _frameDt = dt;
+        _elapsed += dt;
+        _fps = _fps <= 1f ? 1f / dt : M.ExpSmooth(_fps, 1f / dt, 3.5f, dt);
+        _audio.Update(dt);
+        _director.Update(_audio.State, dt);
+        _renderer.Mood = _director;
+        if (_state == AppState.Title && (_titleReroll -= dt) <= 0f)
+        {
+            _titleReroll = 22f;
+            _renderer.RerollBackdrop();
+        }
+        if (_director.DropTriggered && GameSettings.Current.MusicFx > 0)
+        {
+            _renderer.RerollBackdrop();   // every drop opens onto a brand new world
+            var w = _state == AppState.Playing ? _world : _state == AppState.Title ? _demo : null;
+            w?.OnMusicDrop(GameSettings.Current.MusicFx / 100f, GameSettings.Current.ReduceFlashing);
+        }
+        if (_toastTimer > 0f) _toastTimer -= dt;
+
+        if (_input != null)
+        {
+            _input.BeginFrame();
+            _mouseUi = WindowMouseToUi(_input.MousePosition);
+            if (!_capture)
+            {
+                if (_input.FullscreenPressed) ToggleFullscreen();
+                if (_input.AudioDevicePressed)
+                {
+                    _toast = "AUDIO // " + _audio.CycleSource();
+                    _toastTimer = 3f;
+                    _meta.AudioApp = _audio.PreferredApp;
+                    _meta.Save();
+                }
+                if (_input.DebugPressed) _debug = !_debug;
+            }
+        }
+
+        switch (_state)
+        {
+            case AppState.Title:
+                UpdateDemo(dt);
+                UpdateTitle();
+                break;
+            case AppState.Archive:
+                if (_archiveReturn == AppState.Title) UpdateDemo(dt);
+                UpdateArchive();
+                break;
+            case AppState.Playing:
+                UpdatePlaying(dt);
+                break;
+            case AppState.Paused:
+                UpdatePaused();
+                break;
+            case AppState.Attuning:
+                UpdateAttuning();
+                break;
+            case AppState.GameOver:
+                UpdateGameOver();
+                break;
+            case AppState.Settings:
+                if (_settingsReturn == AppState.Title) UpdateDemo(dt);
+                if (_input != null && _settingsMenu.Update(_input, _mouseUi, _audio.Sfx, dt))
+                {
+                    _meta.Settings = GameSettings.Current;
+                    _meta.Save();
+                    _state = _settingsReturn;
+                    _audio.Sfx.Trigger(SfxType.Menu, 0.25f);
+                }
+                break;
+        }
+    }
+
+    private void OpenSettings(AppState from)
+    {
+        _settingsReturn = from;
+        _settingsMenu.Open();
+        _state = AppState.Settings;
+    }
+
+    private void ApplyAudioSettings()
+    {
+        var s = GameSettings.Current;
+        _audio.SetVolumes(s.Music, s.Sfx);
+    }
+
+    private void UpdateDemo(float dt)
+    {
+        if (_demo == null)
+        {
+            StartDemo();
+            return;
+        }
+        var demo = _demo;
+        if (demo.Phase == GamePhase.Attuning)
+        {
+            if (demo.Offers.Count > 0) demo.ChooseAttunement(0);
+            else demo.BeginWave(demo.Wave + 1);
+        }
+        if (demo.Phase == GamePhase.Dead)
+        {
+            ResetDemo();
+            return;
+        }
+        _accumulator += dt;
+        int steps = 0;
+        while (_accumulator >= 1f / 60f && steps++ < 4)
+        {
+            demo.Step(1f / 60f, _audio.State, Pilot.Think(demo));
+            _accumulator -= 1f / 60f;
+            if (demo.Phase == GamePhase.Attuning || demo.Phase == GamePhase.Dead) break;
+        }
+        if (demo.Phase == GamePhase.Attuning && demo.Offers.Count > 0) demo.ChooseAttunement(0);
+        if (demo.Phase == GamePhase.Dead) ResetDemo();
+        _paletteMovement = demo.Movement;
+        _paletteSeed = demo.Seed;
+        _palette = Palette.FromSeed(demo.Seed, demo.Movement);
+    }
+
+    private void UpdateTitle()
+    {
+        if (_input == null) return;
+        if (_input.UpPressed) { _menuIndex = (_menuIndex + 4) % 5; _audio.Sfx.Trigger(SfxType.Menu, 0.22f); }
+        if (_input.DownPressed) { _menuIndex = (_menuIndex + 1) % 5; _audio.Sfx.Trigger(SfxType.Menu, 0.22f); }
+        if (_input.ConfirmPressed)
+        {
+            _audio.Sfx.Trigger(SfxType.Menu, 0.35f);
+            switch (_menuIndex)
+            {
+                case 0:
+                    StartRun(SeedCode.NewSeed(), false);
+                    break;
+                case 1:
+                    StartRun(SeedCode.DailySeed(DateTime.Now), true);
+                    break;
+                case 2:
+                    _archiveReturn = AppState.Title;
+                    _archiveIndex = 0;
+                    _state = AppState.Archive;
+                    break;
+                case 3:
+                    OpenSettings(AppState.Title);
+                    break;
+                case 4:
+                    _window.Close();
+                    break;
+            }
+        }
+    }
+
+    private void UpdateArchive()
+    {
+        if (_input == null) return;
+        if (_input.BackPressed || _input.TabPressed)
+        {
+            _state = _archiveReturn;
+            if (_state == AppState.Title) _menuIndex = 2;
+            _audio.Sfx.Trigger(SfxType.Menu, 0.25f);
+            return;
+        }
+        int col = _archiveIndex / 8;
+        int row = _archiveIndex % 8;
+        if (_input.UpPressed) row = (row + 7) % 8;
+        if (_input.DownPressed) row = (row + 1) % 8;
+        if (_input.LeftPressed && col > 0) col--;
+        if (_input.RightPressed && col < 1) col++;
+        _archiveIndex = col * 8 + row;
+        if (_input.ConfirmPressed || _input.SpacePressed)
+        {
+            if (_archiveReturn == AppState.Paused)
+            {
+                _audio.Sfx.Trigger(SfxType.Hurt, 0.12f);
+            }
+            else
+            {
+                var def = ModifierCatalog.All[_archiveIndex];
+                if (_meta.ToggleModifier(def.Id))
+                {
+                    _audio.Sfx.Trigger(SfxType.Menu, 0.3f);
+                }
+                else
+                {
+                    _audio.Sfx.Trigger(SfxType.Hurt, 0.12f);
+                }
+            }
+        }
+    }
+
+    private void UpdatePlaying(float dt)
+    {
+        if (_world == null) return;
+        if (_input != null && _input.PausePressed)
+        {
+            _state = AppState.Paused;
+            _pauseIndex = 0;
+            return;
+        }
+
+        InputFrame frame;
+        if (_rosterHold)
+        {
+            frame = new InputFrame(Vector2.Zero, new Vector2(1, 0), false, false, false, false);
+        }
+        else if (_speedDemo)
+        {
+            // capture: carve wide arcs at full speed, firing, with flow pinned high
+            float a = _runClock * 0.9f;
+            Vector2 move = M.FromAngle(a);
+            frame = new InputFrame(move, move, true, false, false, false);
+            _world.Flow = MathF.Max(_world.Flow, 0.95f);
+        }
+        else if (_autoPilot)
+        {
+            frame = Pilot.Think(_world);
+            if (_world.Phase == GamePhase.Attuning && _world.Offers.Count > 0)
+            {
+                _world.ChooseAttunement(0);
+            }
+        }
+        else
+        {
+            frame = BuildInput();
+        }
+
+        if (_captureCue) _world.SetMusicCue(0.95f, 0f, 0f, ++_cueFrames == 40);
+        else _world.SetMusicCue(_director.Intensity * (0.7f + _world.Hype * 0.5f), _director.Build, _director.Breakdown, _director.DropTriggered);
+        _runClock += dt;
+        _accumulator += dt;
+        int steps = 0;
+        while (_accumulator >= 1f / 60f && steps++ < 5)
+        {
+            _world.Step(1f / 60f, _audio.State, frame);
+            _accumulator -= 1f / 60f;
+            if (_world.Phase == GamePhase.Attuning || _world.Phase == GamePhase.Dead) break;
+        }
+
+        if (_world.Phase == GamePhase.Attuning)
+        {
+            _state = AppState.Attuning;
+            _attuneHover = 0;
+            return;
+        }
+        if (_world.Phase == GamePhase.Dead)
+        {
+            EnterGameOver();
+            return;
+        }
+        if (_world.Movement != _paletteMovement || _world.Seed != _paletteSeed)
+        {
+            _palette = Palette.FromSeed(_world.Seed, _world.Movement);
+            _paletteMovement = _world.Movement;
+            _paletteSeed = _world.Seed;
+        }
+    }
+
+    private InputFrame BuildInput()
+    {
+        if (_input == null || _world == null) return InputFrame.Empty;
+        Vector2 aim = _world.Player.AimDir;
+        if (_input.AimStick.LengthSquared() > 0.04f)
+        {
+            aim = _input.AimStick;
+        }
+        else
+        {
+            Vector2 windowSize = new(_window.Size.X, _window.Size.Y);
+            Vector2 mouseWorld = _renderer.ScreenToWorld(_input.MousePosition, windowSize);
+            Vector2 delta = mouseWorld - _world.Player.Pos;
+            if (delta.LengthSquared() > 18f) aim = delta;
+        }
+        return new InputFrame(_input.Move, aim, _input.Fire, _input.DashPressed, _input.Focus, _input.BurstPressed);
+    }
+
+    private void UpdatePaused()
+    {
+        if (_input == null) return;
+        if (_input.PausePressed || _input.BackPressed)
+        {
+            _state = AppState.Playing;
+            return;
+        }
+        if (_input.UpPressed) _pauseIndex = (_pauseIndex + 3) % 4;
+        if (_input.DownPressed) _pauseIndex = (_pauseIndex + 1) % 4;
+        if (_input.ConfirmPressed)
+        {
+            if (_pauseIndex == 0) _state = AppState.Playing;
+            else if (_pauseIndex == 1)
+            {
+                _archiveReturn = AppState.Paused;
+                _archiveIndex = 0;
+                _state = AppState.Archive;
+            }
+            else if (_pauseIndex == 2)
+            {
+                OpenSettings(AppState.Paused);
+            }
+            else
+            {
+                AbandonRun();
+            }
+        }
+    }
+
+    private void UpdateAttuning()
+    {
+        if (_world == null) return;
+        int count = _world.Offers.Count;
+        if (count == 0) return;
+        if (_input != null)
+        {
+            Vector2 m = _mouseUi;
+            for (int i = 0; i < count; i++)
+            {
+                float x = 160 + i * 438;
+                if (m.X >= x && m.X <= x + 404 && m.Y >= 326 && m.Y <= 656) _attuneHover = i;
+            }
+            if (_input.LeftPressed) _attuneHover = (_attuneHover + count - 1) % count;
+            if (_input.RightPressed) _attuneHover = (_attuneHover + 1) % count;
+            bool choose = _input.ConfirmPressed || _input.OnePressed || _input.TwoPressed || _input.ThreePressed;
+            int chosen = _attuneHover;
+            if (_input.OnePressed) chosen = 0;
+            if (_input.TwoPressed) chosen = Math.Min(1, count - 1);
+            if (_input.ThreePressed) chosen = Math.Min(2, count - 1);
+            if (_input.MouseLeftPressed)
+            {
+                for (int i = 0; i < count; i++)
+                {
+                    float x = 160 + i * 438;
+                    if (_mouseUi.X >= x && _mouseUi.X <= x + 404 && _mouseUi.Y >= 326 && _mouseUi.Y <= 656)
+                    {
+                        chosen = i;
+                        choose = true;
+                        break;
+                    }
+                }
+            }
+            if (choose)
+            {
+                _world.ChooseAttunement(chosen);
+                _state = AppState.Playing;
+                _attuneHover = 0;
+                _audio.Sfx.Trigger(SfxType.Unlock, 0.5f);
+            }
+        }
+        else if (_autoPilot)
+        {
+            _world.ChooseAttunement(0);
+            _state = AppState.Playing;
+        }
+    }
+
+    private void EnterGameOver()
+    {
+        if (_world == null) return;
+        _state = AppState.GameOver;
+        if (_runRecorded) return;
+        _runRecorded = true;
+        if (_world.Summary != null)
+        {
+            _unlocks.Clear();
+            _unlocks.AddRange(_meta.RecordRun(_world.Summary));
+            if (_unlocks.Count > 0)
+            {
+                _audio.Sfx.Trigger(SfxType.Unlock, 0.8f);
+                _toastTimer = 7f;
+                _toast = _unlocks[0];
+            }
+        }
+    }
+
+    private void UpdateGameOver()
+    {
+        if (_input == null) return;
+        if (_input.RPressed)
+        {
+            StartRun(_seed, _daily);
+            return;
+        }
+        if (_input.NPressed)
+        {
+            StartRun(SeedCode.NewSeed(), false);
+            return;
+        }
+        if (_input.TabPressed)
+        {
+            _archiveReturn = AppState.GameOver;
+            _archiveIndex = 0;
+            _state = AppState.Archive;
+            return;
+        }
+        if (_input.BackPressed)
+        {
+            GoToTitle();
+        }
+    }
+
+    private void AbandonRun()
+    {
+        _world = null;
+        _state = AppState.Title;
+        _menuIndex = 0;
+        _audio.SetQuiet(false);
+        _palette = Palette.FromSeed(_demo?.Seed ?? 0xC0FFEE, _demo?.Movement ?? 0);
+        ResetDemo();
+    }
+
+    private void GoToTitle()
+    {
+        _state = AppState.Title;
+        _menuIndex = 0;
+        _audio.SetQuiet(false);
+        _runningReset();
+        ResetDemo();
+    }
+
+    private void _runningReset()
+    {
+        _world = null;
+        _runRecorded = false;
+        _accumulator = 0;
+    }
+
+    private Vector2 WindowMouseToUi(Vector2 mouse)
+    {
+        float w = Math.Max(1, _window.Size.X);
+        float h = Math.Max(1, _window.Size.Y);
+        return new Vector2(mouse.X / w * Renderer.DesignWidth, mouse.Y / h * Renderer.DesignHeight);
+    }
+
+    private void ToggleFullscreen()
+    {
+        bool full = _window.WindowState != WindowState.Fullscreen;
+        SetFullscreen(full);
+        GameSettings.Current.Fullscreen = full;
+        _meta.Save();
+    }
+
+    private void SetFullscreen(bool full)
+    {
+        try
+        {
+            _window.WindowState = full ? WindowState.Fullscreen : WindowState.Normal;
+        }
+        catch (Exception ex)
+        {
+            _toast = "FULLSCREEN: " + ex.Message;
+            _toastTimer = 3f;
+        }
+    }
+
+    public void Render()
+    {
+        GameWorld? active = _state is AppState.Playing or AppState.Paused or AppState.Attuning or AppState.GameOver
+            ? _world
+            : null;
+        if (_state == AppState.Archive && _archiveReturn is AppState.Paused or AppState.GameOver)
+            active = _world;
+        if (_state == AppState.Settings && _settingsReturn == AppState.Paused)
+            active = _world;
+        GameWorld? world = active ?? _demo;
+        if (world == null) return;
+
+        if (world.Seed != _paletteSeed || world.Movement != _paletteMovement)
+        {
+            _palette = Palette.FromSeed(world.Seed, world.Movement);
+            _paletteSeed = world.Seed;
+            _paletteMovement = world.Movement;
+        }
+        _renderer.Palette = _palette;
+        // camera breathes with the song: a punch on every kick, a slow push-in through a build-up,
+        // and a release outward when the drop lands
+        // the backdrop and post pass rush with the ship
+        _renderer.PlayerSpeed = M.Clamp01(world.Player.SpeedFrac);
+        _renderer.PlayerDirection = M.SafeNorm(world.Player.Vel) * _renderer.PlayerSpeed;
+        _renderer.Flow = world.Flow;
+        _renderer.Hype = world.Demo ? 0.6f : world.Hype;
+        if (world.Movement != _backdropMovement)
+        {
+            _backdropMovement = world.Movement;
+            _renderer.RerollBackdrop();
+        }
+        float fx = GameSettings.Current.MusicFx / 100f;
+        fx *= _renderer.HypeScale;
+        float punch = 1f + fx * (_director.Kick * 0.014f + _director.Build * 0.05f - _director.DropPulse * 0.07f);
+        _renderer.BeginWorld(world.Cam.Position + world.Cam.ShakeOffset, world.Cam.Zoom * punch);
+        WorldRenderer.Draw(_renderer, world, _palette, _audio.State, _elapsed);
+        _renderer.BeginUi();
+
+        switch (_state)
+        {
+            case AppState.Title:
+                Screens.DrawTitle(_renderer, _palette, _meta, world.Seed, false, _menuIndex, _elapsed, _audio.State);
+                break;
+            case AppState.Archive:
+                Screens.DrawArchive(_renderer, _palette, _meta, _archiveIndex, _elapsed, _archiveReturn == AppState.Paused, _archiveReturn == AppState.GameOver);
+                break;
+            case AppState.Playing:
+                Screens.DrawHud(_renderer, world, _palette, _audio.State, _runClock, _fps, _debug);
+                Screens.DrawCrosshair(_renderer, _palette, _mouseUi, _input?.Focus ?? false);
+                break;
+            case AppState.Paused:
+                Screens.DrawHud(_renderer, world, _palette, _audio.State, _runClock, _fps, _debug, false);
+                Screens.DrawPause(_renderer, _palette, world, _pauseIndex, _audio.State);
+                break;
+            case AppState.Attuning:
+                Screens.DrawHud(_renderer, world, _palette, _audio.State, _runClock, _fps, _debug, false);
+                Screens.DrawAttunement(_renderer, _palette, world, _elapsed, _attuneHover);
+                break;
+            case AppState.GameOver:
+                Screens.DrawGameOver(_renderer, _palette, world, _meta, _unlocks, _elapsed);
+                break;
+            case AppState.Settings:
+                _settingsMenu.Draw(_renderer, _palette, _audio.State, Screens.SourceText(_audio.State), _elapsed, _frameDt);
+                break;
+        }
+
+        if (_toastTimer > 0 && _state == AppState.Playing)
+            _renderer.UiTextRight(_toast, 1540, 760, 1.4f, M.WithAlpha(_palette.Accent, 0.8f), true);
+
+        _renderer.Render(_audio.State, _elapsed, world.Flash, 0.16f + Audio.State.BeatPulse * 0.4f, world.DamageFlash > 0.4f ? 1 : 0);
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        _audio.Dispose();
+    }
+}

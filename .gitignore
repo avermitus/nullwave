@@ -1,0 +1,18 @@
+# toolchain (install with tools/dotnet-install.ps1 or use a system .NET 8 SDK)
+.dotnet/
+tools/nuget/
+# build output
+bin/
+obj/
+build/
+# recordings, captures and local screenshots (large, regenerable)
+/capture/
+/screenshots/
+*.mp4
+*.mkv
+*.wav
+# local backups and app metadata
+_backup/
+.freebuff/
+*.user
+*.log

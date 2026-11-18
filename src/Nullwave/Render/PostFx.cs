@@ -1,0 +1,154 @@
+using Silk.NET.OpenGL;
+
+namespace Nullwave.Render;
+
+/// <summary>Music-driven grading parameters for the composite pass.</summary>
+public struct PostMood
+{
+    public float Hue, Saturation, Contrast, Thump, Glitch, Vignette, SpeedLines;
+    public System.Numerics.Vector2 SpeedDir;
+    public System.Numerics.Vector3 Tint;
+    public static PostMood Neutral => new() { Saturation = 1f, Contrast = 1f, Vignette = 1f, Tint = System.Numerics.Vector3.One };
+}
+
+public sealed class PostFx : IDisposable
+{
+    private readonly GL _gl;
+    private readonly uint _vao;
+    private readonly Shader _bright;
+    private readonly Shader _blur;
+    private readonly Shader _down;
+    private readonly Shader _composite;
+    private readonly GlFbo[] _downs = new GlFbo[3];
+    private readonly GlFbo[] _temps = new GlFbo[3];
+    private int _width;
+    private int _height;
+
+    public PostFx(GL gl)
+    {
+        _gl = gl;
+        _vao = _gl.GenVertexArray();
+        _bright = new Shader(_gl, Shaders.FullscreenVert, Shaders.BrightFrag, "bright");
+        _blur = new Shader(_gl, Shaders.FullscreenVert, Shaders.BlurFrag, "blur");
+        _down = new Shader(_gl, Shaders.FullscreenVert, Shaders.DownFrag, "down");
+        _composite = new Shader(_gl, Shaders.FullscreenVert, Shaders.CompositeFrag, "composite");
+    }
+
+    public void EnsureSize(int width, int height)
+    {
+        width = Math.Max(1, width);
+        height = Math.Max(1, height);
+        if (width == _width && height == _height) return;
+        _width = width;
+        _height = height;
+        for (int i = 0; i < 3; i++)
+        {
+            _downs[i]?.Dispose();
+            _temps[i]?.Dispose();
+            int w = Math.Max(1, width >> (i + 1));
+            int h = Math.Max(1, height >> (i + 1));
+            _downs[i] = new GlFbo(_gl, w, h);
+            _temps[i] = new GlFbo(_gl, w, h);
+        }
+    }
+
+    public void Process(uint sceneTexture, int width, int height, float time, float bloom, float aberration, float flash, float beat, int damage, PostMood mood)
+    {
+        EnsureSize(width, height);
+        _gl.Disable(EnableCap.Blend);
+        _gl.Disable(EnableCap.DepthTest);
+        _gl.BindVertexArray(_vao);
+
+        _downs[0].Bind();
+        _bright.Use();
+        _bright.SetInt("uScene", 0);
+        _bright.SetFloat("uThreshold", 0.62f);
+        _bright.SetFloat("uKnee", 0.42f);
+        _gl.ActiveTexture(TextureUnit.Texture0);
+        _gl.BindTexture(TextureTarget.Texture2D, sceneTexture);
+        DrawFullscreen();
+
+        for (int i = 0; i < 3; i++)
+        {
+            if (i > 0)
+            {
+                _downs[i].Bind();
+                _down.Use();
+                _down.SetInt("uTex", 0);
+                _down.SetVec2("uTexel", 1f / _downs[i - 1].Width, 1f / _downs[i - 1].Height);
+                _gl.ActiveTexture(TextureUnit.Texture0);
+                _gl.BindTexture(TextureTarget.Texture2D, _downs[i - 1].Texture);
+                DrawFullscreen();
+            }
+
+            _temps[i].Bind();
+            _blur.Use();
+            _blur.SetInt("uTex", 0);
+            _blur.SetVec2("uTexel", 1f / _downs[i].Width, 1f / _downs[i].Height);
+            _blur.SetVec2("uDir", 1f, 0f);
+            _gl.ActiveTexture(TextureUnit.Texture0);
+            _gl.BindTexture(TextureTarget.Texture2D, _downs[i].Texture);
+            DrawFullscreen();
+
+            _downs[i].Bind();
+            _blur.Use();
+            _blur.SetInt("uTex", 0);
+            _blur.SetVec2("uTexel", 1f / _downs[i].Width, 1f / _downs[i].Height);
+            _blur.SetVec2("uDir", 0f, 1f);
+            _gl.ActiveTexture(TextureUnit.Texture0);
+            _gl.BindTexture(TextureTarget.Texture2D, _temps[i].Texture);
+            DrawFullscreen();
+        }
+
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+        _gl.Viewport(0, 0, (uint)width, (uint)height);
+        _composite.Use();
+        _composite.SetInt("uScene", 0);
+        _composite.SetInt("uBloom0", 1);
+        _composite.SetInt("uBloom1", 2);
+        _composite.SetInt("uBloom2", 3);
+        _composite.SetVec2("uResolution", width, height);
+        _composite.SetFloat("uTime", time);
+        _composite.SetFloat("uExposure", 1.08f);
+        _composite.SetFloat("uBloomStrength", bloom);
+        _composite.SetFloat("uAberration", aberration);
+        _composite.SetFloat("uFlash", flash);
+        _composite.SetFloat("uBeat", beat);
+        _composite.SetInt("uDamage", damage);
+        _composite.SetFloat("uHue", mood.Hue);
+        _composite.SetFloat("uSat", mood.Saturation);
+        _composite.SetFloat("uContrast", mood.Contrast);
+        _composite.SetFloat("uThump", mood.Thump);
+        _composite.SetFloat("uGlitch", mood.Glitch);
+        _composite.SetFloat("uVignette", mood.Vignette);
+        _composite.SetVec3("uTint", mood.Tint);
+        _composite.SetFloat("uSpeedLines", mood.SpeedLines);
+        _composite.SetVec2("uSpeedDir", mood.SpeedDir.X, -mood.SpeedDir.Y);
+        _gl.ActiveTexture(TextureUnit.Texture0);
+        _gl.BindTexture(TextureTarget.Texture2D, sceneTexture);
+        _gl.ActiveTexture(TextureUnit.Texture1);
+        _gl.BindTexture(TextureTarget.Texture2D, _downs[0].Texture);
+        _gl.ActiveTexture(TextureUnit.Texture2);
+        _gl.BindTexture(TextureTarget.Texture2D, _downs[1].Texture);
+        _gl.ActiveTexture(TextureUnit.Texture3);
+        _gl.BindTexture(TextureTarget.Texture2D, _downs[2].Texture);
+        DrawFullscreen();
+        _gl.BindVertexArray(0);
+    }
+
+    private void DrawFullscreen()
+    {
+        _gl.DrawArrays(PrimitiveType.Triangles, 0, 3);
+    }
+
+    public void Dispose()
+    {
+        foreach (var f in _downs) f?.Dispose();
+        foreach (var f in _temps) f?.Dispose();
+        _bright.Dispose();
+        _blur.Dispose();
+        _down.Dispose();
+        _composite.Dispose();
+        _gl.DeleteVertexArray(_vao);
+    }
+}

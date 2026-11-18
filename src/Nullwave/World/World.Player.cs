@@ -1,0 +1,310 @@
+using System.Numerics;
+using Nullwave.Audio;
+using Nullwave.Core;
+
+namespace Nullwave.World;
+
+public sealed partial class World
+{
+    private void UpdatePlayer(float dt, InputFrame input, AudioState audio)
+    {
+        var p = Player;
+        p.Time += dt;
+        p.HitFlash = MathF.Max(0, p.HitFlash - dt * 4.5f);
+        p.Invuln = MathF.Max(0, p.Invuln - dt);
+        p.DashCooldown = MathF.Max(0, p.DashCooldown - dt);
+        p.TrailTimer -= dt;
+
+        if (input.Aim.LengthSquared() > 0.001f)
+            p.AimDir = Vector2.Normalize(input.Aim);
+        p.Focus = M.ExpSmooth(p.Focus, input.Focus ? 1f : 0f, 14f, dt);
+
+        if (input.Burst) Burst();
+
+        if (input.Dash && p.DashCooldown <= 0f && !p.IsDashing)
+        {
+            Vector2 dir = input.Move.LengthSquared() > 0.01f ? input.Move : p.AimDir;
+            p.DashDir = M.SafeNorm(dir);
+            if (p.DashDir.LengthSquared() < 0.01f) p.DashDir = p.AimDir;
+            p.IsDashing = true;
+            p.DashTime = 0.15f;
+            p.DashCooldown = p.DashCooldownMax;
+            p.Invuln = MathF.Max(p.Invuln, 0.24f);
+            Cam.AddShake(3.5f);
+            Sfx?.Trigger(SfxType.Dash, 0.55f);
+            for (int i = 0; i < 18; i++)
+                SpawnParticle(p.Pos, -p.DashDir * FxRng.Range(80, 360) + FxRng.InCircle(100), FxRng.Range(0.2f, 0.45f), 2.5f, M.Hsv(0.50f, 0.65f, 1f, 0.8f), ParticleKind.Spark, 3f);
+        }
+
+        Vector2 move = M.ClampLength(input.Move, 1f);
+        if (p.IsDashing)
+        {
+            p.Vel = p.DashDir * 1700f;
+            p.DashTime -= dt;
+            p.Invuln = MathF.Max(p.Invuln, 0.12f);
+            if (p.DashTime <= 0)
+            {
+                p.IsDashing = false;
+                p.Vel *= 0.42f;
+            }
+            if (p.TrailTimer <= 0)
+            {
+                p.TrailTimer = 0.018f;
+                SpawnParticle(p.Pos + FxRng.InCircle(5), -p.Vel * 0.08f, 0.33f, 3.2f, M.Hsv(0.51f, 0.55f, 1f, 0.55f), ParticleKind.Dot, 1.5f);
+            }
+        }
+        else
+        {
+            // racer handling: high top speed, quick to accelerate, glides when you let go
+            float speed = Player.TopSpeed * (1f - p.Focus * 0.6f);
+            Vector2 targetVel = move * speed;
+            p.Vel = M.Lerp(p.Vel, targetVel, 1f - MathF.Exp(-dt * (move.LengthSquared() > 0.01f ? 6.5f : 2.6f)));
+        }
+
+        p.PrevPos = p.Pos;
+        p.Pos += p.Vel * dt;
+        float margin = 28f + p.Radius;
+        p.Pos = new Vector2(
+            M.Clamp(p.Pos.X, -ArenaW * 0.5f + margin, ArenaW * 0.5f - margin),
+            M.Clamp(p.Pos.Y, -ArenaH * 0.5f + margin, ArenaH * 0.5f - margin));
+
+        foreach (var o in Obstacles)
+        {
+            if (o.Dead) continue;
+            Vector2 delta = p.Pos - o.Pos;
+            float minDist = o.Radius * 0.78f + p.Radius;
+            float d = delta.Length();
+            if (d < minDist && d > 0.001f)
+                p.Pos = o.Pos + delta / d * minDist;
+        }
+
+        if (p.TrailTimer <= 0 && p.Vel.LengthSquared() > 900f && !p.IsDashing)
+        {
+            p.TrailTimer = 0.045f;
+            SpawnParticle(p.Pos - M.SafeNorm(p.Vel) * 9f + FxRng.InCircle(3), -p.Vel * 0.05f, 0.38f, 2.8f, M.Hsv(0.51f, 0.65f, 0.9f, 0.42f), ParticleKind.Dot, 1.8f);
+        }
+
+        p.FireTimer -= dt;
+        if (input.Fire && p.FireTimer <= 0)
+            Shoot();
+        UpdateFlow(dt);
+    }
+
+    private void Shoot()
+    {
+        var p = Player;
+        p.FireTimer = p.FireInterval / MathF.Max(0.4f, Mods.PlayerFireRate);
+        float baseAngle = M.AngleOf(p.AimDir);
+        int fired = 0;
+
+        void FireAngle(float angle, float sideOffset, float damageScale = 1f)
+        {
+            Vector2 dir = M.FromAngle(angle);
+            Vector2 side = M.Perp(dir) * sideOffset;
+            Vector2 pos = p.Pos + dir * 18f + side;
+            float spread = FxRng.Signed() * 0.012f;
+            SpawnPlayerBullet(pos, M.FromAngle(angle + spread, p.BulletSpeed), p.BulletRadius, p.Damage * damageScale, p.BulletLife, p.PierceLevel, p.HomingLevel * 2.2f, p.RicochetLevel);
+            fired++;
+        }
+
+        FireAngle(baseAngle, -4.4f);
+        FireAngle(baseAngle, 4.4f);
+        for (int i = 0; i < p.SplitLevel; i++)
+        {
+            float spread = 0.09f + i * 0.055f;
+            FireAngle(baseAngle - spread, -3f, 0.88f);
+            FireAngle(baseAngle + spread, 3f, 0.88f);
+        }
+        for (int i = 0; i < p.FanLevel; i++)
+        {
+            float spread = 0.22f + i * 0.075f;
+            FireAngle(baseAngle - spread, -2f, 0.72f);
+            FireAngle(baseAngle + spread, 2f, 0.72f);
+        }
+        for (int i = 0; i < p.RearLevel; i++)
+        {
+            float spread = 0.10f + i * 0.06f;
+            FireAngle(baseAngle + MathF.PI - spread, 0f, 0.55f);
+            FireAngle(baseAngle + MathF.PI + spread, 0f, 0.55f);
+        }
+
+        Vector4 flash = M.Hsv(0.51f, 0.5f, 1f, 0.8f);
+        SpawnParticle(p.Pos + p.AimDir * 20f, p.AimDir * 120f + FxRng.InCircle(50), 0.12f, 4.5f, flash, ParticleKind.Spark, 4f);
+        Sfx?.Trigger(SfxType.Shot, 0.16f + MathF.Min(0.12f, fired * 0.005f), M.Clamp(p.Pos.X / (ArenaW * 0.5f), -1f, 1f) * 0.45f);
+    }
+
+    public void SpawnPlayerBullet(Vector2 pos, Vector2 vel, float radius, float damage, float life, int pierce, float homing = 0f, int bounces = 0)
+    {
+        if (PlayerBullets.Count >= 900) return;
+        if (!_bulletPool.TryPop(out var b)) b = new Bullet();
+        b.Reset();
+        b.FromPlayer = true;
+        b.Kind = BulletKind.Player;
+        b.Pos = pos;
+        b.PrevPos = pos;
+        b.Vel = vel;
+        b.Radius = radius;
+        b.Life = life;
+        b.MaxLife = life;
+        b.Damage = damage;
+        b.Hue = 0.51f;
+        b.Pierce = pierce;
+        b.Homing = homing;
+        b.Bounces = bounces;
+        PlayerBullets.Add(b);
+    }
+
+    /// <summary>All enemy fire travels this much faster than the original tuning (fewer, faster shots).</summary>
+    public const float BulletPace = 1.75f;
+
+    public void SpawnEnemyBullet(Vector2 pos, Vector2 vel, float radius, float hue, BulletKind kind, float life = 7f, float damage = 1f, float angular = 0f)
+    {
+        if (EnemyBullets.Count >= 2600) return;
+        vel *= BulletPace;
+        life = MathF.Min(life, 4.2f);
+        if (!_bulletPool.TryPop(out var b)) b = new Bullet();
+        b.Reset();
+        b.FromPlayer = false;
+        b.Kind = kind;
+        b.Pos = pos;
+        b.PrevPos = pos;
+        b.Vel = vel;
+        b.Radius = radius;
+        b.Life = life;
+        b.MaxLife = life;
+        b.Damage = damage;
+        b.Hue = hue;
+        b.AngularVel = angular;
+        if (Rules.DriftBullets && angular == 0f && FxRng.Chance(0.28f))
+            b.AngularVel = FxRng.Signed() * 0.45f;
+        EnemyBullets.Add(b);
+    }
+
+    public void ReturnBullet(List<Bullet> list, int index)
+    {
+        var b = list[index];
+        list.RemoveAt(index);
+        b.Reset();
+        if (_bulletPool.Count < 4000) _bulletPool.Push(b);
+    }
+
+    private void UpdateBullets(float dt)
+    {
+        for (int i = PlayerBullets.Count - 1; i >= 0; i--)
+        {
+            var b = PlayerBullets[i];
+            b.PrevPos = b.Pos;
+            b.Age += dt;
+            b.Life -= dt;
+            if (b.Homing > 0f)
+            {
+                var target = NearestEnemy(b.Pos, 460f);
+                if (target != null)
+                {
+                    float desired = M.AngleOf(target.Pos - b.Pos);
+                    float current = M.AngleOf(b.Vel);
+                    float speed = b.Vel.Length();
+                    b.Vel = M.FromAngle(M.MoveTowardsAngle(current, desired, b.Homing * dt), speed);
+                }
+            }
+            b.Pos += b.Vel * dt;
+            if (b.Life <= 0 || b.Pos.LengthSquared() > (ArenaW * 0.5f + 240f) * (ArenaW * 0.5f + 240f))
+            {
+                ReturnBullet(PlayerBullets, i);
+                continue;
+            }
+            if (MathF.Abs(b.Pos.X) > ArenaW * 0.5f - 4f || MathF.Abs(b.Pos.Y) > ArenaH * 0.5f - 4f)
+            {
+                if (b.Bounces > 0)
+                {
+                    b.Bounces--;
+                    if (MathF.Abs(b.Pos.X) > ArenaW * 0.5f - 4f) b.Vel = new Vector2(-b.Vel.X, b.Vel.Y);
+                    if (MathF.Abs(b.Pos.Y) > ArenaH * 0.5f - 4f) b.Vel = new Vector2(b.Vel.X, -b.Vel.Y);
+                    b.Pos = new Vector2(M.Clamp(b.Pos.X, -ArenaW * 0.5f + 5, ArenaW * 0.5f - 5), M.Clamp(b.Pos.Y, -ArenaH * 0.5f + 5, ArenaH * 0.5f - 5));
+                }
+                else
+                {
+                    SpawnParticle(b.Pos, FxRng.InCircle(40), 0.16f, 2.2f, M.Hsv(b.Hue, 0.7f, 1f, 0.7f), ParticleKind.Spark, 3f);
+                    ReturnBullet(PlayerBullets, i);
+                }
+            }
+        }
+
+        float marginX = ArenaW * 0.5f + 160f;
+        float marginY = ArenaH * 0.5f + 160f;
+        float surge = BeatSurge(1.4f);
+        float needleSurge = BeatSurge(0.9f);
+        for (int i = EnemyBullets.Count - 1; i >= 0; i--)
+        {
+            var b = EnemyBullets[i];
+            b.PrevPos = b.Pos;
+            b.Age += dt;
+            b.Life -= dt;
+            if (MathF.Abs(b.AngularVel) > 0.0001f)
+                b.Vel = M.Rotate(b.Vel, b.AngularVel * dt);
+            // every enemy shot lurches forward on the beat and glides to the next one
+            b.Pos += b.Vel * dt * (b.Kind == BulletKind.Needle ? needleSurge : surge);
+            if (b.Life <= 0 || MathF.Abs(b.Pos.X) > marginX || MathF.Abs(b.Pos.Y) > marginY)
+                ReturnBullet(EnemyBullets, i);
+        }
+    }
+
+    private Enemy? NearestEnemy(Vector2 from, float maxDistance)
+    {
+        Enemy? best = null;
+        float bestDist = maxDistance * maxDistance;
+        foreach (var e in Enemies)
+        {
+            if (e.Dead || e.Spawning) continue;
+            float d = M.DistSq(from, e.Pos);
+            if (d < bestDist)
+            {
+                bestDist = d;
+                best = e;
+            }
+        }
+        return best;
+    }
+
+    public void SpawnLaser(Vector2 origin, Vector2 target, float warmup, float duration, float width, float hue, float sweep = 0f, bool boss = false, float length = 0f)
+    {
+        if (Lasers.Count >= 40) return;
+        float angle = M.AngleOf(target - origin);
+        Lasers.Add(new LaserBeam
+        {
+            Origin = origin,
+            Angle = angle,
+            Length = length > 0f ? length : MathF.Sqrt(ArenaW * ArenaW + ArenaH * ArenaH) * 1.3f,
+            Width = width,
+            Warmup = warmup,
+            Duration = duration,
+            Hue = hue,
+            Sweep = sweep,
+            BossLaser = boss,
+        });
+        Sfx?.Trigger(SfxType.LaserWarn, boss ? 0.55f : 0.25f);
+    }
+
+    private void UpdateLasers(float dt)
+    {
+        for (int i = Lasers.Count - 1; i >= 0; i--)
+        {
+            var l = Lasers[i];
+            l.Age += dt;
+            l.Angle += l.Sweep * dt;
+            if (!l.PlayedFire && l.Age >= l.Warmup)
+            {
+                l.PlayedFire = true;
+                Sfx?.Trigger(SfxType.LaserFire, l.BossLaser ? 0.65f : 0.35f);
+                Cam.AddShake(l.BossLaser ? 4f : 1.4f);
+                for (int k = 0; k < 10; k++)
+                {
+                    float d = FxRng.Range(0, l.Length);
+                    SpawnParticle(l.Origin + l.Direction * d, FxRng.InCircle(80), 0.25f, 2f, M.Hsv(l.Hue, 0.7f, 1f, 0.6f), ParticleKind.Spark, 2f);
+                }
+            }
+            if (l.Age > l.Warmup + l.Duration + l.Fade)
+                Lasers.RemoveAt(i);
+        }
+    }
+}
