@@ -408,7 +408,13 @@ public sealed partial class World
             case EnemyRole.Prism:
             {
                 float beat = 60f / MathF.Max(60f, Bpm);
-                SpawnLaser(e.Pos, Player.Pos, beat, beat * 2.5f, 15f, hue, Rng.Chance(0.5f) ? 1.15f : -1.15f, false, 560f);
+                float spin = Rng.Chance(0.5f) ? 1.15f : -1.15f;
+                SpawnLaser(e.Pos, Player.Pos, beat, beat * 2.5f, 15f, hue, spin, false, 560f);
+                if (Wave >= 3 || e.Elite)
+                {
+                    Vector2 opp = e.Pos - (Player.Pos - e.Pos);
+                    SpawnLaser(e.Pos, opp, beat, beat * 2.5f, 15f, (hue + 0.08f) % 1f, spin, false, 560f);
+                }
                 break;
             }
         }
@@ -584,8 +590,26 @@ public sealed partial class World
                 for (int k = 0; k < 3; k++)
                     SpawnEnemyBullet(e.Pos + M.FromAngle(a, e.Radius + 14 + k * 8), M.FromAngle(a + 0.16f * k, baseSpeed * (0.85f + k * 0.06f)), 4.6f, hue, BulletKind.Shard, 8f, 1f);
             }
-            if (Lasers.Count < 20)
-                SpawnLaser(e.Pos, Player.Pos, 0.9f, 0.55f, 28f, hue, 0.55f, true);
+            if (Lasers.Count < 28)
+            {
+                if (phase == 0)
+                {
+                    SpawnLaser(e.Pos, Player.Pos, 0.9f, 0.55f, 28f, hue, 0.55f, true);
+                }
+                else if (phase == 1)
+                {
+                    SpawnLaser(e.Pos, Player.Pos, 0.85f, 0.65f, 28f, hue, 0.55f, true);
+                    SpawnLaser(e.Pos, Player.Pos, 0.85f, 0.65f, 28f, (hue + 0.06f) % 1f, -0.55f, true);
+                }
+                else
+                {
+                    for (int i = 0; i < 3; i++)
+                    {
+                        float ang = aim + (i - 1) * 0.42f;
+                        SpawnLaser(e.Pos, e.Pos + M.FromAngle(ang, 120f), 0.80f, 0.72f, 26f, (hue + i * 0.04f) % 1f, (i % 2 == 0 ? 0.52f : -0.52f), true);
+                    }
+                }
+            }
         }
         else if (pattern == 2)
         {
@@ -600,12 +624,15 @@ public sealed partial class World
                 SpawnEnemyBullet(spawn, vel, 6f, hue, BulletKind.Orb, 9f, 1f);
             }
             SpawnLaser(e.Pos, Player.Pos, 0.75f, 0.8f, 38f, hue, -0.55f, true);
+            if (phase >= 1)
+                SpawnLaser(e.Pos, Player.Pos, 0.75f, 0.8f, 32f, (hue + 0.08f) % 1f, 0.55f, true);
         }
         else
         {
             FireRing(e.Pos, 10, baseSpeed * 0.7f, BulletKind.Orb, hue, e.Radius + 24f);
             SpawnFan(e.Pos, aim + 0.2f, 3, 0.18f, baseSpeed, BulletKind.Needle, hue);
             SpawnLaser(e.Pos, Player.Pos, 0.65f, 1.0f, 30f, hue, 0.9f, true);
+            SpawnLaser(e.Pos, Player.Pos, 0.65f, 1.0f, 30f, (hue + 0.08f) % 1f, -0.9f, true);
         }
 
         BurstParticles(e.Pos, M.Hsv(hue, 0.7f, 1f, 0.7f), 16, 240, 2.4f, 0.4f, ParticleKind.Spark);

@@ -32,6 +32,7 @@ public sealed class RunSummary
     public string MovementName = "";
     public int Attunements;
     public int PhaseSyncs;
+    public string Track = "";
     public List<string> Modifiers = new();
 }
 
@@ -425,16 +426,16 @@ public sealed partial class World
     /// <summary>
     /// Beams that answer the song's sections. Everything is decided on a downbeat and fires two
     /// beats later, so the warning always lands in time with the music:
-    ///   drop        STARBURST - six beams radiating from near the player, slowly rotating
-    ///   build-up    SCAN      - one long beam sweeping across the player's area (every 2 bars)
-    ///   high energy GATE/CROSS- parallel beams with lanes between, or an X (every 4 bars)
-    ///   breakdown   nothing   - the room goes quiet with the song
+    ///   drop        STARBURST  - eight beams radiating from near the player, slowly rotating
+    ///   build-up    SCAN       - dual opposing beams sweeping across the player's area (every 2 bars)
+    ///   high energy GATE/CROSS/CAGE - 4-lane gate, 3-beam star cross, or rotating 4-beam prism cage
+    ///   breakdown   nothing    - the room goes quiet with the song
     /// </summary>
     private void UpdateSongLasers()
     {
         if (!DownbeatTick || Phase != GamePhase.Playing || Demo || Wave < 2) return;
         _songBar++;
-        if (Lasers.Count > 16 || _cueBreakdown > 0.5f) { _cueDrop = false; return; }
+        if (Lasers.Count > 24 || _cueBreakdown > 0.5f) { _cueDrop = false; return; }
         float beat = 60f / MathF.Max(60f, Bpm);
         float warm = beat * 2f;
         float hue = (0.92f + _songBar * 0.037f) % 1f;
@@ -445,8 +446,8 @@ public sealed partial class World
             Vector2 c = ClampToArena(p + M.FromAngle(Rng.Range(0, M.Tau), Rng.Range(380f, 520f)), 100f);
             float a0 = Rng.Range(0, M.Tau);
             float spin = Rng.Chance(0.5f) ? 0.32f : -0.32f;
-            for (int i = 0; i < 6; i++)
-                SpawnLaser(c, c + M.FromAngle(a0 + i * M.Tau / 6f, 100f), warm, beat * 3f, 24f, hue, spin, true, 2600f);
+            for (int i = 0; i < 8; i++)
+                SpawnLaser(c, c + M.FromAngle(a0 + i * M.Tau / 8f, 100f), warm, beat * 3f, 24f, hue, spin, true, 2600f);
             EmitEvent("// STARBURST //", 1.4f);
             SongLaserVolleys++;
             return;
@@ -454,38 +455,58 @@ public sealed partial class World
         if (_cueBuild > 0.5f && _songBar % 2 == 0)
         {
             Vector2 n = M.FromAngle(Rng.Range(0, M.Tau));
-            Vector2 origin = p + n * 1100f;
             float sweep = (Rng.Chance(0.5f) ? 1f : -1f) * 0.22f;
-            SpawnLaser(origin, p + M.Perp(n) * 380f * MathF.Sign(sweep), warm, beat * 2.5f, 20f, hue, -sweep, true);
+            Vector2 originA = p + n * 1100f;
+            Vector2 originB = p - n * 1100f;
+            SpawnLaser(originA, p + M.Perp(n) * 380f * MathF.Sign(sweep), warm, beat * 2.5f, 20f, hue, -sweep, true);
+            SpawnLaser(originB, p - M.Perp(n) * 380f * MathF.Sign(sweep), warm, beat * 2.5f, 20f, (hue + 0.08f) % 1f, sweep, true);
             SongLaserVolleys++;
             return;
         }
-        if (_cueIntensity > 0.7f && _songBar % 4 == 0)
+        bool barReady = Wave >= 3 ? _songBar % 2 == 0 : _songBar % 4 == 0;
+        if (_cueIntensity > 0.55f && barReady)
         {
-            if ((_songBar / 4) % 2 == 0)
+            int kind = (_songBar / 2) % 3;
+            if (kind == 0)
             {
-                // GATE: three parallel beams with lanes between them
+                // GATE: four parallel beams with clear navigable lanes
                 Vector2 axis = Rng.Chance(0.5f) ? new Vector2(1, 0) : new Vector2(0, 1);
                 Vector2 across = M.Perp(axis);
                 float shift = Rng.Range(-90f, 90f);
-                for (int k = -1; k <= 1; k++)
+                for (int k = 0; k < 4; k++)
                 {
-                    Vector2 mid = p + across * (k * 300f + shift);
+                    float offset = (k - 1.5f) * 300f + shift;
+                    Vector2 mid = p + across * offset;
                     SpawnLaser(mid - axis * 3200f, mid, warm, beat * 2f, 22f, hue, 0f, true, 6400f);
                 }
                 EmitEvent("LASER GATE", 1.0f);
             }
-            else
+            else if (kind == 1)
             {
-                // CROSS: an X through the player's neighbourhood
+                // CROSS: 3-beam symmetric star/cross through the player's neighbourhood (60° spacing)
                 Vector2 c = p + M.FromAngle(Rng.Range(0, M.Tau), Rng.Range(60f, 160f));
                 float a = Rng.Range(0, MathF.PI);
-                for (int k = 0; k < 2; k++)
+                for (int k = 0; k < 3; k++)
                 {
-                    Vector2 d = M.FromAngle(a + k * MathF.PI * 0.5f);
-                    SpawnLaser(c - d * 3200f, c, warm, beat * 2f, 22f, hue, 0f, true, 6400f);
+                    Vector2 d = M.FromAngle(a + k * (MathF.PI / 3f));
+                    SpawnLaser(c - d * 3200f, c, warm, beat * 2f, 22f, (hue + k * 0.04f) % 1f, 0f, true, 6400f);
                 }
                 EmitEvent("LASER CROSS", 1.0f);
+            }
+            else
+            {
+                // PRISM CAGE: 4 rotating boundary beams framing an arena box around the player
+                float spin = (_songBar % 4 == 0 ? 1f : -1f) * 0.16f;
+                float a0 = Rng.Range(0, MathF.PI * 0.5f);
+                for (int k = 0; k < 4; k++)
+                {
+                    float sideA = a0 + k * MathF.PI * 0.5f;
+                    Vector2 radial = M.FromAngle(sideA);
+                    Vector2 tangent = M.Perp(radial);
+                    Vector2 mid = p + radial * 340f;
+                    SpawnLaser(mid - tangent * 1500f, mid, warm, beat * 2.5f, 20f, (hue + 0.12f) % 1f, spin, true, 3000f);
+                }
+                EmitEvent("PRISM CAGE", 1.0f);
             }
             SongLaserVolleys++;
         }

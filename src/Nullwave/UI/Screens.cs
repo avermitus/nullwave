@@ -48,6 +48,8 @@ public static class Screens
         r.UiText("BEST WAVE " + meta.BestWave.ToString("00") + "   //   BEST SCORE " + FormatScore(meta.BestScore), 64, 760, 1.75f, M.WithAlpha(p.Dim, 0.85f));
         r.UiText("MOVE  WASD / STICK     AIM  MOUSE / STICK     FIRE  LMB / RT", 64, 794, 1.55f, M.WithAlpha(p.Dim, 0.68f));
         r.UiText("DASH  SPACE / A     RESONANCE  E / X     FOCUS  SHIFT / LB", 64, 818, 1.55f, M.WithAlpha(p.Dim, 0.68f));
+        if (!string.IsNullOrEmpty(audio.SpotifyTrack))
+            r.UiTextRight("SPOTIFY // " + FormatTrack(audio.SpotifyTrack, 38), 1536, 748, 1.4f, M.WithAlpha(p.Accent, 0.9f), true);
         r.UiTextRight("AUDIO // " + SourceLabel(audio), 1536, 774, 1.55f, M.WithAlpha(audio.External ? p.Accent : p.Dim, 0.9f));
 
         DrawSpectrum(r, p, audio, 1090, 850, 420, 44);
@@ -191,6 +193,8 @@ public static class Screens
 
         r.UiTextRight("BPM " + audio.Bpm.ToString("000"), 1542, 40, 2.2f, M.WithAlpha(p.Accent, 0.85f));
         r.UiTextRight("AUDIO // " + SourceLabel(audio), 1542, 72, 1.45f, M.WithAlpha(p.Dim, 0.85f));
+        if (!string.IsNullOrEmpty(audio.SpotifyTrack))
+            r.UiTextRight("SPOTIFY // " + FormatTrack(audio.SpotifyTrack, 28), 1542, 93, 1.25f, M.WithAlpha(p.Accent, 0.9f), true);
         DrawSpectrum(r, p, audio, 1118, 188, 424, 74);
 
         if (w.BossEnemy is { Dead: false } boss)
@@ -432,7 +436,7 @@ public static class Screens
     public static void DrawPause(Renderer r, Palette p, GameWorld w, int menuIndex, AudioState audio)
     {
         r.UiRect(0, 0, 1600, 900, new Vector4(0.002f, 0.004f, 0.012f, 0.72f));
-        DrawCard(r, p, 500, 214, 600, 508, M.WithAlpha(p.Primary, 0.75f));
+        DrawCard(r, p, 500, 214, 600, 524, M.WithAlpha(p.Primary, 0.75f));
         r.UiTextCentered("SIGNAL HELD", 800, 254, 5.2f, p.Text, true);
         r.UiTextCentered("WAVE " + w.Wave.ToString("00") + "  //  " + SeedCode.ToCode(w.Seed), 800, 320, 1.7f, M.WithAlpha(p.Dim, 0.9f));
         r.UiLine(560, 354, 1040, 354, 1f, M.WithAlpha(p.Primary, 0.3f));
@@ -449,8 +453,10 @@ public static class Screens
         }
         r.UiLine(546, 602, 1054, 602, 1f, M.WithAlpha(p.Primary, 0.24f));
         DrawPauseAttunements(r, p, w.Player);
-        r.UiText("AUDIO // " + SourceLabel(audio), 546, 690, 1.45f, M.WithAlpha(p.Dim, 0.75f));
-        r.UiTextRight("P / START // RESUME", 1054, 690, 1.35f, M.WithAlpha(p.Dim, 0.65f));
+        if (!string.IsNullOrEmpty(audio.SpotifyTrack))
+            r.UiText("SPOTIFY // " + FormatTrack(audio.SpotifyTrack, 42), 546, 686, 1.35f, M.WithAlpha(p.Accent, 0.9f), true);
+        r.UiText("AUDIO // " + SourceLabel(audio), 546, 706, 1.45f, M.WithAlpha(p.Dim, 0.75f));
+        r.UiTextRight("P / START // RESUME", 1054, 706, 1.35f, M.WithAlpha(p.Dim, 0.65f));
     }
 
     private static void DrawHudAttunements(Renderer r, Palette p, World.Player player)
@@ -770,6 +776,14 @@ public static class Screens
         if (line.Length > 0) lines.Add(line);
         if (lines.Count == 0) lines.Add("");
         return lines;
+    }
+
+    public static string FormatTrack(string? track, int maxChars)
+    {
+        if (string.IsNullOrWhiteSpace(track)) return "";
+        string s = track.Trim().ToUpperInvariant();
+        if (s.Length <= maxChars) return s;
+        return maxChars <= 2 ? s[..Math.Max(0, maxChars)] : s[..(maxChars - 2)] + "..";
     }
 
     private static string SourceLabel(AudioState audio)

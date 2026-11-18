@@ -63,6 +63,7 @@ public sealed class Game : IDisposable
     private ulong _seed;
     private bool _daily;
     private Vector2 _mouseUi = new(1100, 420);
+    private Vector2 _aimTilt;
     private bool _disposed;
 
     public AppState State => _state;
@@ -79,12 +80,45 @@ public sealed class Game : IDisposable
     public float Fps => _fps;
     /// <summary>Set from --app before the game is constructed.</summary>
     public static string? AppOverride;
+    /// <summary>Transient smoke/record CLI overrides (never saved to save.json).</summary>
+    public static string? ModsOverride;
+    public static string? AttuneOverride;
+    public static string? SeedOverride;
 
     public void StartSmokeRun(ulong seed)
     {
-        StartRun(seed, false);
+        ulong effectiveSeed = seed;
+        if (!string.IsNullOrWhiteSpace(SeedOverride) && SeedCode.TryParse(SeedOverride, out ulong parsed, out _))
+            effectiveSeed = _meta.TryGetSeedInfo(SeedOverride, out _, out _, out _, out _) ? _meta.ResolveSeed(SeedOverride) : parsed;
+
+        HashSet<string>? modOverride = !string.IsNullOrWhiteSpace(ModsOverride)
+            ? ModifierCatalog.ResolvePreset(ModsOverride)
+            : null;
+
+        StartRun(effectiveSeed, false, modOverride);
         _autoPilot = true;
-        if (_world != null) _world.Player.InvincibleDemo = true;
+        if (_world != null)
+        {
+            _world.Player.InvincibleDemo = true;
+            if (!string.IsNullOrWhiteSpace(AttuneOverride))
+            {
+                string spec = AttuneOverride.Trim();
+                if (spec.Equals("showcase", StringComparison.OrdinalIgnoreCase))
+                {
+                    foreach (var id in new[] { "split", "split", "fan", "pierce", "rapid", "rapid", "homing" })
+                        AttunementCatalog.Apply(_world.Player, id);
+                }
+                else
+                {
+                    foreach (var part in spec.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                    {
+                        var def = AttunementCatalog.Get(part.ToLowerInvariant());
+                        if (def != null) AttunementCatalog.Apply(_world.Player, def.Id);
+                    }
+                }
+            }
+            Console.WriteLine($"SMOKECONFIG | seed={SeedCode.ToCode(_world.Seed)} mods={_world.Mods.Active.Count} mult=x{_world.Mods.ScoreMultiplier:0.00} bossPhases={_world.Mods.BossPhases} attunes={_world.Player.AttunementCount}");
+        }
     }
 
     public Game(IWindow window, Renderer renderer, InputState? input, bool capture = false)
@@ -336,7 +370,7 @@ public sealed class Game : IDisposable
         StartDemo();
     }
 
-    public void StartRun(ulong seed, bool daily)
+    public void StartRun(ulong seed, bool daily, HashSet<string>? modifierOverride = null)
     {
         _seed = seed;
         _daily = daily;
@@ -345,7 +379,7 @@ public sealed class Game : IDisposable
             Seed = seed,
             Daily = daily,
             Sfx = _audio.Sfx,
-            SelectedModifiers = new HashSet<string>(_meta.SelectedModifiers),
+            SelectedModifiers = new HashSet<string>(modifierOverride ?? _meta.SelectedModifiers),
             UnlockedAttunements = new HashSet<string>(_meta.UnlockedAttunements),
         });
         _state = AppState.Playing;
@@ -441,6 +475,23 @@ public sealed class Game : IDisposable
                     _audio.Sfx.Trigger(SfxType.Menu, 0.25f);
                 }
                 break;
+        }
+
+        GameWorld? aimWorld = _state is AppState.Playing or AppState.Paused or AppState.Attuning or AppState.GameOver ? _world : _demo;
+        if (aimWorld != null)
+        {
+            Vector2 targetAim = aimWorld.Player.AimDir * 0.65f;
+            if (_input != null && _state == AppState.Playing)
+            {
+                Vector2 mouseNorm = new(
+                    (_mouseUi.X - Renderer.DesignWidth * 0.5f) / (Renderer.DesignWidth * 0.5f),
+                    (_mouseUi.Y - Renderer.DesignHeight * 0.5f) / (Renderer.DesignHeight * 0.5f));
+                targetAim = Vector2.Lerp(aimWorld.Player.AimDir, mouseNorm, 0.55f);
+            }
+            targetAim = Renderer.ClampAimTilt(targetAim);
+            _aimTilt = _capture
+                ? targetAim
+                : Vector2.Lerp(_aimTilt, targetAim, 1f - MathF.Exp(-dt * 6.5f));
         }
     }
 
@@ -859,6 +910,8 @@ public sealed class Game : IDisposable
         _runRecorded = true;
         if (_world.Summary != null)
         {
+            if (string.IsNullOrEmpty(_world.Summary.Track) && !string.IsNullOrEmpty(_audio.State.SpotifyTrack))
+                _world.Summary.Track = _audio.State.SpotifyTrack;
             _unlocks.Clear();
             _unlocks.AddRange(_meta.RecordRun(_world.Summary));
             _records = _meta.LastRecords;
@@ -990,6 +1043,7 @@ public sealed class Game : IDisposable
         float fx = GameSettings.Current.MusicFx / 100f;
         fx *= _renderer.HypeScale;
         float punch = 1f + fx * (_director.Kick * 0.014f + _director.Build * 0.05f - _director.DropPulse * 0.07f);
+        _renderer.AimTilt = _aimTilt;
         _renderer.BeginWorld(world.Cam.Position + world.Cam.ShakeOffset, world.Cam.Zoom * punch);
         WorldRenderer.Draw(_renderer, world, _palette, _audio.State, _elapsed);
         _renderer.BeginUi();

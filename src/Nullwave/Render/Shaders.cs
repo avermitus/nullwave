@@ -77,6 +77,7 @@ uniform vec3 uSec;
 // player motion: how fast (0..1) and which way the ship is moving in screen space
 uniform float uSpeed;
 uniform vec2 uVel;
+uniform vec2 uAim;
 uniform float uTravel;
 // two backdrop genomes, blended by uMix during a transition
 uniform int uStyleA;
@@ -341,7 +342,7 @@ vec3 renderGenome(int style, vec4 params, vec4 mut, vec3 po, vec3 pf, vec2 uv) {
 void main() {
     float aspect = uResolution.x / max(uResolution.y, 1.0);
     vec2 uv = (vUv - 0.5) * vec2(aspect, 1.0);
-    uv += uCam * 0.00004;
+    uv += uCam * 0.00004 + uAim * 0.038;
     vec3 col = renderGenome(uStyleA, uParamA, uMutA, uPalOffA, uPalFreqA, uv);
     if (uMix > 0.001) {
         // transition: the new genome blooms out from the centre over the old one
@@ -356,6 +357,8 @@ void main() {
     vec3 ambient = mix(pal(0.15 + uv.y * 0.35 + uFlow * 0.01), pal(0.65 + uv.x * 0.25 - uFlow * 0.01), 0.5 + 0.5 * sin(uFlow * 0.07 + uv.x));
     float lum = dot(col, vec3(0.299, 0.587, 0.114));
     col += ambient * (0.11 + uKick * 0.04) * clamp(1.0 - lum * 3.0, 0.0, 1.0);
+    float aimWash = 0.5 + 0.5 * dot(normalize(uv + vec2(0.0001)), normalize(vec2(uAim.x, -uAim.y) + vec2(0.0001)));
+    col += mix(uColB, uPrim * 0.28, 0.35) * length(uAim) * aimWash * 0.05 * (0.4 + uEnergy * 0.6);
     col += uColC * exp(-r * 2.2) * uBeat * 0.06;
     float vig = smoothstep(1.35, 0.2, r);
     col *= 0.68 + 0.32 * vig;

@@ -8,7 +8,9 @@ Candidates are scored on a 1–5 scale for **Player Impact** (higher is better),
 | **2** | `TASK-002` | **Live Attunement Loadout Strip on HUD & Pause Overlay** | **4 / 5** | **1 / 5** | **2 / 5** | `TASK-001` | **Done** |
 | **3** | `TASK-003` | **Interactive Seed Entry & Seed History Replay in Archive** | **4 / 5** | **2 / 5** | **2 / 5** | `TASK-001` | **Done** |
 | **4** | `TASK-004` | **On-Beat Dash / Rhythm Synergy Bonus ("Phase Sync")** | **4 / 5** | **2 / 5** | **3 / 5** | None | **Done** |
-| **5** | `TASK-005` | **Choir Boss Phase-Transition Choreography & Audio-Reactive Telegraph Polish** | **3 / 5** | **2 / 5** | **3 / 5** | None | **Active** |
+| **5** | `TASK-005` | **Choir Boss Phase-Transition Choreography & Audio-Reactive Telegraph Polish** | **3 / 5** | **2 / 5** | **3 / 5** | None | **Done** |
+| **6** | `TASK-006` | **Local Spotify Integration & Hardcore Riddim Drop-Trailer Recorder Hooks** | **5 / 5** | **2 / 5** | **2 / 5** | `TASK-002`, `TASK-004`, `TASK-005` | **Done** |
+| **7** | `TASK-007` | **Aim-Reactive 3D Backdrop Parallax & Camera Tilt, Richer Laser/Bullet Trails, and Expanded Laser Choreography** | **5 / 5** | **2 / 5** | **3 / 5** | `TASK-005` | **Active** |
 
 ---
 

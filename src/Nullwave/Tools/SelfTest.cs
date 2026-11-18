@@ -44,6 +44,9 @@ public static class SelfTest
             TestSeedReplayAndEntry();
             TestPhaseSync();
             TestBossPhaseChoreography();
+            TestSpotifyIntegration();
+            TestHardModifierRecordPreset();
+            TestAimCameraAndLaserVisuals();
             Console.WriteLine($"RESULT: PASS ({_checks} assertions, {sw.Elapsed.TotalSeconds:0.0}s)");
             return 0;
         }
@@ -1049,5 +1052,177 @@ public static class SelfTest
         Check(blindWorld.EventText.Contains("BLIND CHOIR"), "phase IV emits BLIND CHOIR subtitle");
 
         Console.WriteLine($"  boss choreography: clearRadius={GameWorld.BossPhaseClearRadius:0} phase={boss.BossPhase + 1}/{world.Mods.BossPhases} teleMax={maxBossTelegraph:0.00} blindPhase={blindBoss.BossPhase + 1}/{blindWorld.Mods.BossPhases}");
+    }
+
+    /// <summary>TASK-006: Spotify desktop/web window-title parsing, FormatTrack truncation, and RunRecord Track persistence.</summary>
+    private static void TestSpotifyIntegration()
+    {
+        // Desktop Idle & Ad
+        Check(SpotifyBridge.ParseWindowTitle("").State == SpotifyPlaybackState.Idle, "empty desktop title -> Idle");
+        Check(SpotifyBridge.ParseWindowTitle("Spotify").State == SpotifyPlaybackState.Idle, "Spotify -> Idle");
+        Check(SpotifyBridge.ParseWindowTitle("Spotify Premium").State == SpotifyPlaybackState.Idle, "Spotify Premium -> Idle");
+        Check(SpotifyBridge.ParseWindowTitle("Advertisement").State == SpotifyPlaybackState.Ad, "Advertisement -> Ad");
+
+        // Desktop Playing (including hyphenated song titles)
+        var t1 = SpotifyBridge.ParseWindowTitle("Svdden Death - Behemoth");
+        Check(t1.IsPlaying && t1.Artist == "Svdden Death" && t1.Title == "Behemoth" && t1.DisplayTrack == "Svdden Death - Behemoth", "desktop artist-title parsed");
+
+        var t2 = SpotifyBridge.ParseWindowTitle("Svdden Death - Behemoth - VIP");
+        Check(t2.IsPlaying && t2.Artist == "Svdden Death" && t2.Title == "Behemoth - VIP" && t2.DisplayTrack == "Svdden Death - Behemoth - VIP", "hyphenated title preserved");
+
+        // Browser Web Player variants
+        var w1 = SpotifyBridge.ParseWindowTitle("Marauda - Blunder - Spotify - Google Chrome", isBrowserProcess: true);
+        Check(w1.IsPlaying && w1.IsWebPlayer && w1.Artist == "Marauda" && w1.Title == "Blunder", "chrome web player parsed");
+
+        var w2 = SpotifyBridge.ParseWindowTitle("Mercy • Megalodon - Spotify — Mozilla Firefox", isBrowserProcess: true);
+        Check(w2.IsPlaying && w2.IsWebPlayer && w2.Artist == "Megalodon" && w2.Title == "Mercy", "firefox bullet web player parsed");
+
+        var wIdle = SpotifyBridge.ParseWindowTitle("Spotify – Web Player: Music for everyone - Microsoft Edge", isBrowserProcess: true);
+        Check(wIdle.State == SpotifyPlaybackState.Idle && wIdle.IsWebPlayer, "web player idle detected");
+
+        var wOther = SpotifyBridge.ParseWindowTitle("YouTube - Google Chrome", isBrowserProcess: true);
+        Check(wOther.State == SpotifyPlaybackState.NotRunning, "unrelated browser tab ignored");
+
+        // FormatTrack truncation helper
+        Check(Screens.FormatTrack("Svdden Death - Behemoth", 38) == "SVDDEN DEATH - BEHEMOTH", "FormatTrack uppercases short track");
+        Check(Screens.FormatTrack("Very Long Artist Name - Very Long Track Title", 20).Length == 20 && Screens.FormatTrack("Very Long Artist Name - Very Long Track Title", 20).EndsWith(".."), "FormatTrack truncates with ..");
+
+        // Bridge override propagation
+        var bridge = new SpotifyBridge();
+        bridge.SetOverrideForTest(t1);
+        bridge.Update(2f);
+        Check(bridge.Current.IsPlaying && bridge.Current.DisplayTrack == "Svdden Death - Behemoth", "bridge override preserved");
+
+        // RunRecord Track persistence + backward-compatible legacy save
+        string dir = Path.Combine(Path.GetTempPath(), "nullwave-spotify-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            string path = Path.Combine(dir, "save.json");
+            var meta = MetaProgress.Load(path);
+            var run = TelemetryRun(0x5071UL, 8, 55_000, 24);
+            run.Track = t1.DisplayTrack;
+            meta.RecordRun(run);
+            Check(meta.RecentRuns[0].Track == "Svdden Death - Behemoth", "RunRecord stores Track");
+
+            var reloaded = MetaProgress.Load(path);
+            Check(reloaded.RecentRuns[0].Track == "Svdden Death - Behemoth", "Track survives JSON reload");
+
+            string legacyPath = Path.Combine(dir, "legacy.json");
+            File.WriteAllText(legacyPath, "{\"RecentRuns\":[{\"Seed\":\"001N4C4M\",\"Wave\":4,\"Score\":9000}]}");
+            var legacy = MetaProgress.Load(legacyPath);
+            Check(legacy.RecentRuns.Count == 1 && legacy.RecentRuns[0].Track == "", "legacy RunRecord defaults Track to empty");
+        }
+        finally
+        {
+            try { Directory.Delete(dir, true); } catch { /* best-effort temp cleanup */ }
+        }
+        Console.WriteLine($"  spotify: desktop=\"{t1.DisplayTrack}\" web=\"{w2.DisplayTrack}\"");
+    }
+
+    /// <summary>TASK-006: hard/all/CSV modifier presets and Phase-Sync-aware Pilot dash timing.</summary>
+    private static void TestHardModifierRecordPreset()
+    {
+        var hard = ModifierCatalog.ResolvePreset("hard");
+        Check(hard.Count == 15 && !hard.Contains("quiet-signal"), "hard preset selects 15 modifiers excluding quiet-signal");
+        var hardMods = ModifierCatalog.Build(hard);
+        Check(MathF.Abs(hardMods.ScoreMultiplier - 25f) < 1e-4f, "hard preset hits 25x score cap");
+        Check(hardMods.BossPhases == 4 && !hardMods.SynthDisabled, "hard preset enables BLIND CHOIR without disabling synth");
+
+        var all = ModifierCatalog.ResolvePreset("all");
+        Check(all.Count == 16 && all.Contains("quiet-signal"), "all preset selects all 16 modifiers");
+        Check(ModifierCatalog.Build(all).SynthDisabled, "all preset enables quiet-signal");
+
+        var csv = ModifierCatalog.ResolvePreset("metronome, unknown-mod, blind-choir");
+        Check(csv.Count == 2 && csv.Contains("metronome") && csv.Contains("blind-choir"), "CSV preset filters valid IDs");
+
+        // Pilot Phase Sync dash timing check
+        var world = new GameWorld(new RunConfig { Seed = 0x9110UL });
+        world.Player.Pos = Vector2.Zero;
+        world.Player.DashCooldown = 0f;
+        world.SpawnEnemyBullet(new Vector2(65f, 0f), new Vector2(-100f, 0f), 5f, 0.5f, BulletKind.Orb, 4f);
+
+        world.SetBeatClockForTest(2.50, 120f); // mid-beat, outside Phase Sync window
+        var offBeatFrame = Pilot.Think(world);
+        Check(!offBeatFrame.Dash, "Pilot holds dash off-beat for medium-range threat (65u)");
+
+        world.SetBeatClockForTest(2.01, 120f); // on-beat, inside Phase Sync window
+        var onBeatFrame = Pilot.Think(world);
+        Check(onBeatFrame.Dash, "Pilot dashes on-beat to trigger Phase Sync for medium-range threat");
+
+        // Emergency close threat (<44u) dashes immediately even off-beat
+        world.EnemyBullets.Clear();
+        world.SpawnEnemyBullet(new Vector2(30f, 0f), new Vector2(-100f, 0f), 5f, 0.5f, BulletKind.Orb, 4f);
+        world.SetBeatClockForTest(2.50, 120f);
+        var emergencyFrame = Pilot.Think(world);
+        Check(emergencyFrame.Dash, "Pilot emergency-dashes immediately when bullet < 44u even off-beat");
+
+        Console.WriteLine($"  hard preset: count={hard.Count} mult=x{hardMods.ScoreMultiplier:0.00} bossPhases={hardMods.BossPhases} pilotSync={onBeatFrame.Dash}");
+    }
+
+    /// <summary>TASK-007: Aim-tilt/oblique matrix z=0 invariance, LiftPoint parity, and expanded SongLasers/Choir laser choreography.</summary>
+    private static void TestAimCameraAndLaserVisuals()
+    {
+        var clamped = Renderer.ClampAimTilt(new Vector2(3.5f, -4.2f));
+        Check(clamped == new Vector2(1f, -1f), "ClampAimTilt clamps extreme coordinates to [-1, 1]");
+        var nanClamped = Renderer.ClampAimTilt(new Vector2(float.NaN, float.PositiveInfinity));
+        Check(nanClamped == Vector2.Zero, "ClampAimTilt sanitizes NaN/Inf to zero");
+
+        Vector2 cam = new(320f, -180f);
+        Vector2 view = new(800f, 450f);
+        Vector2 obZero = Renderer.ComputeObliqueVec(Vector2.Zero);
+        Vector2 obRight = Renderer.ComputeObliqueVec(new Vector2(0.85f, -0.60f));
+        var matZero = Renderer.BuildWorldMeshMatrix(cam, view, obZero);
+        var matTilt = Renderer.BuildWorldMeshMatrix(cam, view, obRight);
+
+        // z=0 ground footprint must remain 100% invariant regardless of AimTilt
+        var pGround = new Vector4(510f, -40f, 0f, 1f);
+        Check(Vector4.Distance(Vector4.Transform(pGround, matZero), Vector4.Transform(pGround, matTilt)) < 1e-6f, "z=0 world projection invariant across AimTilt");
+
+        // LiftPoint(pos, z, oblique) must match the 3D oblique matrix projection of (pos.X, pos.Y, z)
+        const float liftZ = 95f;
+        Vector2 pos = new(510f, -40f);
+        Vector2 lifted = Renderer.LiftPoint(pos, liftZ, obRight);
+        var proj3D = Vector4.Transform(new Vector4(pos.X, pos.Y, liftZ, 1f), matTilt);
+        var projLift = Vector4.Transform(new Vector4(lifted.X, lifted.Y, 0f, 1f), matTilt);
+        Check(MathF.Abs(proj3D.X - projLift.X) < 1e-5f && MathF.Abs(proj3D.Y - projLift.Y) < 1e-5f, "LiftPoint matches BuildWorldMeshMatrix X/Y projection");
+
+        // Expanded SongLasers: 8-beam Drop Starburst, 2-beam Build Scan, High-Energy Gate/Cross/Cage, 0 in Breakdown
+        RunSong(0.3f, 0f, 0f, true, 12f, out int dropBeams, out float warmDrop);
+        Check(dropBeams >= 8, "Drop STARBURST fires 8 beams");
+        Check(warmDrop >= 0.9f, "8-beam Drop STARBURST preserves 2-beat warmup");
+
+        var buildWorld = RunSong(0.3f, 0.9f, 0f, false, 16f, out int buildBeams, out _);
+        Check(buildWorld.SongLaserVolleys >= 2 && buildBeams >= 2, "Build SCAN fires dual opposing sweeps");
+
+        var highWorld = RunSong(0.65f, 0f, 0f, false, 30f, out int highBeams, out _);
+        Check(highWorld.SongLaserVolleys >= 3 && highBeams >= 3, "High-energy 0.65f cadence triggers Gate/Cross/Prism Cage");
+
+        var breakWorld = RunSong(0.95f, 0f, 1.0f, true, 24f, out int breakBeams, out _);
+        Check(breakWorld.SongLaserVolleys == 0 && breakBeams == 0, "Breakdown suppresses all song lasers even on drop cue");
+
+        // Choir Boss Phase II+ spawns multi-beam Choir laser volleys cleanly
+        var audio = new AudioState { Bpm = 120f };
+        var bossWorld = new GameWorld(new RunConfig { Seed = 0x7007UL });
+        bossWorld.Player.InvincibleDemo = true;
+        bossWorld.BeginWave(5);
+        bossWorld.ClearSpawnQueueForCapture();
+        bossWorld.SpawnForCapture(EnemyRole.Boss, Vector2.Zero);
+        var boss = bossWorld.BossEnemy!;
+        boss.Spawning = false;
+        boss.Hp = boss.MaxHp * 0.55f;
+        bossWorld.Step(1f / 60f, audio, InputFrame.Empty);
+        Check(boss.BossPhase == 1, "Choir enters Phase II");
+        int maxChoirLasers = 0;
+        for (int i = 0; i < 60 * 10; i++)
+        {
+            bossWorld.Step(1f / 60f, audio, InputFrame.Empty);
+            int c = 0;
+            foreach (var l in bossWorld.Lasers) if (l.BossLaser) c++;
+            maxChoirLasers = Math.Max(maxChoirLasers, c);
+        }
+        Check(maxChoirLasers >= 2, "Choir Phase II+ fires multi-beam laser volleys");
+
+        Console.WriteLine($"  aim & lasers: oblique=({obRight.X:0.00},{obRight.Y:0.00}) dropBeams={dropBeams} buildBeams={buildBeams} highVolleys={highWorld.SongLaserVolleys} choirMaxLasers={maxChoirLasers}");
     }
 }

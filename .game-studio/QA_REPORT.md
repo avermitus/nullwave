@@ -2,7 +2,7 @@
 
 - **Reviewer:** `@qa` (Independent QA / Performance Reviewer)
 - **Date:** `2026-11-18`
-- **Task Reviewed:** `TASK-001`, `TASK-002`, `TASK-003`, `TASK-004` & `TASK-005`
+- **Task Reviewed:** `TASK-001` through `TASK-007`
 - **Overall Verdict:** **PASS (`APPROVED — 0 DEFECTS`)**
 
 ---
@@ -347,3 +347,139 @@ All `TASK-004` acceptance criteria are satisfied with **0 defects**. `TASK-004` 
 
 ### 9.4 Final QA Sign-Off (`TASK-005`)
 All `TASK-005` acceptance criteria are satisfied with **0 defects**. `TASK-005` is **APPROVED** and marked **`done`**.
+
+---
+
+## 10. Independent QA Verification (`TASK-006` — Local Spotify Integration & Hardcore Recorder Hooks)
+
+### 10.1 Code & Performance Review (`SpotifyBridge.cs`, `AudioEngine.cs`, `Meta.cs`, `Pilot.cs`, `Program.cs`, `Game.cs`, `Screens.cs`)
+- **Pure-C# Local Spotify Bridge (`src/Nullwave/Audio/SpotifyBridge.cs`, `AudioState.cs`, `AudioEngine.cs`):**
+  - Zero external NuGet packages or OAuth credentials.
+  - `SpotifyBridge.ParseWindowTitle` deterministically parses desktop `Spotify` (`Idle`, `Ad`, `Artist - Title` preserving hyphenated titles) and browser Web Player tabs (`chrome`, `msedge`, `firefox`, `brave`, `opera`, `Vivaldi` in both `"Artist - Title - Spotify"` and `"Title • Artist - Spotify"` formats), ignoring unrelated browser tabs (`NotRunning`).
+  - `SpotifyBridge.Update(dt)` throttles process enumeration to `1.25s` intervals, wraps OS handle reads in `try/catch`, and disposes every `Process` instance in `finally` blocks (zero hot-path allocations).
+  - `AudioEngine.Update(dt)` propagates `SpotifyTrack` and `SpotifyStatus`, enriching `State.SourceName = "SPOTIFY // " + State.SpotifyTrack` when Spotify is captured or playing over system loopback.
+- **UI Placement & Run Telemetry (`Screens.cs`, `World.cs`, `Meta.cs`, `Game.cs`):**
+  - `Screens.DrawTitle` (`1536, 748`), `Screens.DrawHud` (`1542, 93` nested between `AUDIO //` at `y = 72` and Spectrum top at `y = 114`), and `Screens.DrawPause` (`546, 686` with card height `524` and footer at `y = 706`) render `SPOTIFY // <TRACK>` cleanly via `FormatTrack` with zero overlap.
+  - `RunRecord.Track` persists safely and defaults to `""` on legacy `save.json` loads.
+- **Hard-Preset Recorder Hooks & Phase-Sync Pilot (`Meta.cs`, `Program.cs`, `Game.cs`, `Pilot.cs`):**
+  - `ModifierCatalog.ResolvePreset("hard")` selects 15 modifiers (excluding `"quiet-signal"`), hitting the `25.00x` score multiplier cap and `BossPhases = 4` (`blind-choir`), while `"all"` selects all 16.
+  - `Game.StartSmokeRun` passes `modOverride` into `new HashSet<string>(modifierOverride ?? _meta.SelectedModifiers)` inside `StartRun`, keeping `--mods` and `--attune` strictly transient without mutating `save.json`.
+  - `Pilot.Think` executes emergency survival dashes immediately (`bullet < 44u` or `boss < 120u`) while aligning tactical dashes (`44..95u` or flow dashes) with `World.IsInPhaseSyncWindow(out _)`.
+
+### 10.2 Independent Build, SelfTest & Smoke Verification (`TASK-006`)
+- **Release Build:**
+  ```text
+  ./.dotnet/dotnet.exe build src/Nullwave/Nullwave.csproj -c Release --nologo
+  Build succeeded.
+      0 Warning(s)
+      0 Error(s)
+  Time Elapsed 00:00:00.60
+  ```
+- **Headless Self-Test Suite (`--selftest`):**
+  ```text
+  ./run.cmd --selftest
+  ...
+    spotify: desktop="Svdden Death - Behemoth" web="Megalodon - Mercy"
+    hard preset: count=15 mult=x25.00 bossPhases=4 pilotSync=True
+  RESULT: PASS (67666 assertions, 2.7s)
+  ```
+  *(Note: The 30,000-tick `TestLongRun` soak loop performs per-tick entity/bullet finiteness assertions; updating `Pilot.Think` to perform Phase Sync dashes alters bullet/enemy counts per tick, resulting in `67,666` passing assertions with zero failures or skipped checks.)*
+- **Standard & Hard-Preset Smoke Verification:**
+  ```text
+  ./run.cmd --smoke 5
+  SMOKECONFIG | seed=00Z9DUE9 mods=3 mult=x1.66 bossPhases=3 attunes=0
+  SMOKE | 5.0s fps=121 wave=1 score=2414 enemies=2 bullets=2 bpm=126.0 audio=Edge capture=True
+  RENDERSTATE | after1=baseline after2=baseline alphaMin=255 rerenderDiff=0.000 % -> PASS
+
+  ./run.cmd --smoke 4 --mods hard --attune showcase --seed 001N4C4M
+  SMOKECONFIG | seed=001N4C4M mods=15 mult=x25.00 bossPhases=4 attunes=7
+  SMOKE | 4.0s fps=109 wave=1 score=39256 enemies=2 bullets=0 bpm=126.0 audio=GENERATIVE SCORE capture=True
+  RENDERSTATE | after1=baseline after2=baseline alphaMin=255 rerenderDiff=0.000 % -> PASS
+  ```
+
+### 10.3 Visual Capture & Trailer Readiness Verification (`TASK-006`)
+- Visually inspected `screenshots/title.png`, `screenshots/combat.png` (confirming `SYNC 4` from Phase-Sync-aware `Pilot` dashes alongside the `SPL`/`FAN`/`PRC`/`RPD` HUD strip), and `screenshots/pause.png` (`read_file`): zero UI overlap.
+- Confirmed `--record` / `--smoke` accept `--mods hard --attune showcase --seed 001N4C4M` cleanly for trailer recording.
+
+### 10.4 Final QA Sign-Off (`TASK-006`)
+All `TASK-006` acceptance criteria are satisfied with **0 defects**. `TASK-006` is **APPROVED** and marked **`done`**.
+
+---
+
+## 11. Independent QA Verification (`TASK-006` Trailer Workstream — Hardcore Riddim Drop-Synced Trailer)
+
+### 11.1 Stream, Decode & File Integrity
+- **`capture/nullwave_hardcore_riddim_trailer.mp4` (Master):**
+  - `ffprobe`: `1600x900`, `h264`, `60 fps`, `aac` `48000 Hz` stereo, `duration=85.300000s`, `size=72,283,820 bytes`.
+  - `ffmpeg -v error -i capture/nullwave_hardcore_riddim_trailer.mp4 -f null -`: exit `0` (zero errors).
+- **`capture/nullwave_hardcore_riddim_trailer_720p.mp4` (Web Copy):**
+  - `ffprobe`: `1280x720`, `h264`, `60 fps`, `aac` `48000 Hz` stereo, `duration=85.300000s`, `size=35,244,452 bytes`.
+  - `ffmpeg -v error -i capture/nullwave_hardcore_riddim_trailer_720p.mp4 -f null -`: exit `0` (zero errors).
+- **Source Muxed Takes (`capture/riddim_act1..4_mux.mp4`):**
+  - Verified all 4 muxed takes exist (`63.3 MB`, `76.7 MB`, `51.4 MB`, `87.3 MB`).
+
+### 11.2 Drop-Sync Alignment (`python capture/make_riddim_trailer.py --verify-only`)
+- `act1`: `cut=2.600s kick=2.605s delta=+0.005s | drop=10.315s kick=10.320s delta=+0.005s`
+- `act2`: `cut=22.400s kick=22.405s delta=+0.005s | drop=29.900s kick=29.905s delta=+0.005s`
+- `act3`: `cut=42.200s kick=42.835s delta=+0.635s (build) | drop=49.700s kick=49.705s delta=+0.005s`
+- `act4`: `cut=62.000s kick=60.560s delta=-1.440s (build) | drop=69.500s kick=69.505s delta=+0.005s`
+- All 4 drops lock to a kick onset within **`+0.005s` (5 ms)**.
+
+### 11.3 Visual Inspection (`capture/riddim_preview_1..4.png`)
+- Visually inspected all 4 drop-moment previews via `read_file`:
+  - Confirmed `SIGNAL METRONOME  GLASS CHOIR  +13` (`x25.00` hard modifiers, `INTEGRITY 1 / 1`), Attunement loadout strip (`SPL`, `FAN`, `PRC`, `RPD`, `HOM`), `PHASE SYNC` rings + afterimages + `PHASE SYNC +RES` / `SYNC 2` HUD readout, `THE CHOIR // PHASE 1 OF 4 // OVERTURE` 4-phase boss bar (`BLIND CHOIR`), song lasers, and `AUDIO // APP / FFPLAY` at `139–141 BPM` with zero ghosting.
+  - *(Minor non-blocking note: raw `--record` captures at native `2560x1600` 16:10 display resolution were aspect-fitted into `1600x900` with `80px` `#06070C` side margins, and the `0.70s` `1664x936` slow-mo zoom crops ~18px top/bottom, lightly touching the top pixels of the boss bar title at `y = 10` during the slow-mo punch.)*
+
+### 11.4 Trailer QA Verdict
+**PASS (`APPROVED — 0 BLOCKERS`)**.
+
+---
+
+## 12. Independent QA Verification (`TASK-007` — Aim-Reactive 3D Backdrop Parallax & Camera Tilt, Richer Trails, Expanded Laser Choreography & Docs)
+
+### 12.1 Code & Performance Review (`Renderer.cs`, `Shaders.cs`, `WorldRenderer.cs`, `World.cs`, `World.Enemies.cs`, `Game.cs`)
+- **Aim-Reactive 3D Backdrop Parallax & Camera Tilt (`Renderer.cs`, `Shaders.cs`, `WorldRenderer.cs`, `Game.cs`):**
+  - `Renderer.ClampAimTilt`, `ComputeObliqueVec` (`new(-AimTilt.X * 0.14f, Oblique + AimTilt.Y * 0.10f)`), `BuildWorldMeshMatrix`, and `LiftPoint` keep `z = 0` ground footprints and `ScreenToWorld` 100% invariant across all aim angles while lifting 3D meshes and 2D overlays consistently (`WorldRenderer.Lift` delegates to `r.Lift`).
+  - `_aimTilt` is smoothly damped inside `Game.Update(dt)` so `Game.Render()` stays idempotent on double-renders.
+  - `Shaders.BackgroundFrag` applies `uAim * 0.038` parallax and subtle directional accent wash; `WorldRenderer.DrawBackdrop3D` populates `r.Backdrop` with 18 monolith `Column`s, 3 rotating orbital `Ring`s, 12 `HaloSegment`s, 6 `Crystal`/`Octa` accents, and 2 `Knot` sculptures in `z = -760..-2200` with zero per-frame heap allocations (`BackdropBrightness = 0.22f * intensity`).
+- **Richer Bullet & Laser Trails (`WorldRenderer.cs`):**
+  - `DrawBullets` upgrades player bolts (wider outer bloom `b.Radius * 3.8f`, elongated velocity streaks, plasma spark node) and enemy bullets (stronger dark contrast halos `b.Radius * 2.25f`, longer dual-layer comet tails `28..120u`, trailing shimmer nodes).
+  - `DrawLasers` adds warmup boundary guide rails + rotating emitter lock arc, 4-layer HDR active beams (bloom sheath, saturated mid body, beat-pulsing harmonic side rails, white-hot core), 8 high-speed directional chevrons (`1250 u/s`), and glowing emitter/endpoint flares.
+- **Expanded Song-Laser & Enemy Laser Choreography (`World.cs`, `World.Enemies.cs`):**
+  - `UpdateSongLasers` raises active laser limit to `24`, triggers high-energy patterns from `0.55f` on a 2-bar cadence from Wave 3+, upgrades Drop `STARBURST` to 8 beams, Build `SCAN` to dual opposing sweeps, and cycles 4-beam `LASER GATE`, 3-beam `LASER CROSS`, and 4-beam rotating `PRISM CAGE`, preserving `Breakdown > 0.5f` = `0` lasers and `Warmup = beat * 2f`.
+  - Choir Phase II+ fires mirrored/3-beam sweeping laser volleys (`BossAttack`), and Wave 3+ / Elite `Prism` units project twin opposing `560`-unit rotating laser blades.
+
+### 12.2 Independent Build, SelfTest & Smoke Verification (`TASK-007`)
+- **Release Build:**
+  ```text
+  ./.dotnet/dotnet.exe build src/Nullwave/Nullwave.csproj -c Release --nologo
+  Build succeeded.
+      0 Warning(s)
+      0 Error(s)
+  Time Elapsed 00:00:00.57
+  ```
+- **Headless Self-Test Suite (`--selftest`):**
+  ```text
+  ./run.cmd --selftest
+  ...
+    song lasers: high-energy volleys=11 breakdown=0 build=8 dropBeams=8 minWarmup=0.95s
+  ...
+    aim & lasers: oblique=(-0.12,0.36) dropBeams=8 buildBeams=2 highVolleys=8 choirMaxLasers=4
+  RESULT: PASS (67677 assertions, 2.3s)
+  ```
+- **Live OpenGL Smoke Run (`--smoke 5`):**
+  ```text
+  ./run.cmd --smoke 5
+  NULLWAVE | GL 4.1.0 NVIDIA 617.42 | NVIDIA GeForce RTX 5060 Laptop GPU/PCIe/SSE2
+  SMOKECONFIG | seed=00Z9DUE9 mods=3 mult=x1.66 bossPhases=3 attunes=0
+  AUDIO | capture=True output=True device=WAITING FOR FFPLAY error=
+  SMOKE | 5.0s fps=64 wave=1 score=2415 enemies=2 bullets=2 bpm=126.0 audio=GENERATIVE SCORE capture=True
+  RENDERSTATE | after1=baseline after2=baseline alphaMin=255 rerenderDiff=0.000 % -> PASS
+  ```
+
+### 12.3 Visual Captures & GitHub Documentation Verification (`TASK-007`)
+- Visually inspected `screenshots/combat.png`, `screenshots/boss.png`, `screenshots/laser.png`, `screenshots/songlasers.png`, `screenshots/speed.png`, `docs/screenshots/latest_title.png`, and `docs/screenshots/latest_songlasers.png` via `read_file`: confirmed balanced 3D backdrop depth, crisp 4-layer HDR lasers with chevrons/flares, 8-beam Starburst, richer bullet tails, and zero HUD overlap.
+- Verified `README.md` and `CHANGELOG.md`: all 24 unique file/image links resolve (`exists=True`), all 8 `docs/screenshots/latest_*.png` files are non-empty, all technical details match `src/Nullwave/`, and zero non-game content (no AI/swarm/task-ID/model/quota references) is present.
+
+### 12.4 Final QA Sign-Off (`TASK-007`)
+All `TASK-007` acceptance criteria are satisfied with **0 defects**. `TASK-007` is **APPROVED** and marked **`done`**.

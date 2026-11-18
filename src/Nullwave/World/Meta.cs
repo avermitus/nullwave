@@ -49,6 +49,7 @@ public sealed class RunRecord
     public int Modifiers { get; set; }
     public RunRecords Records { get; set; }
     public string PlayedUtc { get; set; } = "";
+    public string Track { get; set; } = "";
 
     public static RunRecord From(RunSummary s, RunRecords records, string playedUtc) => new()
     {
@@ -66,6 +67,7 @@ public sealed class RunRecord
         Modifiers = s.Modifiers?.Count ?? 0,
         Records = records,
         PlayedUtc = playedUtc,
+        Track = s.Track ?? "",
     };
 }
 
@@ -417,6 +419,33 @@ public static class ModifierCatalog
     {
         foreach (var m in All) if (m.Id == id) return m;
         return null;
+    }
+
+    /// <summary>
+    /// Resolves a CLI modifier preset ("hard" = all 15 except quiet-signal, "all" = all 16, or CSV IDs).
+    /// </summary>
+    public static HashSet<string> ResolvePreset(string? spec)
+    {
+        var set = new HashSet<string>(StringComparer.Ordinal);
+        if (string.IsNullOrWhiteSpace(spec)) return set;
+        string s = spec.Trim();
+        if (s.Equals("hard", StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (var m in All)
+                if (!m.Id.Equals("quiet-signal", StringComparison.Ordinal)) set.Add(m.Id);
+            return set;
+        }
+        if (s.Equals("all", StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (var m in All) set.Add(m.Id);
+            return set;
+        }
+        foreach (var part in s.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var def = Get(part.ToLowerInvariant());
+            if (def != null) set.Add(def.Id);
+        }
+        return set;
     }
 
     public static RunModifiers Build(HashSet<string> selected)

@@ -13,6 +13,7 @@ public static class WorldRenderer
     public static void Draw(Renderer r, GameWorld world, Palette palette, AudioState audio, float time)
     {
         r.Palette = palette;
+        DrawBackdrop3D(r, world, palette, audio, time);
         DrawArena(r, world, palette, audio, time);
         DrawMotes(r, world, palette, audio, time);
         DrawObstacles(r, world, palette, time);
@@ -26,6 +27,106 @@ public static class WorldRenderer
         DrawShockwaves(r, world);
     }
 
+    /// <summary>
+    /// Perspective 3D architecture behind the arena (rotating monolith columns, orbital rings,
+    /// and crystalline shards) driven by camera parallax, aim tilt, and audio energy.
+    /// </summary>
+    private static void DrawBackdrop3D(Renderer r, GameWorld w, Palette p, AudioState audio, float time)
+    {
+        float intensity = GameSettings.Current.BackgroundIntensity / 100f;
+        r.BackdropBrightness = 0.22f * intensity;
+        if (r.BackdropBrightness <= 0.005f) return;
+
+        Vector2 camParallax = r.Camera * 0.16f;
+        Vector2 aim = r.AimTilt;
+        Vector3 eye = new(camParallax.X + aim.X * 220f, camParallax.Y - aim.Y * 150f, 1150f);
+        Vector3 target = new(camParallax.X - aim.X * 140f, camParallax.Y + aim.Y * 95f, -900f);
+        Vector3 fogColor = Vector3.Lerp(p.BackA, p.BackB, 0.45f) * 0.65f;
+        r.SetBackdropCamera(eye, target, 54f, fogColor);
+
+        float pulse = audio.BeatPulse;
+        float energy = w.Energy;
+        float bass = w.Bass;
+        var batch = r.Backdrop;
+
+        // Two concentric rings of monolith columns in deep space.
+        for (int ring = 0; ring < 2; ring++)
+        {
+            int count = ring == 0 ? 10 : 8;
+            float radius = ring == 0 ? 1520f : 2200f;
+            float baseZ = ring == 0 ? -920f : -1520f;
+            float colW = ring == 0 ? 110f : 150f;
+            float colH = (ring == 0 ? 640f : 920f) * (1f + bass * 0.25f + pulse * 0.12f);
+            for (int i = 0; i < count; i++)
+            {
+                float a = i * M.Tau / count + time * (ring == 0 ? 0.045f : -0.028f) + ring * 0.31f;
+                float bob = MathF.Sin(time * 0.9f + i * 1.1f + ring) * 90f;
+                Vector2 xy = camParallax + M.FromAngle(a, radius);
+                float hue = (p.BaseHue + 0.06f * i + ring * 0.22f) % 1f;
+                var mats = MaterialSet.ForHue(M.Hsv(hue, 0.65f, 1f), 0.24f + pulse * 0.35f + energy * 0.25f);
+                var xf = Matrix4x4.CreateScale(colW, colW, colH)
+                         * Matrix4x4.CreateRotationZ(a + i * 0.4f)
+                         * Matrix4x4.CreateTranslation(xy.X, xy.Y, baseZ + bob);
+                batch.Add(Models.Column, xf, mats);
+            }
+        }
+
+        // Giant rotating orbital rings framing the outer horizon.
+        for (int i = 0; i < 3; i++)
+        {
+            float rad = 1480f + i * 540f;
+            float z = -1150f - i * 520f;
+            float hue = (p.BaseHue + 0.14f + i * 0.18f) % 1f;
+            var mats = MaterialSet.ForHue(M.Hsv(hue, 0.7f, 1f), 0.22f + pulse * 0.35f + energy * 0.22f);
+            var xf = Matrix4x4.CreateScale(rad, rad, rad * (0.9f + pulse * 0.15f))
+                     * Matrix4x4.CreateRotationX(0.32f + aim.Y * 0.22f + MathF.Sin(time * 0.25f + i) * 0.18f)
+                     * Matrix4x4.CreateRotationY(-0.24f - aim.X * 0.24f + MathF.Cos(time * 0.21f + i) * 0.18f)
+                     * Matrix4x4.CreateRotationZ(time * (0.08f + i * 0.04f) * (i % 2 == 0 ? 1f : -1f))
+                     * Matrix4x4.CreateTranslation(camParallax.X, camParallax.Y, z);
+            batch.Add(Models.Ring, xf, mats);
+        }
+
+        // Orbiting halo segments and geometric crystal/octa/knot accents.
+        for (int i = 0; i < 12; i++)
+        {
+            float a = i * M.Tau / 12f - time * 0.14f;
+            float dist = 1120f + (i % 3) * 340f;
+            float z = -760f - (i % 4) * 280f + MathF.Sin(time * 1.2f + i) * 75f;
+            Vector2 xy = camParallax + M.FromAngle(a, dist);
+            float hue = (p.BaseHue + 0.35f + i * 0.055f) % 1f;
+            var mats = MaterialSet.ForHue(M.Hsv(hue, 0.72f, 1f), 0.26f + pulse * 0.40f);
+            var segXf = Matrix4x4.CreateScale(140f, 30f, 38f + energy * 22f)
+                        * Matrix4x4.CreateRotationX(MathF.Sin(time * 0.7f + i) * 0.4f)
+                        * Matrix4x4.CreateRotationZ(a + MathF.PI * 0.5f)
+                        * Matrix4x4.CreateTranslation(xy.X, xy.Y, z);
+            batch.Add(Models.HaloSegment, segXf, mats);
+
+            if (i % 2 == 0)
+            {
+                var mesh = i % 4 == 0 ? Models.Crystal : Models.Octa;
+                float sc = (62f + (i % 3) * 16f) * (1f + pulse * 0.15f);
+                var cxf = Matrix4x4.CreateScale(sc)
+                          * Matrix4x4.CreateRotationY(time * 0.65f + i)
+                          * Matrix4x4.CreateRotationZ(time * 0.45f - i)
+                          * Matrix4x4.CreateTranslation(xy.X * 0.92f + camParallax.X * 0.08f, xy.Y * 0.92f + camParallax.Y * 0.08f, z - 180f);
+                batch.Add(mesh, cxf, mats);
+            }
+        }
+
+        for (int i = 0; i < 2; i++)
+        {
+            float a = time * 0.18f + i * MathF.PI;
+            Vector2 xy = camParallax + M.FromAngle(a, 920f);
+            float z = -1750f - i * 420f;
+            var mats = MaterialSet.ForHue(i == 0 ? p.Primary : p.Secondary, 0.30f + energy * 0.38f + pulse * 0.30f);
+            var kxf = Matrix4x4.CreateScale(260f + pulse * 24f)
+                      * Matrix4x4.CreateRotationX(time * 0.28f + i)
+                      * Matrix4x4.CreateRotationY(time * 0.34f - i)
+                      * Matrix4x4.CreateTranslation(xy.X, xy.Y, z);
+            batch.Add(Models.Knot, kxf, mats);
+        }
+    }
+
     private static Matrix4x4 Xf(Vector2 pos, float z, float yaw, float scale, float roll = 0f, float pitch = 0f)
     {
         return Matrix4x4.CreateScale(scale)
@@ -36,7 +137,7 @@ public static class WorldRenderer
     }
 
     /// <summary>Screen position of a point lifted to height z (matches the oblique mesh pass).</summary>
-    private static Vector2 Lift(Vector2 p, float z) => new(p.X, p.Y - z * Renderer.Oblique);
+    private static Vector2 Lift(Renderer r, Vector2 p, float z) => r.Lift(p, z);
 
     // ------------------------------------------------------------------ arena
 
@@ -189,7 +290,7 @@ public static class WorldRenderer
                 r.Polyline(verts, 2.4f + o.HitFlash * 4f, new Vector4(1f, 1f, 1f, o.HitFlash * 0.6f), true, true);
             float frac = o.MaxHp > 0 ? M.Clamp01(o.Hp / o.MaxHp) : 0;
             if (frac < 0.98f)
-                r.Arc(Lift(o.Pos, top), o.Radius * 0.5f, -MathF.PI * 0.5f, M.Tau * frac, 2f, M.WithAlpha(hue, 0.7f), 24, true);
+                r.Arc(Lift(r, o.Pos, top), o.Radius * 0.5f, -MathF.PI * 0.5f, M.Tau * frac, 2f, M.WithAlpha(hue, 0.7f), 24, true);
         }
     }
 
@@ -212,7 +313,7 @@ public static class WorldRenderer
             r.FillCircle(pickup.Pos + new Vector2(5, 7), 7f, Shadow, 10);
             var mats = MaterialSet.ForHue(col, 1.3f * blink, 0f);
             r.Meshes.Add(Models.PickupGem, Xf(pickup.Pos, 16f + bob, pickup.Phase * 1.3f, 6.5f, 0.3f), mats);
-            Vector2 pos = Lift(pickup.Pos, 16f + bob);
+            Vector2 pos = Lift(r, pickup.Pos, 16f + bob);
             r.Circle(pickup.Pos, 15f, 4f, M.WithAlpha(col, 0.14f * blink), 20, true);
             r.Circle(pos, 11f, 1f, M.WithAlpha(col, 0.6f * blink), 14, true);
             if (pickup.Kind == PickupKind.Health)
@@ -253,35 +354,62 @@ public static class WorldRenderer
         {
             float a = l.Alpha;
             if (a <= 0.01f) continue;
-            var col = M.Hsv(l.Hue, l.BossLaser ? 0.7f : 0.55f, 1f);
+            var col = M.Hsv(l.Hue, l.BossLaser ? 0.75f : 0.60f, 1f);
             Vector2 dir = l.Direction;
+            Vector2 perp = M.Perp(dir);
             Vector2 end = l.Origin + dir * l.Length;
             if (l.Age < l.Warmup)
             {
-                float pulse = 0.55f + 0.45f * MathF.Sin(l.Age * 24f);
-                var warn = M.WithAlpha(col, a * (0.28f + pulse * 0.18f));
-                r.Line(l.Origin, end, 1.2f, warn);
-                int dashes = 18;
+                float progress = M.Clamp01(l.Age / MathF.Max(0.01f, l.Warmup));
+                float pulse = 0.55f + 0.45f * MathF.Sin(l.Age * 26f);
+                float halfW = l.Width * (0.58f - progress * 0.14f);
+                var railCol = M.WithAlpha(col, a * (0.18f + progress * 0.34f));
+                r.Line(l.Origin + perp * halfW, end + perp * halfW, 1.1f, railCol, true);
+                r.Line(l.Origin - perp * halfW, end - perp * halfW, 1.1f, railCol, true);
+                var warn = M.WithAlpha(col, a * (0.30f + pulse * 0.24f));
+                r.Line(l.Origin, end, 1.4f, warn, true);
+                int dashes = 20;
                 for (int i = 0; i < dashes; i++)
                 {
                     float t0 = i / (float)dashes;
-                    float t1 = MathF.Min(1f, t0 + 0.028f);
+                    float t1 = MathF.Min(1f, t0 + 0.03f);
                     Vector2 a0 = l.Origin + dir * (l.Length * t0);
                     Vector2 a1 = l.Origin + dir * (l.Length * t1);
-                    r.Line(a0, a1, 2f + l.Width * 0.035f, M.WithAlpha(col, a * 0.72f));
+                    r.Line(a0, a1, 2.2f + l.Width * 0.04f, M.WithAlpha(col, a * (0.55f + progress * 0.4f)), true);
                 }
-                r.Circle(l.Origin, 12f + MathF.Sin(l.Age * 18f) * 3f, 1.2f, M.WithAlpha(col, a), 20, true);
+                float lockR = 14f + (1f - progress) * 14f + MathF.Sin(l.Age * 18f) * 2.5f;
+                r.Circle(l.Origin, lockR, 1.4f, M.WithAlpha(col, a * 0.9f), 20, true);
+                r.Arc(l.Origin, lockR * 1.35f, l.Age * 5f, 1.6f, 1.4f, new Vector4(1f, 1f, 1f, a * 0.7f), 10, true);
             }
             else
             {
-                r.Line(l.Origin, end, l.Width * 2.6f, M.WithAlpha(col, 0.055f * a), true);
-                r.Line(l.Origin, end, l.Width * 1.05f, M.WithAlpha(col, 0.22f * a), true);
-                r.Line(l.Origin, end, MathF.Max(2f, l.Width * 0.14f), new Vector4(1f, 1f, 1f, 0.95f * a), true);
-                for (int i = 0; i < 6; i++)
+                // 4-layer HDR beam: outer bloom sheath, saturated mid body, beat-pulsing side rails, white-hot core
+                r.Line(l.Origin, end, l.Width * 3.4f, M.WithAlpha(col, 0.06f * a), true);
+                r.Line(l.Origin, end, l.Width * 1.25f, M.WithAlpha(col, 0.26f * a), true);
+                float railOff = l.Width * 0.36f * (1f + w.BeatPulse * 0.35f);
+                var railCol = M.WithAlpha(Vector4.Lerp(col, Vector4.One, 0.28f), 0.52f * a);
+                r.Line(l.Origin + perp * railOff, end + perp * railOff, MathF.Max(1.4f, l.Width * 0.09f), railCol, true);
+                r.Line(l.Origin - perp * railOff, end - perp * railOff, MathF.Max(1.4f, l.Width * 0.09f), railCol, true);
+                r.Line(l.Origin, end, MathF.Max(2.5f, l.Width * 0.18f), new Vector4(1f, 1f, 1f, 0.98f * a), true);
+
+                // Travelling directional energy chevrons along the beam
+                float chevW = MathF.Max(6f, l.Width * 0.32f);
+                for (int i = 0; i < 8; i++)
                 {
-                    float d = (l.Age * 900f + i * 200f) % l.Length;
-                    r.Circle(l.Origin + dir * d, 2.4f, 1f, new Vector4(1f, 1f, 1f, a * 0.7f), 8, true);
+                    float d = (l.Age * 1250f + i * (l.Length / 8f)) % l.Length;
+                    Vector2 tip = l.Origin + dir * d;
+                    Vector2 back = tip - dir * (chevW * 1.15f);
+                    r.Line(tip, back + perp * chevW, 1.7f, new Vector4(1f, 1f, 1f, a * 0.78f), true);
+                    r.Line(tip, back - perp * chevW, 1.7f, new Vector4(1f, 1f, 1f, a * 0.78f), true);
+                    r.FillCircle(tip, MathF.Max(2.2f, l.Width * 0.12f), new Vector4(1f, 1f, 1f, a * 0.9f), 8, true);
                 }
+
+                // Emitter and endpoint flares
+                float flareR = l.Width * (0.65f + w.BeatPulse * 0.25f);
+                r.FillCircle(l.Origin, flareR * 1.4f, M.WithAlpha(col, 0.35f * a), 16, true);
+                r.Circle(l.Origin, flareR * 1.75f, 1.8f, new Vector4(1f, 1f, 1f, 0.72f * a), 20, true);
+                r.FillCircle(end, flareR * 1.15f, M.WithAlpha(col, 0.30f * a), 14, true);
+                r.Line(end - perp * flareR * 1.6f, end + perp * flareR * 1.6f, 2.2f, new Vector4(1f, 1f, 1f, 0.75f * a), true);
             }
         }
     }
@@ -349,7 +477,7 @@ public static class WorldRenderer
             if (GameSettings.Current.EnemyHealthBars && !e.Boss && (e.Elite || e.HealthFrac < 0.995f) && e.Role != EnemyRole.Swarm)
             {
                 float bw = MathF.Max(28f, R * 2f);
-                Vector2 c = Lift(e.Pos, R * 0.9f) + new Vector2(0, -R - 12f);
+                Vector2 c = Lift(r, e.Pos, R * 0.9f) + new Vector2(0, -R - 12f);
                 r.Rect(c, new Vector2(bw + 3f, 5f), 0f, new Vector4(0.01f, 0.01f, 0.025f, 0.85f));
                 float f = e.HealthFrac;
                 r.Rect(c + new Vector2(-bw * 0.5f * (1f - f), 0), new Vector2(bw * f, 2.6f), 0f, M.WithAlpha(e.Elite ? new Vector4(1f, 0.84f, 0.35f, 1f) : hue, 0.95f), true);
@@ -543,49 +671,56 @@ public static class WorldRenderer
     {
         foreach (var b in w.PlayerBullets)
         {
-            if (!r.InView(b.Pos, 60)) continue;
-            var col = M.WithAlpha(new Vector4(0.65f, 1f, 1f, 1f), 0.75f);
-            r.Line(b.PrevPos, b.Pos, b.Radius * 2.8f, new Vector4(0.4f, 0.95f, 1f, 0.15f), true);
-            r.Line(b.PrevPos, b.Pos, b.Radius * 1.15f, col, true);
-            r.FillCircle(b.Pos, b.Radius * 0.85f, new Vector4(1f, 1f, 1f, 0.95f), 8, true);
+            if (!r.InView(b.Pos, 80)) continue;
+            Vector2 dir = M.SafeNorm(b.Vel);
+            float tailLen = Math.Clamp(b.Vel.Length() * 0.032f, 22f, 56f);
+            Vector2 tailStart = b.Pos - dir * tailLen;
+            var col = new Vector4(0.52f, 0.98f, 1f, 1f);
+            r.GradientLine(tailStart, b.Pos, b.Radius * 3.8f, M.WithAlpha(col, 0f), new Vector4(0.35f, 0.95f, 1f, 0.22f), true);
+            r.GradientLine(b.Pos - dir * (tailLen * 0.65f), b.Pos, b.Radius * 1.45f, M.WithAlpha(col, 0f), M.WithAlpha(col, 0.88f), true);
+            r.Line(b.PrevPos, b.Pos, b.Radius * 1.15f, new Vector4(0.85f, 1f, 1f, 0.92f), true);
+            r.FillCircle(b.Pos, b.Radius * 0.95f, new Vector4(1f, 1f, 1f, 0.98f), 8, true);
+            r.FillCircle(b.Pos - dir * (tailLen * 0.55f), b.Radius * 0.45f, new Vector4(0.6f, 1f, 1f, 0.55f), 6, true);
         }
 
-        // Enemy shots flash and swell on the beat as they surge; a dark halo keeps them legible.
+        // Enemy shots flash and swell on the beat as they surge; a stronger dark halo + comet ribbon keeps them readable.
         float onBeat = MathF.Exp(-w.BeatPhase * 7f);
         float beat = 1f + onBeat * 0.35f;
         foreach (var b in w.EnemyBullets)
         {
-            if (!r.InView(b.Pos, 40)) continue;
-            Vector4 hue = M.Hsv(b.Hue, 0.74f, 1f);
-            r.FillCircle(b.Pos, b.Radius * 1.9f, new Vector4(0f, 0f, 0.01f, 0.5f), 10);
-            // glowing comet tail: length follows speed (and stretches on the beat surge)
+            if (!r.InView(b.Pos, 80)) continue;
+            Vector4 hue = M.Hsv(b.Hue, 0.78f, 1f);
+            r.FillCircle(b.Pos, b.Radius * 2.25f, new Vector4(0f, 0f, 0.012f, 0.58f), 10);
+            // glowing dual-layer comet ribbon + shimmer nodes
             {
                 Vector2 vdir = M.SafeNorm(b.Vel);
-                float tail = Math.Clamp(b.Vel.Length() * 0.11f, 22f, 90f) * (1f + onBeat * 0.6f);
+                float tail = Math.Clamp(b.Vel.Length() * 0.145f, 28f, 120f) * (1f + onBeat * 0.7f);
                 Vector2 end = b.Pos - vdir * tail;
-                r.GradientLine(end, b.Pos, b.Radius * 2.8f, M.WithAlpha(hue, 0f), M.WithAlpha(hue, 0.32f), true);
-                r.GradientLine(b.Pos - vdir * tail * 0.65f, b.Pos, MathF.Max(1.4f, b.Radius * 0.9f), new Vector4(1f, 1f, 1f, 0f), M.WithAlpha(Vector4.Lerp(hue, Vector4.One, 0.5f), 0.9f), true);
+                r.GradientLine(end, b.Pos, b.Radius * 3.2f, M.WithAlpha(hue, 0f), M.WithAlpha(hue, 0.40f), true);
+                r.GradientLine(b.Pos - vdir * (tail * 0.72f), b.Pos, MathF.Max(1.6f, b.Radius * 1.1f), new Vector4(1f, 1f, 1f, 0f), M.WithAlpha(Vector4.Lerp(hue, Vector4.One, 0.55f), 0.95f), true);
+                r.FillCircle(b.Pos - vdir * (tail * 0.45f), MathF.Max(1.3f, b.Radius * 0.42f), M.WithAlpha(hue, 0.55f), 6, true);
+                r.FillCircle(b.Pos - vdir * (tail * 0.80f), MathF.Max(1.0f, b.Radius * 0.28f), M.WithAlpha(hue, 0.28f), 6, true);
             }
             if (b.Kind == BulletKind.Needle)
             {
                 Vector2 dir = M.SafeNorm(b.Vel);
-                r.Line(b.Pos - dir * 12f, b.Pos + dir * 14f, b.Radius * 2.2f * beat, M.WithAlpha(hue, 0.16f), true);
-                r.Line(b.Pos - dir * 10f, b.Pos + dir * 11f, b.Radius * 0.8f, M.WithAlpha(hue, 0.9f), true);
-                r.FillCircle(b.Pos, 1.7f, new Vector4(1f, 1f, 1f, 0.95f), 6, true);
+                r.Line(b.Pos - dir * 14f, b.Pos + dir * 15f, b.Radius * 2.4f * beat, M.WithAlpha(hue, 0.20f), true);
+                r.Line(b.Pos - dir * 11f, b.Pos + dir * 12f, b.Radius * 0.9f, M.WithAlpha(hue, 0.95f), true);
+                r.FillCircle(b.Pos, 2.0f, new Vector4(1f, 1f, 1f, 0.98f), 6, true);
             }
             else if (b.Kind == BulletKind.Shard)
             {
                 Vector2 dir = M.SafeNorm(b.Vel);
                 Vector2 n = M.Perp(dir);
                 float rr = b.Radius * beat;
-                r.Triangle(b.Pos + dir * rr * 1.7f, b.Pos - dir * rr * 0.8f + n * rr, b.Pos - dir * rr * 0.8f - n * rr, M.WithAlpha(hue, 0.7f), true);
-                r.Triangle(b.Pos + dir * b.Radius * 1.2f, b.Pos - dir * b.Radius * 0.4f + n * b.Radius * 0.55f, b.Pos - dir * b.Radius * 0.4f - n * b.Radius * 0.55f, new Vector4(1f, 1f, 1f, 0.8f), true);
+                r.Triangle(b.Pos + dir * rr * 1.8f, b.Pos - dir * rr * 0.85f + n * rr * 1.05f, b.Pos - dir * rr * 0.85f - n * rr * 1.05f, M.WithAlpha(hue, 0.78f), true);
+                r.Triangle(b.Pos + dir * b.Radius * 1.25f, b.Pos - dir * b.Radius * 0.4f + n * b.Radius * 0.58f, b.Pos - dir * b.Radius * 0.4f - n * b.Radius * 0.58f, new Vector4(1f, 1f, 1f, 0.88f), true);
             }
             else
             {
-                r.FillCircle(b.Pos, b.Radius * 2.4f * beat, M.WithAlpha(hue, 0.10f), 10, true);
-                r.FillCircle(b.Pos, b.Radius * 1.25f, M.WithAlpha(hue, 0.55f), 10, true);
-                r.FillCircle(b.Pos, b.Radius * 0.62f, new Vector4(1f, 1f, 1f, 0.95f), 8, true);
+                r.FillCircle(b.Pos, b.Radius * 2.6f * beat, M.WithAlpha(hue, 0.14f), 10, true);
+                r.FillCircle(b.Pos, b.Radius * 1.32f, M.WithAlpha(hue, 0.62f), 10, true);
+                r.FillCircle(b.Pos, b.Radius * 0.68f, new Vector4(1f, 1f, 1f, 0.98f), 8, true);
             }
         }
     }

@@ -17,6 +17,7 @@ public sealed class AudioEngine : IDisposable
     public AudioState State { get; } = new();
     public SoundBank Sfx { get; } = new();
     public SynthScore Synth { get; }
+    public SpotifyBridge Spotify { get; } = new();
     public bool CaptureAvailable => _capture != null;
     public bool OutputAvailable => _output != null;
     public float OtherAppPeak => _otherPeak;
@@ -85,6 +86,9 @@ public sealed class AudioEngine : IDisposable
         _time += dt;
         State.Time = (float)_time;
         State.ClearBeatFlags();
+        Spotify.Update(dt);
+        State.SpotifyStatus = Spotify.Current.State;
+        State.SpotifyTrack = Spotify.Current.DisplayTrack;
 
         if (_enableOutput)
         {
@@ -147,7 +151,11 @@ public sealed class AudioEngine : IDisposable
             if (analyzed)
             {
                 State.External = true;
-                State.SourceName = string.IsNullOrWhiteSpace(State.DeviceName) ? "SYSTEM LOOPBACK" : State.DeviceName;
+                bool spotifyActive = (_app != null && _app.Name.Contains("spotify", StringComparison.OrdinalIgnoreCase)) ||
+                                     (_app == null && Spotify.Current.IsPlaying);
+                State.SourceName = spotifyActive && !string.IsNullOrEmpty(State.SpotifyTrack)
+                    ? "SPOTIFY // " + State.SpotifyTrack
+                    : (string.IsNullOrWhiteSpace(State.DeviceName) ? "SYSTEM LOOPBACK" : State.DeviceName);
                 State.Quiet = _quiet;
                 ApplyTracker(dt);
                 return;

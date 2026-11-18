@@ -59,6 +59,35 @@ public sealed class Renderer : IDisposable
     public float Hype { get; set; } = 0.5f;
     /// <summary>Effect multiplier from hype: 0.55x when struggling, up to 1.45x when on fire.</summary>
     public float HypeScale => 0.55f + Hype * 0.9f;
+    /// <summary>Smoothed normalized aim/cursor offset in [-1, 1] driving 3D backdrop parallax and subtle oblique tilt.</summary>
+    public Vector2 AimTilt { get; set; }
+    public Vector2 ObliqueVec => ComputeObliqueVec(AimTilt);
+
+    public static Vector2 ClampAimTilt(Vector2 raw) => new(
+        float.IsFinite(raw.X) ? Math.Clamp(raw.X, -1f, 1f) : 0f,
+        float.IsFinite(raw.Y) ? Math.Clamp(raw.Y, -1f, 1f) : 0f);
+
+    public static Vector2 ComputeObliqueVec(Vector2 aimTilt)
+    {
+        aimTilt = ClampAimTilt(aimTilt);
+        return new Vector2(-aimTilt.X * 0.14f, Oblique + aimTilt.Y * 0.10f);
+    }
+
+    public static Matrix4x4 BuildWorldMeshMatrix(Vector2 camera, Vector2 view, Vector2 obliqueVec)
+    {
+        float ix = 1f / MathF.Max(1f, view.X);
+        float iy = 1f / MathF.Max(1f, view.Y);
+        return new Matrix4x4(
+            ix, 0, 0, 0,
+            0, -iy, 0, 0,
+            obliqueVec.X * ix, obliqueVec.Y * iy, -1f / 4000f, 0,
+            -camera.X * ix, camera.Y * iy, 0, 1);
+    }
+
+    public static Vector2 LiftPoint(Vector2 pos, float z, Vector2 obliqueVec) =>
+        new(pos.X + z * obliqueVec.X, pos.Y - z * obliqueVec.Y);
+
+    public Vector2 Lift(Vector2 pos, float z) => LiftPoint(pos, z, ObliqueVec);
     public BackdropGenome Backdrop0 => _genA;
     private BackdropGenome _genA = BackdropGenome.Random(new Random());
     private BackdropGenome? _genB;
@@ -168,16 +197,7 @@ public sealed class Renderer : IDisposable
     }
 
     /// <summary>Orthographic oblique projection matching the 2D world camera exactly at z = 0.</summary>
-    private Matrix4x4 WorldMeshMatrix()
-    {
-        float ix = 1f / MathF.Max(1f, _view.X);
-        float iy = 1f / MathF.Max(1f, _view.Y);
-        return new Matrix4x4(
-            ix, 0, 0, 0,
-            0, -iy, 0, 0,
-            0, Oblique * iy, -1f / 4000f, 0,
-            -_camera.X * ix, _camera.Y * iy, 0, 1);
-    }
+    private Matrix4x4 WorldMeshMatrix() => BuildWorldMeshMatrix(_camera, _view, ObliqueVec);
 
     public void BeginUi()
     {
@@ -250,6 +270,7 @@ public sealed class Renderer : IDisposable
         _background.SetFloat("uTravel", _travel);
         _background.SetFloat("uSpeed", PlayerSpeed);
         _background.SetVec2("uVel", PlayerDirection.X, -PlayerDirection.Y);
+        _background.SetVec2("uAim", ClampAimTilt(AimTilt));
         if (_genB != null)
         {
             _mix += frameDt / 1.8f;
@@ -302,7 +323,8 @@ public sealed class Renderer : IDisposable
             _meshShader.SetMatrix("uViewProj", WorldMeshMatrix());
             _meshShader.SetInt("uPerspective", 0);
             _meshShader.SetVec3("uLightDir", new Vector3(-0.45f, -0.6f, 0.85f));
-            _meshShader.SetVec3("uViewDir", new Vector3(0, Oblique, 1f));
+            var ob = ObliqueVec;
+            _meshShader.SetVec3("uViewDir", new Vector3(-ob.X, ob.Y, 1f));
             _meshShader.SetVec3("uRimColor", new Vector3(Palette.Accent.X, Palette.Accent.Y, Palette.Accent.Z) * 0.8f);
             _meshShader.SetVec3("uFill", Palette.BackB * 1.5f);
             _meshShader.SetFloat("uRim", 0.42f + audio.BeatPulse * 0.25f);

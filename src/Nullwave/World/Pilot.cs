@@ -97,16 +97,19 @@ public static class Pilot
         bool burst = p.Resonance >= p.ResonanceMax;
         if (!p.IsDashing && p.DashCooldown <= 0.01f)
         {
+            float closestSq = float.MaxValue;
             foreach (var b in w.EnemyBullets)
             {
-                if (M.DistSq(p.Pos, b.Pos) < 62f * 62f)
-                {
-                    dash = true;
-                    break;
-                }
+                float dSq = M.DistSq(p.Pos, b.Pos);
+                if (dSq < closestSq) closestSq = dSq;
             }
+            float bossDist = w.BossEnemy != null ? M.Dist(p.Pos, w.BossEnemy.Pos) : float.MaxValue;
+            bool emergency = closestSq < 44f * 44f || bossDist < 120f;
+            bool mediumThreat = closestSq < 95f * 95f;
+            bool flowSync = (w.EnemyBullets.Count > 0 || w.Enemies.Count > 0) && w.Flow < 0.92f;
+            if (emergency) dash = true;
+            else if ((mediumThreat || flowSync) && w.IsInPhaseSyncWindow(out _)) dash = true;
         }
-        if (w.BossEnemy != null && M.Dist(p.Pos, w.BossEnemy.Pos) < 140f) dash = true;
         return new InputFrame(bestMove, aim, target != null || w.EnemyBullets.Count > 0, dash, false, burst);
     }
 

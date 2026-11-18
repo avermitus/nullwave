@@ -40,6 +40,8 @@ public sealed class AudioState
     public bool Quiet;
     public string SourceName = "GENERATIVE SCORE";
     public string DeviceName = "";
+    public string SpotifyTrack = "";
+    public SpotifyPlaybackState SpotifyStatus = SpotifyPlaybackState.NotRunning;
     public float[] Spectrum = new float[SpectrumBars];
     public float[] Bands = new float[6];
 

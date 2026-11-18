@@ -6,9 +6,9 @@ A native Windows twin-stick bullet hell in pure C# (OpenGL via Silk.NET, audio v
 
 ## Features
 
-- **Music-Driven Combat & Pacing:** Real-time log-spectral-flux beat tracking and song-structure analysis (`MusicDirector`) detect tempo, downbeats, builds, breakdowns, and drops — locking enemy volleys to the beat, surging projectile motion, triggering drop shockwaves, and firing downbeat **Song Lasers** (`STARBURST`, `SCAN`, `GATE`, `CROSS`).
-- **Per-App or System Loopback Audio:** Captures system mix or isolates a single application's audio session via Windows WASAPI process loopback (`F3` in game or `--app <name>`), with a built-in generative synth score fallback when silent.
-- **Procedural 3D Meshes & 6 Backdrop Shaders:** Lit oblique 3D vector-mesh ships, 11 enemy roles, extruded monoliths, and **THE CHOIR** boss rendered over six procedural GPU shaders (`LIQUID`, `HYPERSPACE`, `KALEIDOSCOPE`, `FIELD`, `AURORA`, `SHATTER`).
+- **Music-Driven Combat & Laser Choreography:** Real-time log-spectral-flux beat tracking and song-structure analysis (`MusicDirector`) detect tempo, downbeats, builds, breakdowns, and drops — locking enemy volleys to the beat, surging projectile motion, triggering drop shockwaves, and firing 4-layer HDR **Song Lasers** (`STARBURST`, `SCAN`, `LASER GATE`, `LASER CROSS`, `PRISM CAGE`) with travelling directional chevrons.
+- **Per-App Loopback & Local Spotify Now-Playing:** Captures system mix or isolates a single application's audio session via Windows WASAPI process loopback (`F3` in game or `--app <name>`), automatically detects live Spotify desktop/Web Player `Artist - Title` playback, and falls back to a built-in generative synth score when silent.
+- **Aim-Reactive 3D Backdrop & Oblique Tilt:** Lit procedural 3D vector-mesh ships, 11 enemy roles, extruded monoliths, and **THE CHOIR** boss rendered over six procedural GPU shaders (`LIQUID`, `HYPERSPACE`, `KALEIDOSCOPE`, `FIELD`, `AURORA`, `SHATTER`) and a perspective 3D backdrop layer of orbital rings and monolith columns that subtly parallax and tilt with your aim.
 - **Racer Flow & Phase Sync:** Momentum-based interceptor handling with **FLOW** multipliers (`// FLOW STATE //`) and **Phase Sync** — dashing within `±65 ms` of a beat grants bonus Flow, Resonance, faster dash recharge, and score without penalizing off-beat survival dodges.
 - **Endless Replayability & Flight Recorder:** 12 stackable **Attunements** with a live HUD/Pause loadout strip, 16 unlockable **Archive** modifiers, Daily Signals, **NEW BEST** personal-best callouts, a rolling 8-run flight recorder, and interactive 8-character **Seed Replay / Custom Seed Entry**.
 
@@ -39,15 +39,21 @@ powershell -ExecutionPolicy Bypass -File tools/dotnet-install.ps1 -Channel 8.0 -
 ./run.cmd --selftest      # headless assertion suite
 ./run.cmd --beatbench     # beat tracker accuracy on synthetic songs
 ./run.cmd --sfxdump       # render every sound effect to capture/sfx/*.wav
+
+# optional smoke / video capture overrides
+./run.cmd --smoke 5 --mods hard --attune showcase --seed 001N4C4M
+./run.cmd --record 30 --wave 4 --mods hard --attune showcase --app spotify
 ```
 
 `run.cmd` expects the SDK at `.dotnet/dotnet.exe`; with a system SDK use `dotnet run --project src/Nullwave/Nullwave.csproj -c Release -- <args>`.
 
 ## Screenshots
 
-| Combat & Attunement Loadout | The Choir Boss Fight |
+| Title Screen & 3D Backdrop | Combat, 3D Parallax & Loadout |
 |---|---|
-| ![Combat](docs/screenshots/latest_combat.png) | ![Boss](docs/screenshots/latest_boss.png) |
+| ![Title](docs/screenshots/latest_title.png) | ![Combat](docs/screenshots/latest_combat.png) |
+| **HDR Song Lasers & Prism Cage** | **The Choir Boss Choreography** |
+| ![Song Lasers](docs/screenshots/latest_songlasers.png) | ![Boss](docs/screenshots/latest_boss.png) |
 | **Phase Sync & Flow State** | **Archive Seed Decoder & History** |
 | ![Speed](docs/screenshots/latest_speed.png) | ![Archive](docs/screenshots/latest_archive.png) |
 | **Signal Held Pause Overlay** | **Signal Lost & Personal Bests** |
