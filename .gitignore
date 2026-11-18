@@ -8,6 +8,9 @@ build/
 # recordings, captures and local screenshots (large, regenerable)
 /capture/
 /screenshots/
+# explicit recorder outputs (HANDOFF.md section 8; already covered by /capture/ and *.mp4/*.wav)
+capture/*.mp4
+capture/*.wav
 *.mp4
 *.mkv
 *.wav

@@ -454,9 +454,70 @@ public sealed partial class World
         }
     }
 
+    public const float BossPhaseClearRadius = 580f;
+
+    public static string BossPhaseSubtitle(int phase, int totalPhases) => phase switch
+    {
+        0 => "OVERTURE",
+        1 => "HARMONIC CONVERGENCE",
+        2 => "NULL RESONANCE",
+        _ => "BLIND CHOIR",
+    };
+
+    public static int ComputeDesiredBossPhase(float healthFrac, int totalPhases)
+    {
+        int phases = Math.Max(3, totalPhases);
+        int desired = 0;
+        for (int p = 0; p < phases - 1; p++)
+        {
+            float threshold = 1f - (p + 1) / (float)phases;
+            if (healthFrac < threshold) desired = p + 1;
+        }
+        return desired;
+    }
+
+    private void TriggerBossPhaseTransition(Enemy e, int newPhase, int totalPhases)
+    {
+        e.HighestTriggeredPhase = newPhase;
+        e.BossPhase = newPhase;
+        e.BossInvuln = e.PhaseBreakDuration;
+        e.PhaseBreakTimer = e.PhaseBreakDuration;
+        e.HitFlash = 1f;
+        e.BossAttackBeats = 1.25f;
+        e.Telegraph = 0f;
+
+        // Clear nearby enemy bullets so phase shifts open cleanly on the beat.
+        float clearSq = BossPhaseClearRadius * BossPhaseClearRadius;
+        for (int i = EnemyBullets.Count - 1; i >= 0; i--)
+        {
+            var b = EnemyBullets[i];
+            if (M.DistSq(b.Pos, e.Pos) > clearSq) continue;
+            SpawnParticle(b.Pos, M.SafeNorm(b.Pos - e.Pos) * 140f + FxRng.InCircle(60f), 0.25f, 2.4f, M.Hsv(b.Hue, 0.55f, 1f, 0.85f), ParticleKind.Spark, 2.5f);
+            ReturnBullet(EnemyBullets, i);
+        }
+
+        AddShockwave(e.Pos, BossPhaseClearRadius, 0.85f, 12f, M.Hsv(e.Hue, 0.65f, 1f, 1f), true);
+        AddShockwave(e.Pos, 320f, 0.55f, 4f, Vector4.One);
+        BurstParticles(e.Pos, M.Hsv(e.Hue, 0.7f, 1f, 0.9f), 28, 360f, 3.2f, 0.65f, ParticleKind.Spark);
+        EmitEvent($"THE CHOIR // {BossPhaseSubtitle(e.BossPhase, totalPhases)}", 2.0f);
+        Sfx?.Trigger(SfxType.Boss, 0.9f);
+        Cam.AddShake(12f);
+        Flash = MathF.Max(Flash, 0.35f);
+        for (int i = 0; i < 3; i++)
+        {
+            Vector2 p = e.Pos + FxRng.InCircle(240);
+            if (Enemies.Count < 28) SpawnEnemyAt(EnemyRole.Swarm, p, true);
+        }
+    }
+
     private void UpdateBoss(Enemy e, float dt, AudioState audio)
     {
-        if (e.BossInvuln > 0) e.BossInvuln -= dt;
+        if (e.BossInvuln > 0f) e.BossInvuln = MathF.Max(0f, e.BossInvuln - dt);
+        if (e.PhaseBreakTimer > 0f) e.PhaseBreakTimer = MathF.Max(0f, e.PhaseBreakTimer - dt);
+        float targetFrac = e.HealthFrac;
+        e.BossHealthDisplay = e.BossHealthDisplay > targetFrac
+            ? MathF.Max(targetFrac, e.BossHealthDisplay - dt * 0.42f)
+            : targetFrac;
         e.Angle += dt * 0.22f;
         e.Rot += dt * 0.55f;
         // The Choir stalks the player instead of parking at the top of the arena;
@@ -471,43 +532,33 @@ public sealed partial class World
         e.Pos = M.Lerp(e.Pos, target, 1f - MathF.Exp(-dt * 1.4f));
         e.BossScale = 1f + BeatPulse * 0.025f + MathF.Sin(Time * 0.7f) * 0.01f;
 
-        float hpFrac = e.HealthFrac;
         int phases = Math.Max(3, Mods.BossPhases);
-        int desiredPhase = 0;
-        for (int p = 0; p < phases - 1; p++)
-        {
-            float threshold = 1f - (p + 1) / (float)phases;
-            if (hpFrac < threshold) desiredPhase = p + 1;
-        }
-        if (desiredPhase > e.BossPhase)
-        {
-            e.BossPhase = desiredPhase;
-            e.BossInvuln = 1.1f;
-            EmitEvent($"CHOIR PHASE {e.BossPhase + 1}", 1.6f);
-            Sfx?.Trigger(SfxType.Boss, 0.8f);
-            Cam.AddShake(12f);
-            AddShockwave(e.Pos, 430, 0.8f, 7f, M.Hsv(e.Hue, 0.6f, 1f, 1f));
-            for (int i = 0; i < 3; i++)
-            {
-                Vector2 p = e.Pos + FxRng.InCircle(240);
-                if (Enemies.Count < 28) SpawnEnemyAt(EnemyRole.Swarm, p, true);
-            }
-        }
+        int desiredPhase = ComputeDesiredBossPhase(targetFrac, phases);
+        if (desiredPhase > e.HighestTriggeredPhase)
+            TriggerBossPhaseTransition(e, desiredPhase, phases);
 
-        if (e.BossInvuln <= 0 && BeatTick)
+        if (e.BossInvuln <= 0f)
         {
-            e.BossAttackBeats -= 1f;
-            if (e.BossAttackBeats <= 0f)
+            if (BeatTick)
             {
-                BossAttack(e, audio);
-                e.BossAttackBeats = e.BossPhase switch
+                e.BossAttackBeats -= 1f;
+                if (e.BossAttackBeats <= 0f)
                 {
-                    0 => 2.0f,
-                    1 => 1.65f,
-                    2 => 1.45f,
-                    _ => 1.15f,
-                };
+                    BossAttack(e, audio);
+                    e.BossAttackBeats = e.BossPhase switch
+                    {
+                        0 => 2.0f,
+                        1 => 1.65f,
+                        2 => 1.45f,
+                        _ => 1.15f,
+                    };
+                }
             }
+            e.Telegraph = e.BossAttackBeats <= 1.0f ? M.Clamp01(1f - e.BossAttackBeats + BeatPhase * 0.5f) : 0f;
+        }
+        else
+        {
+            e.Telegraph = 0f;
         }
     }
 

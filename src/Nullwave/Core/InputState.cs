@@ -25,9 +25,27 @@ public sealed class InputState
     private static readonly Key[] PollKeys =
     [
         Key.W, Key.A, Key.S, Key.D, Key.Space, Key.ShiftLeft, Key.ShiftRight,
-        Key.E, Key.P, Key.F1, Key.F2, Key.F3, Key.Tab, Key.Escape, Key.Enter,
-        Key.Up, Key.Down, Key.Left, Key.Right, Key.Number1, Key.Number2, Key.Number3,
-        Key.R, Key.N, Key.Q, Key.M,
+        Key.E, Key.P, Key.F1, Key.F2, Key.F3, Key.Tab, Key.Escape, Key.Enter, Key.Backspace,
+        Key.Up, Key.Down, Key.Left, Key.Right,
+        Key.Number0, Key.Number1, Key.Number2, Key.Number3, Key.Number4,
+        Key.Number5, Key.Number6, Key.Number7, Key.Number8, Key.Number9,
+        Key.Keypad0, Key.Keypad1, Key.Keypad2, Key.Keypad3, Key.Keypad4,
+        Key.Keypad5, Key.Keypad6, Key.Keypad7, Key.Keypad8, Key.Keypad9,
+        Key.B, Key.C, Key.F, Key.G, Key.H, Key.I, Key.J, Key.K, Key.L, Key.M,
+        Key.N, Key.O, Key.Q, Key.R, Key.T, Key.U, Key.V, Key.X, Key.Y, Key.Z,
+    ];
+
+    private static readonly (Key Key, char Char)[] SeedCharKeys =
+    [
+        (Key.Number0, '0'), (Key.Number1, '1'), (Key.Number2, '2'), (Key.Number3, '3'), (Key.Number4, '4'),
+        (Key.Number5, '5'), (Key.Number6, '6'), (Key.Number7, '7'), (Key.Number8, '8'), (Key.Number9, '9'),
+        (Key.Keypad0, '0'), (Key.Keypad1, '1'), (Key.Keypad2, '2'), (Key.Keypad3, '3'), (Key.Keypad4, '4'),
+        (Key.Keypad5, '5'), (Key.Keypad6, '6'), (Key.Keypad7, '7'), (Key.Keypad8, '8'), (Key.Keypad9, '9'),
+        (Key.A, 'A'), (Key.B, 'B'), (Key.C, 'C'), (Key.D, 'D'), (Key.E, 'E'), (Key.F, 'F'),
+        (Key.G, 'G'), (Key.H, 'H'), (Key.I, 'I'), (Key.J, 'J'), (Key.K, 'K'), (Key.L, 'L'),
+        (Key.M, 'M'), (Key.N, 'N'), (Key.O, 'O'), (Key.P, 'P'), (Key.Q, 'Q'), (Key.R, 'R'),
+        (Key.S, 'S'), (Key.T, 'T'), (Key.U, 'U'), (Key.V, 'V'), (Key.W, 'W'), (Key.X, 'X'),
+        (Key.Y, 'Y'), (Key.Z, 'Z'),
     ];
 
     public InputState(IInputContext input)
@@ -66,6 +84,9 @@ public sealed class InputState
     public bool MouseLeftDown { get; private set; }
     public bool RPressed { get; private set; }
     public bool NPressed { get; private set; }
+    public bool CPressed { get; private set; }
+    public bool LPressed { get; private set; }
+    public bool BackspacePressed { get; private set; }
     public bool EPressed { get; private set; }
     public bool MPressed { get; private set; }
     public bool OnePressed { get; private set; }
@@ -73,6 +94,20 @@ public sealed class InputState
     public bool ThreePressed { get; private set; }
 
     public bool WasPressed(Key key) => _down.Contains(key) && !_prev.Contains(key);
+
+    /// <summary>Writes newly pressed alphanumeric seed characters (normalized via <see cref="SeedCode.NormalizeChar"/>) into <paramref name="destination"/>.</summary>
+    public int ReadTypedSeedChars(Span<char> destination)
+    {
+        int count = 0;
+        for (int i = 0; i < SeedCharKeys.Length && count < destination.Length; i++)
+        {
+            var (key, ch) = SeedCharKeys[i];
+            if (!WasPressed(key)) continue;
+            char norm = SeedCode.NormalizeChar(ch);
+            if (norm != '\0') destination[count++] = norm;
+        }
+        return count;
+    }
 
     public void BeginFrame()
     {
@@ -171,6 +206,9 @@ public sealed class InputState
         AudioDevicePressed = WasPressed(Key.F3);
         RPressed = WasPressed(Key.R);
         NPressed = WasPressed(Key.N);
+        CPressed = WasPressed(Key.C);
+        LPressed = WasPressed(Key.L);
+        BackspacePressed = WasPressed(Key.Backspace);
         EPressed = WasPressed(Key.E);
         MPressed = WasPressed(Key.M);
         OnePressed = WasPressed(Key.Number1);

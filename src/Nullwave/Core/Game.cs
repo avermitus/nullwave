@@ -51,6 +51,7 @@ public sealed class Game : IDisposable
     private int _attuneHover;
     private bool _debug;
     private bool _runRecorded;
+    private RecordBreak _records;
     private bool _autoPilot;
     private readonly List<string> _unlocks = new();
     private float _accumulator;
@@ -70,6 +71,9 @@ public sealed class Game : IDisposable
     public Renderer Renderer => _renderer;
     public bool CaptureMode => _capture;
     public string CaptureScenario { get; private set; } = "";
+    public string SelectedSeedCode { get; private set; } = "";
+    public bool IsEditingSeed { get; private set; }
+    public string SeedEditBuffer { get; private set; } = "";
     public GameWorld? ActiveWorld => _world;
     public GameWorld? DemoWorld => _demo;
     public float Fps => _fps;
@@ -132,6 +136,21 @@ public sealed class Game : IDisposable
         _meta.Runs = Math.Max(4, _meta.Runs);
         foreach (var id in new[] { "bass-bloom", "noise-floor", "phase-skin", "blind-choir", "quiet-signal", "overclocked" })
             _meta.UnlockedModifiers.Add(id);
+        // flight recorder: a short history so archive/gameover captures show the telemetry; the
+        // gameover scenario's chain of 42 beats this best of 36 and shows the NEW BEST callout
+        _meta.BestCombo = Math.Max(36, _meta.BestCombo);
+        ulong s1 = 0x5EEDC0DEUL;
+        ulong s2 = SeedCode.DailySeed(new DateTime(2026, 11, 17));
+        ulong s3 = 0xC0FFEE1234UL;
+        if (_meta.RecentRuns.Count == 0)
+        {
+            _meta.RecentRuns.Add(new RunRecord { Seed = SeedCode.ToCode(s1), SeedValue = s1, Wave = 12, Score = 84_500, MaxCombo = 36, Kills = 140, Grazes = 61, Duration = 402f, Movement = "CITY", Attunements = 6, Records = RunRecords.Score | RunRecords.Wave });
+            _meta.RecentRuns.Add(new RunRecord { Seed = SeedCode.ToCode(s2), SeedValue = s2, Daily = true, Wave = 9, Score = 41_250, MaxCombo = 28, Kills = 96, Grazes = 40, Duration = 288f, Movement = "SPIRAL", Attunements = 4, Modifiers = 1 });
+            _meta.RecentRuns.Add(new RunRecord { Seed = SeedCode.ToCode(s3), SeedValue = s3, Wave = 6, Score = 18_900, MaxCombo = 17, Kills = 58, Grazes = 22, Duration = 175f, Movement = "HENGE", Attunements = 2 });
+        }
+        _meta.SeedRecords[SeedCode.ToCode(s1)] = new SeedRecord { SeedValue = s1, BestScore = 84_500, BestWave = 12, Runs = 2, LastPlayedUtc = "2026-11-18T02:00:00Z" };
+        _meta.SeedRecords[SeedCode.ToCode(s2)] = new SeedRecord { SeedValue = s2, BestScore = 41_250, BestWave = 9, Runs = 1, Daily = true, LastPlayedUtc = "2026-11-17T20:00:00Z" };
+        _meta.SeedRecords[SeedCode.ToCode(s3)] = new SeedRecord { SeedValue = s3, BestScore = 18_900, BestWave = 6, Runs = 1, LastPlayedUtc = "2026-11-16T18:00:00Z" };
     }
 
     public void ConfigureCapture(string scenario)
@@ -169,6 +188,9 @@ public sealed class Game : IDisposable
             _world!.Player.InvincibleDemo = true;
             AttunementCatalog.Apply(_world.Player, "split");
             _world.BeginWave(4);
+            _world.PhaseSyncs = 4;
+            _world.Player.PhaseSyncs = 4;
+            _world.Player.PhaseSyncFlash = 0.85f;
             return;
         }
         if (scenario is "drop" or "breakdown")
@@ -195,6 +217,7 @@ public sealed class Game : IDisposable
             _state = AppState.Archive;
             _archiveReturn = AppState.Title;
             _archiveIndex = 1;
+            CycleArchiveSeed(1);
             return;
         }
 
@@ -241,6 +264,13 @@ public sealed class Game : IDisposable
             _world.Score = 12_500;
             _world.Kills = 41;
             _world.Player.Resonance = 62f;
+            AttunementCatalog.Apply(_world.Player, "split");
+            AttunementCatalog.Apply(_world.Player, "split");
+            AttunementCatalog.Apply(_world.Player, "fan");
+            AttunementCatalog.Apply(_world.Player, "pierce");
+            AttunementCatalog.Apply(_world.Player, "rapid");
+            AttunementCatalog.Apply(_world.Player, "rapid");
+            AttunementCatalog.Apply(_world.Player, "homing");
             _state = AppState.Paused;
             _pauseIndex = 0;
         }
@@ -268,7 +298,16 @@ public sealed class Game : IDisposable
 
     public void CaptureWarmup(int frames)
     {
-        for (int i = 0; i < frames; i++) Update(1f / 60f);
+        for (int i = 0; i < frames; i++)
+        {
+            if (CaptureScenario == "boss" && i == frames - 20 && _world?.BossEnemy is { Dead: false } boss && boss.BossPhase == 0)
+            {
+                boss.Spawning = false;
+                boss.BossHealthDisplay = MathF.Max(boss.BossHealthDisplay, 0.72f);
+                boss.Hp = boss.MaxHp * 0.56f;
+            }
+            Update(1f / 60f);
+        }
     }
 
     private void StartDemo()
@@ -311,6 +350,7 @@ public sealed class Game : IDisposable
         });
         _state = AppState.Playing;
         _runRecorded = false;
+        _records = default;
         _unlocks.Clear();
         _accumulator = 0f;
         _runClock = 0f;
@@ -481,14 +521,142 @@ public sealed class Game : IDisposable
         }
     }
 
+    public bool CycleArchiveSeed(int dir = 1)
+    {
+        IsEditingSeed = false;
+        var seeds = _meta.GetReplayableSeeds();
+        if (seeds.Count == 0) return false;
+        int idx = seeds.FindIndex(s => string.Equals(s, SelectedSeedCode, StringComparison.OrdinalIgnoreCase));
+        int next = idx < 0
+            ? (dir >= 0 ? 0 : seeds.Count - 1)
+            : (idx + (dir >= 0 ? 1 : -1) + seeds.Count) % seeds.Count;
+        SelectedSeedCode = seeds[next];
+        SeedEditBuffer = SelectedSeedCode;
+        return true;
+    }
+
+    public void BeginSeedEdit()
+    {
+        if (_archiveReturn == AppState.Paused) return;
+        IsEditingSeed = true;
+        SeedEditBuffer = SelectedSeedCode;
+    }
+
+    public void TypeSeedChar(char ch)
+    {
+        if (!IsEditingSeed || SeedEditBuffer.Length >= SeedCode.CodeLength) return;
+        char norm = SeedCode.NormalizeChar(ch);
+        if (norm != '\0') SeedEditBuffer += norm;
+    }
+
+    public void BackspaceSeedEdit()
+    {
+        if (!IsEditingSeed || SeedEditBuffer.Length == 0) return;
+        SeedEditBuffer = SeedEditBuffer[..^1];
+    }
+
+    public bool CommitSeedEdit()
+    {
+        if (!IsEditingSeed) return false;
+        IsEditingSeed = false;
+        if (string.IsNullOrWhiteSpace(SeedEditBuffer))
+        {
+            SelectedSeedCode = "";
+            SeedEditBuffer = "";
+            return false;
+        }
+        if (!SeedCode.TryParse(SeedEditBuffer, out _, out string canonical))
+            return false;
+        SelectedSeedCode = canonical;
+        SeedEditBuffer = canonical;
+        return true;
+    }
+
+    public void CancelSeedEdit()
+    {
+        IsEditingSeed = false;
+        SeedEditBuffer = SelectedSeedCode;
+    }
+
+    public void ClearSelectedSeed()
+    {
+        IsEditingSeed = false;
+        SelectedSeedCode = "";
+        SeedEditBuffer = "";
+    }
+
+    public bool LaunchSelectedSeed()
+    {
+        if (_archiveReturn == AppState.Paused) return false;
+        if (IsEditingSeed && !CommitSeedEdit()) return false;
+        if (string.IsNullOrWhiteSpace(SelectedSeedCode)) return false;
+        ulong seed = _meta.ResolveSeed(SelectedSeedCode);
+        StartRun(seed, false);
+        return true;
+    }
+
     private void UpdateArchive()
     {
         if (_input == null) return;
+        if (IsEditingSeed)
+        {
+            if (_input.BackPressed)
+            {
+                CancelSeedEdit();
+                _audio.Sfx.Trigger(SfxType.Menu, 0.2f);
+                return;
+            }
+            if (_input.ConfirmPressed)
+            {
+                if (CommitSeedEdit()) _audio.Sfx.Trigger(SfxType.Unlock, 0.35f);
+                else _audio.Sfx.Trigger(SfxType.Menu, 0.25f);
+                return;
+            }
+            if (_input.BackspacePressed)
+            {
+                BackspaceSeedEdit();
+                _audio.Sfx.Trigger(SfxType.Menu, 0.18f);
+            }
+            Span<char> typed = stackalloc char[8];
+            int n = _input.ReadTypedSeedChars(typed);
+            for (int i = 0; i < n; i++)
+            {
+                int before = SeedEditBuffer.Length;
+                TypeSeedChar(typed[i]);
+                if (SeedEditBuffer.Length != before) _audio.Sfx.Trigger(SfxType.Menu, 0.2f);
+            }
+            return;
+        }
+
         if (_input.BackPressed || _input.TabPressed)
         {
             _state = _archiveReturn;
             if (_state == AppState.Title) _menuIndex = 2;
             _audio.Sfx.Trigger(SfxType.Menu, 0.25f);
+            return;
+        }
+        if (_input.RPressed)
+        {
+            if (CycleArchiveSeed(1)) _audio.Sfx.Trigger(SfxType.Menu, 0.28f);
+            else _audio.Sfx.Trigger(SfxType.Hurt, 0.12f);
+            return;
+        }
+        if (_input.NPressed)
+        {
+            ClearSelectedSeed();
+            _audio.Sfx.Trigger(SfxType.Menu, 0.22f);
+            return;
+        }
+        if (_archiveReturn != AppState.Paused && _input.CPressed)
+        {
+            BeginSeedEdit();
+            _audio.Sfx.Trigger(SfxType.Menu, 0.28f);
+            return;
+        }
+        if (_archiveReturn != AppState.Paused && _input.LPressed)
+        {
+            if (LaunchSelectedSeed()) return;
+            _audio.Sfx.Trigger(SfxType.Hurt, 0.12f);
             return;
         }
         int col = _archiveIndex / 8;
@@ -541,6 +709,7 @@ public sealed class Game : IDisposable
             Vector2 move = M.FromAngle(a);
             frame = new InputFrame(move, move, true, false, false, false);
             _world.Flow = MathF.Max(_world.Flow, 0.95f);
+            _world.Player.PhaseSyncFlash = MathF.Max(_world.Player.PhaseSyncFlash, 0.85f);
         }
         else if (_autoPilot)
         {
@@ -692,11 +861,17 @@ public sealed class Game : IDisposable
         {
             _unlocks.Clear();
             _unlocks.AddRange(_meta.RecordRun(_world.Summary));
+            _records = _meta.LastRecords;
             if (_unlocks.Count > 0)
             {
                 _audio.Sfx.Trigger(SfxType.Unlock, 0.8f);
                 _toastTimer = 7f;
                 _toast = _unlocks[0];
+            }
+            else if (_records.Any)
+            {
+                // a personal best is worth the same chime as an unlock
+                _audio.Sfx.Trigger(SfxType.Unlock, 0.6f);
             }
         }
     }
@@ -825,7 +1000,7 @@ public sealed class Game : IDisposable
                 Screens.DrawTitle(_renderer, _palette, _meta, world.Seed, false, _menuIndex, _elapsed, _audio.State);
                 break;
             case AppState.Archive:
-                Screens.DrawArchive(_renderer, _palette, _meta, _archiveIndex, _elapsed, _archiveReturn == AppState.Paused, _archiveReturn == AppState.GameOver);
+                Screens.DrawArchive(_renderer, _palette, _meta, _archiveIndex, _elapsed, _archiveReturn == AppState.Paused, _archiveReturn == AppState.GameOver, SelectedSeedCode, IsEditingSeed, SeedEditBuffer);
                 break;
             case AppState.Playing:
                 Screens.DrawHud(_renderer, world, _palette, _audio.State, _runClock, _fps, _debug);
@@ -840,7 +1015,7 @@ public sealed class Game : IDisposable
                 Screens.DrawAttunement(_renderer, _palette, world, _elapsed, _attuneHover);
                 break;
             case AppState.GameOver:
-                Screens.DrawGameOver(_renderer, _palette, world, _meta, _unlocks, _elapsed);
+                Screens.DrawGameOver(_renderer, _palette, world, _meta, _unlocks, _records, _elapsed);
                 break;
             case AppState.Settings:
                 _settingsMenu.Draw(_renderer, _palette, _audio.State, Screens.SourceText(_audio.State), _elapsed, _frameDt);

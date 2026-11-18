@@ -11,6 +11,7 @@ public sealed partial class World
         var p = Player;
         p.Time += dt;
         p.HitFlash = MathF.Max(0, p.HitFlash - dt * 4.5f);
+        p.PhaseSyncFlash = MathF.Max(0f, p.PhaseSyncFlash - dt * 2.6f);
         p.Invuln = MathF.Max(0, p.Invuln - dt);
         p.DashCooldown = MathF.Max(0, p.DashCooldown - dt);
         p.TrailTimer -= dt;
@@ -34,6 +35,26 @@ public sealed partial class World
             Sfx?.Trigger(SfxType.Dash, 0.55f);
             for (int i = 0; i < 18; i++)
                 SpawnParticle(p.Pos, -p.DashDir * FxRng.Range(80, 360) + FxRng.InCircle(100), FxRng.Range(0.2f, 0.45f), 2.5f, M.Hsv(0.50f, 0.65f, 1f, 0.8f), ParticleKind.Spark, 3f);
+            if (IsInPhaseSyncWindow(out float syncErrMs))
+            {
+                PhaseSyncs++;
+                p.PhaseSyncs++;
+                p.PhaseSyncFlash = 1f;
+                p.LastPhaseSyncErrorMs = syncErrMs;
+                FlowGain(0.05f);
+                float resGain = 5f * p.TotalResonanceGain * Mods.ResonanceGain;
+                p.Resonance = MathF.Min(p.ResonanceMax, p.Resonance + resGain);
+                p.DashCooldown *= 0.82f;
+                p.Invuln = MathF.Max(p.Invuln, 0.30f);
+                AddScore(120, p.Pos, "PHASE SYNC", new Vector4(0.45f, 1f, 0.95f, 1f));
+                AddShockwave(p.Pos, 195f, 0.42f, 3.6f, new Vector4(0.45f, 1f, 0.95f, 1f));
+                for (int i = 0; i < 10; i++)
+                {
+                    var sc = i % 2 == 0 ? new Vector4(0.45f, 1f, 0.95f, 0.9f) : new Vector4(1f, 0.85f, 0.4f, 0.9f);
+                    SpawnParticle(p.Pos, -p.DashDir * FxRng.Range(110, 420) + FxRng.InCircle(120), FxRng.Range(0.25f, 0.5f), 2.8f, sc, ParticleKind.Spark, 3f);
+                }
+                Sfx?.Trigger(SfxType.Pickup, 0.28f);
+            }
         }
 
         Vector2 move = M.ClampLength(input.Move, 1f);

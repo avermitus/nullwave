@@ -84,7 +84,51 @@ public sealed class Rng
 
 public static class SeedCode
 {
+    public const int CodeLength = 8;
     private const string Alphabet = "0123456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+
+    /// <summary>
+    /// Normalizes a character to the 34-char seed alphabet (0-9, A-Z with I-&gt;1 and O-&gt;0).
+    /// Returns '\0' if the character is not valid.
+    /// </summary>
+    public static char NormalizeChar(char ch)
+    {
+        ch = char.ToUpperInvariant(ch);
+        if (ch == 'I') ch = '1';
+        else if (ch == 'O') ch = '0';
+        return Alphabet.IndexOf(ch) >= 0 ? ch : '\0';
+    }
+
+    public static string NormalizeCode(string? raw) =>
+        TryParse(raw, out _, out string canonical) ? canonical : "";
+
+    public static bool TryParse(string? raw, out ulong seed, out string canonicalCode)
+    {
+        seed = 0;
+        canonicalCode = "";
+        if (string.IsNullOrWhiteSpace(raw)) return false;
+        string s = raw.Trim().ToUpperInvariant();
+        if (s.StartsWith("NW-", StringComparison.Ordinal)) s = s[3..];
+        Span<char> cleaned = stackalloc char[CodeLength];
+        int count = 0;
+        foreach (char c in s)
+        {
+            char norm = NormalizeChar(c);
+            if (norm == '\0') continue;
+            cleaned[count++] = norm;
+            if (count == CodeLength) break;
+        }
+        if (count == 0) return false;
+        ulong v = 0;
+        for (int i = 0; i < count; i++)
+        {
+            int idx = Alphabet.IndexOf(cleaned[i]);
+            v = v * (ulong)Alphabet.Length + (ulong)idx;
+        }
+        seed = v == 0 ? 1UL : v;
+        canonicalCode = ToCode(seed);
+        return true;
+    }
 
     public static string ToCode(ulong seed)
     {
@@ -98,20 +142,8 @@ public static class SeedCode
         return new string(buf[..8]);
     }
 
-    public static ulong FromCode(string? code)
-    {
-        if (string.IsNullOrWhiteSpace(code)) return 1;
-        ulong v = 0;
-        string c = code.Trim().ToUpperInvariant();
-        if (c.StartsWith("NW-")) c = c[3..];
-        foreach (char ch in c)
-        {
-            int idx = Alphabet.IndexOf(ch);
-            if (idx < 0) continue;
-            v = v * (ulong)Alphabet.Length + (ulong)idx;
-        }
-        return v == 0 ? 1 : v;
-    }
+    public static ulong FromCode(string? code) =>
+        TryParse(code, out ulong seed, out _) ? seed : 1UL;
 
     public static ulong NewSeed()
     {

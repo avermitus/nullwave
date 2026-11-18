@@ -5,11 +5,68 @@ namespace Nullwave.World;
 
 public sealed class SeedRecord
 {
+    public ulong SeedValue { get; set; }
     public long BestScore { get; set; }
     public int BestWave { get; set; }
     public int Runs { get; set; }
     public string LastPlayedUtc { get; set; } = "";
     public bool Daily { get; set; }
+}
+
+/// <summary>Which personal bests a run broke.</summary>
+[Flags]
+public enum RunRecords
+{
+    None = 0,
+    Score = 1,
+    Wave = 2,
+    Combo = 4,
+}
+
+/// <summary>Result of comparing one run against the archive's bests, taken before the bests are updated.</summary>
+public readonly record struct RecordBreak(RunRecords Records, long PreviousScore, int PreviousWave, int PreviousCombo)
+{
+    public bool Any => Records != RunRecords.None;
+    public bool Score => (Records & RunRecords.Score) != 0;
+    public bool Wave => (Records & RunRecords.Wave) != 0;
+    public bool Combo => (Records & RunRecords.Combo) != 0;
+}
+
+/// <summary>One entry of the archive's flight recorder (persisted in save.json, newest first).</summary>
+public sealed class RunRecord
+{
+    public string Seed { get; set; } = "";
+    public ulong SeedValue { get; set; }
+    public bool Daily { get; set; }
+    public int Wave { get; set; }
+    public long Score { get; set; }
+    public int MaxCombo { get; set; }
+    public int Kills { get; set; }
+    public int Grazes { get; set; }
+    public float Duration { get; set; }
+    public string Movement { get; set; } = "";
+    public int Attunements { get; set; }
+    public int Modifiers { get; set; }
+    public RunRecords Records { get; set; }
+    public string PlayedUtc { get; set; } = "";
+
+    public static RunRecord From(RunSummary s, RunRecords records, string playedUtc) => new()
+    {
+        Seed = SeedCode.ToCode(s.Seed),
+        SeedValue = s.Seed,
+        Daily = s.Daily,
+        Wave = s.Wave,
+        Score = s.Score,
+        MaxCombo = s.MaxCombo,
+        Kills = s.Kills,
+        Grazes = s.Grazes,
+        Duration = s.Duration,
+        Movement = s.MovementName ?? "",
+        Attunements = s.Attunements,
+        Modifiers = s.Modifiers?.Count ?? 0,
+        Records = records,
+        PlayedUtc = playedUtc,
+    };
 }
 
 public sealed class MetaProgress
@@ -40,6 +97,16 @@ public sealed class MetaProgress
     public HashSet<string> UnlockedAttunements { get; set; } = new();
     public Dictionary<string, SeedRecord> SeedRecords { get; set; } = new();
     public Dictionary<string, long> ModifierBestScores { get; set; } = new();
+    /// <summary>Longest kill chain in any run (added in TASK-001; 0 in older saves until the next run).</summary>
+    public int BestCombo { get; set; }
+    /// <summary>Flight recorder: the last <see cref="RecentRunCap"/> runs, newest first.</summary>
+    public List<RunRecord> RecentRuns { get; set; } = new();
+
+    public const int RecentRunCap = 8;
+
+    /// <summary>Personal bests broken by the most recent <see cref="RecordRun"/> (not persisted).</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public RecordBreak LastRecords { get; private set; }
     /// <summary>Process name of the app whose audio drives the game; empty = whole system.</summary>
     public string AudioApp { get; set; } = "";
     public Nullwave.Core.GameSettings Settings { get; set; } = new();
@@ -83,6 +150,10 @@ public sealed class MetaProgress
         meta.UnlockedAttunements ??= new HashSet<string>();
         meta.SeedRecords ??= new Dictionary<string, SeedRecord>();
         meta.ModifierBestScores ??= new Dictionary<string, long>();
+        meta.RecentRuns ??= new List<RunRecord>();
+        meta.RecentRuns.RemoveAll(r => r == null);
+        if (meta.RecentRuns.Count > RecentRunCap) meta.RecentRuns.RemoveRange(RecentRunCap, meta.RecentRuns.Count - RecentRunCap);
+        if (meta.BestCombo < 0) meta.BestCombo = 0;
         meta.EnsureStarterUnlocks();
         meta.PruneSelections();
         return meta;
@@ -124,8 +195,24 @@ public sealed class MetaProgress
         return fresh;
     }
 
+    /// <summary>
+    /// Which personal bests <paramref name="summary"/> would break, against the archive as it is now.
+    /// A save written before BestCombo existed (runs recorded but no chain or history) has no chain
+    /// baseline, so its first chain is adopted silently instead of being called a record.
+    /// </summary>
+    public RecordBreak CompareWithBests(RunSummary summary)
+    {
+        var records = RunRecords.None;
+        if (summary.Score > 0 && summary.Score > BestScore) records |= RunRecords.Score;
+        if (summary.Wave > 0 && summary.Wave > BestWave) records |= RunRecords.Wave;
+        bool comboUntracked = Runs > 0 && BestCombo == 0 && RecentRuns.Count == 0;
+        if (!comboUntracked && summary.MaxCombo > 0 && summary.MaxCombo > BestCombo) records |= RunRecords.Combo;
+        return new RecordBreak(records, BestScore, BestWave, BestCombo);
+    }
+
     public List<string> RecordRun(RunSummary summary)
     {
+        LastRecords = CompareWithBests(summary);
         Runs++;
         TotalKills += summary.Kills;
         TotalGrazes += summary.Grazes;
@@ -135,6 +222,7 @@ public sealed class MetaProgress
         TotalScore += summary.Score;
         BestWave = Math.Max(BestWave, summary.Wave);
         BestScore = Math.Max(BestScore, summary.Score);
+        BestCombo = Math.Max(BestCombo, summary.MaxCombo);
         BestGrazesInRun = Math.Max(BestGrazesInRun, summary.Grazes);
         BestNoHitWaves = Math.Max(BestNoHitWaves, summary.NoHitWaves);
         BestMovement = Math.Max(BestMovement, summary.Movement);
@@ -161,11 +249,16 @@ public sealed class MetaProgress
             record = new SeedRecord();
             SeedRecords[key] = record;
         }
+        string playedUtc = DateTime.UtcNow.ToString("O");
+        record.SeedValue = summary.Seed;
         record.BestScore = Math.Max(record.BestScore, summary.Score);
         record.BestWave = Math.Max(record.BestWave, summary.Wave);
         record.Runs++;
         record.Daily = summary.Daily;
-        record.LastPlayedUtc = DateTime.UtcNow.ToString("O");
+        record.LastPlayedUtc = playedUtc;
+
+        RecentRuns.Insert(0, RunRecord.From(summary, LastRecords.Records, playedUtc));
+        if (RecentRuns.Count > RecentRunCap) RecentRuns.RemoveRange(RecentRunCap, RecentRuns.Count - RecentRunCap);
 
         string modKey = summary.Modifiers.Count == 0 ? "VANILLA" : string.Join("+", summary.Modifiers.OrderBy(x => x));
         ModifierBestScores.TryGetValue(modKey, out long existing);
@@ -183,6 +276,68 @@ public sealed class MetaProgress
     }
 
     public bool IsModifierUnlocked(string id) => UnlockedModifiers.Contains(id);
+
+    /// <summary>Distinct replayable 8-char seed codes: RecentRuns (newest first) followed by SeedRecords (by LastPlayedUtc desc).</summary>
+    public List<string> GetReplayableSeeds()
+    {
+        var result = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var r in RecentRuns)
+        {
+            if (SeedCode.TryParse(r.Seed, out _, out string code) && seen.Add(code))
+                result.Add(code);
+        }
+        foreach (var kv in SeedRecords.OrderByDescending(kv => kv.Value.LastPlayedUtc))
+        {
+            if (SeedCode.TryParse(kv.Key, out _, out string code) && seen.Add(code))
+                result.Add(code);
+        }
+        return result;
+    }
+
+    /// <summary>Looks up historical best wave, best score, run count, and daily flag for a seed code.</summary>
+    public bool TryGetSeedInfo(string? code, out int bestWave, out long bestScore, out int runs, out bool daily)
+    {
+        bestWave = 0;
+        bestScore = 0;
+        runs = 0;
+        daily = false;
+        if (!SeedCode.TryParse(code, out _, out string canonical)) return false;
+        bool found = false;
+        if (SeedRecords.TryGetValue(canonical, out var rec))
+        {
+            bestWave = rec.BestWave;
+            bestScore = rec.BestScore;
+            runs = rec.Runs;
+            daily = rec.Daily;
+            found = true;
+        }
+        int recentMatches = 0;
+        foreach (var r in RecentRuns)
+        {
+            if (!string.Equals(r.Seed, canonical, StringComparison.OrdinalIgnoreCase)) continue;
+            found = true;
+            recentMatches++;
+            bestWave = Math.Max(bestWave, r.Wave);
+            bestScore = Math.Max(bestScore, r.Score);
+            daily |= r.Daily;
+        }
+        if (found && runs == 0) runs = Math.Max(1, recentMatches);
+        return found;
+    }
+
+    /// <summary>Resolves a seed code to its exact recorded 64-bit seed when known, or decodes the 8-char code via <see cref="SeedCode.FromCode"/>.</summary>
+    public ulong ResolveSeed(string? code)
+    {
+        if (!SeedCode.TryParse(code, out ulong parsed, out string canonical)) return SeedCode.NewSeed();
+        if (SeedRecords.TryGetValue(canonical, out var rec) && rec.SeedValue != 0) return rec.SeedValue;
+        foreach (var r in RecentRuns)
+        {
+            if (string.Equals(r.Seed, canonical, StringComparison.OrdinalIgnoreCase) && r.SeedValue != 0)
+                return r.SeedValue;
+        }
+        return parsed;
+    }
 
     public bool ToggleModifier(string id)
     {

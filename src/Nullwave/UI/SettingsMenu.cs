@@ -18,7 +18,7 @@ public sealed class SettingsMenu
         Func<GameSettings, int> Get, Action<GameSettings, int> Set,
         int Min, int Max, int Step, string Unit, string Hint);
 
-    private const float PanelX = 330, PanelW = 940, Top = 122, RowH = 26, HeaderH = 32;
+    private const float PanelX = 330, PanelW = 940, Top = 114, RowH = 25, HeaderH = 30;
     private const float BarX = 800, BarW = 300;
 
     private readonly List<Row> _rows = new();
@@ -58,6 +58,7 @@ public sealed class SettingsMenu
         Toggle("INTERFACE", "THREAT ARROWS", s => s.ThreatArrows, (s, v) => s.ThreatArrows = v, "Arrows at the screen edge pointing at enemies outside the view.");
         Toggle("INTERFACE", "ENEMY HEALTH BARS", s => s.EnemyHealthBars, (s, v) => s.EnemyHealthBars = v, "Bars over damaged and elite enemies.");
         Toggle("INTERFACE", "BEAT TELEGRAPHS", s => s.BeatTelegraphs, (s, v) => s.BeatTelegraphs = v, "Rings that close on an enemy exactly when it fires on the beat.");
+        Toggle("INTERFACE", "ATTUNEMENT LOADOUT", s => s.ShowAttunements, (s, v) => s.ShowAttunements = v, "Active ship attunement tags and stack pips above the integrity bar.");
         Slider("INTERFACE", "CROSSHAIR SIZE", s => s.CrosshairSize, (s, v) => s.CrosshairSize = v, 50, 200, 10, "%", "Size of the mouse crosshair.");
         _rows.Add(new Row("", "RESET TO DEFAULTS", Kind.Action, _ => 0, (_, _) => { }, 0, 0, 0, "", "Restore every setting. The audio source is kept."));
         _rows.Add(new Row("", "BACK", Kind.Action, _ => 0, (_, _) => { }, 0, 0, 0, "", "Save and return. Esc also works."));

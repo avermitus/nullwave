@@ -89,6 +89,9 @@ public sealed class Player
     public float TrailTimer;
     public float Time;
     public bool InvincibleDemo;
+    public int PhaseSyncs;
+    public float PhaseSyncFlash;
+    public float LastPhaseSyncErrorMs;
     /// <summary>Smoothed health shown by the HUD bar (lags behind real health to show the chunk lost).</summary>
     public float HealthDisplay = 3f;
     public float Bank;
@@ -142,9 +145,13 @@ public sealed class Enemy
     public int Tier;
     public int BossPhase;
     public int BossPhaseCount = 3;
+    public int HighestTriggeredPhase;
     public float BossInvuln;
     public float BossAttackBeats;
     public float BossScale = 1f;
+    public float PhaseBreakTimer;
+    public float PhaseBreakDuration = 1.15f;
+    public float BossHealthDisplay = 1f;
     public float DeathPulse;
     public bool DroppedCore;
     public int SplitChildren;

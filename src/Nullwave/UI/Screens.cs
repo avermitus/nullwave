@@ -55,15 +55,16 @@ public static class Screens
             r.UiTextCentered("DAILY SIGNAL // " + SeedCode.DailyLabel(DateTime.Now), 800, 420, 1.6f, M.WithAlpha(p.Accent, 0.9f));
     }
 
-    public static void DrawArchive(Renderer r, Palette p, MetaProgress meta, int selected, float time, bool fromPause, bool fromGameOver)
+    public static void DrawArchive(Renderer r, Palette p, MetaProgress meta, int selected, float time, bool fromPause, bool fromGameOver, string selectedSeed = "", bool editingSeed = false, string editBuffer = "")
     {
         r.UiRect(0, 0, 1600, 900, new Vector4(0.003f, 0.005f, 0.014f, 0.84f));
         DrawFrameDecor(r, p, 34, 34, 1532, 832);
         r.UiText("ARCHIVE OF THE SIGNAL", 64, 54, 4.4f, p.Text, true);
+        DrawArchiveSeedDecoder(r, p, meta, time, fromPause, selectedSeed, editingSeed, editBuffer);
         r.UiText("UNLOCKED SIGNALS CHANGE THE RULES. STACK THEM FOR A HIGHER SCORE.", 66, 112, 1.65f, p.Dim);
         string back = fromPause ? "BACK TO PAUSE" : fromGameOver ? "BACK TO SIGNAL LOST" : "BACK TO TITLE";
         r.UiTextRight("ESC / B // " + back, 1534, 64, 1.55f, M.WithAlpha(p.Dim, 0.9f));
-        r.UiText("BEST WAVE " + meta.BestWave.ToString("00") + "   BEST " + FormatScore(meta.BestScore) + "   BOSSES " + meta.TotalBossKills + "   GRAZES " + meta.TotalGrazes + "   RUNS " + meta.Runs, 66, 134, 1.7f, M.WithAlpha(p.Accent, 0.85f));
+        r.UiText("BEST WAVE " + meta.BestWave.ToString("00") + "   BEST " + FormatScore(meta.BestScore) + "   BEST CHAIN " + meta.BestCombo + "   BOSSES " + meta.TotalBossKills + "   GRAZES " + meta.TotalGrazes + "   RUNS " + meta.Runs, 66, 134, 1.7f, M.WithAlpha(p.Accent, 0.85f));
         r.UiTextRight("GAIN x" + meta.SelectedMultiplier().ToString("0.00"), 1534, 134, 2.2f, M.WithAlpha(p.Accent, 0.9f), true);
 
         float startX = 50;
@@ -101,7 +102,65 @@ public static class Screens
             : "W / S OR ARROWS SELECT     LEFT / RIGHT SWITCH COLUMN     SPACE / A TOGGLE";
         r.UiText(footer, 64, 818, 1.6f, M.WithAlpha(p.Dim, 0.86f));
         r.UiTextRight("ATTUNEMENTS " + (6 + meta.UnlockedAttunements.Count).ToString("00") + " / " + AttunementCatalog.All.Length.ToString("00"), 1534, 818, 1.6f, M.WithAlpha(p.Accent, 0.8f));
-        r.UiText("MODIFIERS ARE UNLOCKED BY PLAYING.  LOCKED SIGNALS SHOW THEIR CONDITION.", 64, 846, 1.4f, M.WithAlpha(p.Dim, 0.55f));
+        if (meta.RecentRuns.Count > 0)
+            DrawRecentSignals(r, p, meta, 64, 1534, 846, selectedSeed);
+        else
+            r.UiText("MODIFIERS ARE UNLOCKED BY PLAYING.  LOCKED SIGNALS SHOW THEIR CONDITION.", 64, 846, 1.4f, M.WithAlpha(p.Dim, 0.55f));
+    }
+
+    private static void DrawArchiveSeedDecoder(Renderer r, Palette p, MetaProgress meta, float time, bool fromPause, string selectedSeed, bool editingSeed, string editBuffer)
+    {
+        const float bx = 646f, by = 46f, bw = 588f, bh = 52f;
+        bool active = editingSeed || !string.IsNullOrEmpty(selectedSeed);
+        var border = editingSeed ? p.Accent : active ? M.WithAlpha(p.Accent, 0.72f) : M.WithAlpha(p.Primary, 0.42f);
+        r.UiRect(bx, by, bw, bh, new Vector4(0.006f, 0.010f, 0.024f, 0.92f));
+        r.UiFrame(bx, by, bw, bh, 1f, border, active);
+        r.UiRect(bx, by, bw, 1.5f, M.WithAlpha(active ? p.Accent : p.Primary, 0.65f), active);
+
+        if (editingSeed)
+        {
+            string cursor = editBuffer.Length < SeedCode.CodeLength && MathF.Sin(time * 8f) > 0f ? "_" : "";
+            string padded = (editBuffer + cursor).PadRight(SeedCode.CodeLength, '.');
+            r.UiText("CUSTOM SEED // [" + padded + "]", bx + 12f, by + 8f, 1.4f, p.Accent, true);
+            r.UiTextRight("ENTER OK // ESC CANCEL", bx + bw - 12f, by + 9f, 1.25f, M.WithAlpha(p.Text, 0.85f));
+        }
+        else if (!string.IsNullOrEmpty(selectedSeed))
+        {
+            r.UiText("TARGET SEED // " + selectedSeed, bx + 12f, by + 8f, 1.4f, p.Accent, true);
+            string actions = fromPause ? "[R] CYCLE HISTORY" : "[L] LAUNCH  [R] NEXT  [C] TYPE  [N] CLEAR";
+            r.UiTextRight(actions, bx + bw - 12f, by + 9f, 1.2f, M.WithAlpha(p.Text, 0.86f));
+        }
+        else
+        {
+            r.UiText("TARGET SEED // RANDOM", bx + 12f, by + 8f, 1.4f, M.WithAlpha(p.Text, 0.85f));
+            string actions = fromPause ? "[R] CYCLE HISTORY" : "[R] CYCLE HISTORY  [C] CUSTOM SEED";
+            r.UiTextRight(actions, bx + bw - 12f, by + 9f, 1.25f, M.WithAlpha(p.Dim, 0.85f));
+        }
+
+        r.UiLine(bx + 12f, by + 25f, bx + bw - 12f, by + 25f, 1f, M.WithAlpha(active ? p.Accent : p.Primary, 0.22f));
+
+        string probe = editingSeed ? editBuffer : selectedSeed;
+        string sub;
+        Vector4 subCol;
+        if (!string.IsNullOrWhiteSpace(probe) && SeedCode.TryParse(probe, out _, out string canonical))
+        {
+            if (meta.TryGetSeedInfo(canonical, out int bestWave, out long bestScore, out int runs, out bool daily))
+            {
+                sub = "RECORD // WAVE " + bestWave.ToString("00") + "   BEST " + FormatScore(bestScore) + "   RUNS " + runs + (daily ? "   [DAILY SIGNAL]" : "   [ARCHIVE SIGNAL]");
+                subCol = M.WithAlpha(p.Accent, 0.88f);
+            }
+            else
+            {
+                sub = "UNEXPLORED SIGNAL // CODE " + canonical + (fromPause ? "" : " // PRESS L TO LAUNCH");
+                subCol = M.WithAlpha(p.Text, 0.8f);
+            }
+        }
+        else
+        {
+            sub = "SIGNAL DECODER // REPLAY RECORDED SEEDS OR ENTER ANY 8-CHAR SEED";
+            subCol = M.WithAlpha(p.Dim, 0.72f);
+        }
+        r.UiText(sub, bx + 12f, by + 32f, 1.22f, subCol);
     }
 
     public static void DrawHud(Renderer r, GameWorld w, Palette p, AudioState audio, float time, float fps, bool debug, bool showEvent = true)
@@ -135,18 +194,11 @@ public static class Screens
         DrawSpectrum(r, p, audio, 1118, 188, 424, 74);
 
         if (w.BossEnemy is { Dead: false } boss)
-        {
-            float bx = 380, by = 34, bw = 840, bh = 18;
-            r.UiTextCentered("THE CHOIR // PHASE " + (boss.BossPhase + 1) + " OF " + Math.Max(3, w.Mods.BossPhases), 800, by - 24, 1.7f, M.WithAlpha(p.Text, 0.9f), true);
-            r.UiRect(bx, by, bw, bh, new Vector4(0.02f, 0.01f, 0.03f, 0.84f));
-            r.UiFrame(bx, by, bw, bh, 1f, M.WithAlpha(p.Danger, 0.5f));
-            r.UiRect(bx + 2, by + 2, (bw - 4) * boss.HealthFrac, bh - 4, M.WithAlpha(p.Danger, 0.8f), true);
-            for (int i = 1; i < Math.Max(3, w.Mods.BossPhases); i++)
-                r.UiRect(bx + bw * i / Math.Max(3, w.Mods.BossPhases) - 1, by, 2, bh, new Vector4(0, 0, 0, 0.7f));
-        }
+            DrawBossBar(r, w, p, boss, time);
 
         DrawHealthBar(r, p, player, time);
         var settings = GameSettings.Current;
+        if (settings.ShowAttunements && player.AttunementCount > 0) DrawHudAttunements(r, p, player);
         if (settings.Minimap) DrawMinimap(r, p, w, time);
         if (settings.ThreatArrows) DrawThreatIndicators(r, p, w, time);
         if (settings.ShowFps) r.UiTextRight("FPS " + fps.ToString("0"), 1542, 790, 1.4f, M.WithAlpha(p.Dim, 0.85f));
@@ -186,6 +238,52 @@ public static class Screens
         {
             r.UiText("FPS " + fps.ToString("0") + "   ENEMY " + w.Enemies.Count + "   BULLET " + (w.EnemyBullets.Count + w.PlayerBullets.Count) + "   FX " + w.Particles.Count, 58, 224, 1.3f, M.WithAlpha(p.Dim, 0.75f));
         }
+    }
+
+    private static void DrawBossBar(Renderer r, GameWorld w, Palette p, Enemy boss, float time)
+    {
+        const float bx = 380f, by = 34f, bw = 840f, bh = 18f;
+        int phases = Math.Max(3, w.Mods.BossPhases);
+        string title = "THE CHOIR // PHASE " + Roman(boss.BossPhase + 1) + " OF " + Roman(phases) + " // " + GameWorld.BossPhaseSubtitle(boss.BossPhase, phases);
+        r.UiTextCentered(title, 800f, 10f, 1.6f, M.WithAlpha(p.Text, 0.94f), true);
+
+        float borderPulse = Math.Clamp(0.45f + w.BeatPulse * 0.35f + boss.Telegraph * 0.25f, 0.35f, 1f);
+        r.UiRect(bx, by, bw, bh, new Vector4(0.02f, 0.01f, 0.03f, 0.86f));
+        if (boss.BossHealthDisplay > boss.HealthFrac + 0.002f)
+            r.UiRect(bx + 2f, by + 2f, (bw - 4f) * M.Clamp01(boss.BossHealthDisplay), bh - 4f, new Vector4(1f, 0.90f, 0.92f, 0.55f), true);
+        r.UiRect(bx + 2f, by + 2f, (bw - 4f) * boss.HealthFrac, bh - 4f, M.WithAlpha(p.Danger, 0.86f), true);
+        r.UiFrame(bx, by, bw, bh, 1f, M.WithAlpha(boss.PhaseBreakTimer > 0.01f ? p.Accent : p.Danger, borderPulse), boss.PhaseBreakTimer > 0.01f || boss.Telegraph > 0.55f);
+        for (int i = 1; i < phases; i++)
+            r.UiRect(bx + bw * i / phases - 1f, by, 2f, bh, new Vector4(0f, 0f, 0f, 0.78f));
+
+        const float pipW = 34f, pipH = 5f, pipGap = 8f, pipY = 58f;
+        float totalPipW = phases * pipW + (phases - 1) * pipGap;
+        float pipStartX = 800f - totalPipW * 0.5f;
+        float pulse = 0.72f + 0.28f * MathF.Sin(time * 8f);
+        for (int i = 0; i < phases; i++)
+        {
+            float px = pipStartX + i * (pipW + pipGap);
+            if (i < boss.BossPhase)
+            {
+                r.UiRect(px, pipY, pipW, pipH, M.WithAlpha(p.Danger, 0.26f));
+                r.UiFrame(px, pipY, pipW, pipH, 1f, M.WithAlpha(p.Danger, 0.45f));
+            }
+            else if (i == boss.BossPhase)
+            {
+                var c = Vector4.Lerp(p.Danger, p.Accent, boss.PhaseBreakTimer > 0.01f ? 0.8f : 0.3f);
+                r.UiRect(px, pipY, pipW, pipH, M.WithAlpha(c, pulse), true);
+            }
+            else
+            {
+                r.UiRect(px, pipY, pipW, pipH, new Vector4(0.02f, 0.02f, 0.05f, 0.85f));
+                r.UiFrame(px, pipY, pipW, pipH, 1f, M.WithAlpha(p.Dim, 0.38f));
+            }
+        }
+
+        if (boss.PhaseBreakTimer > 0.01f || boss.BossInvuln > 0.01f)
+            r.UiTextRight("// PHASE SHIFT //", bx + bw, 57f, 1.3f, M.WithAlpha(p.Accent, pulse), true);
+        else if (boss.Telegraph > 0.55f)
+            r.UiTextRight("INCOMING VOLLEY", bx + bw, 57f, 1.3f, M.WithAlpha(p.Danger, pulse), true);
     }
 
     /// <summary>
@@ -319,19 +417,29 @@ public static class Screens
         r.UiRect(x + wdt * speed - 2, y - 5, 4, h + 10, new Vector4(1f, 1f, 1f, 0.85f), true);
         r.UiTextRight("x" + (1f + flow * 1.5f).ToString("0.00"), x + wdt, 862, 1.3f, M.WithAlpha(col, 0.85f), hot);
         r.UiText("STAY FAST // GRAZE // KILL", x, 862, 1.2f, M.WithAlpha(p.Dim, 0.45f));
+        if (w.Player.PhaseSyncFlash > 0.01f)
+        {
+            float sf = w.Player.PhaseSyncFlash;
+            var syncCol = Vector4.Lerp(new Vector4(0.45f, 1f, 0.95f, 1f), new Vector4(1f, 0.88f, 0.45f, 1f), sf);
+            r.UiTextRight("PHASE SYNC +RES", x + wdt, 824, 1.35f, M.WithAlpha(syncCol, 0.45f + 0.55f * sf), true);
+        }
+        else if (w.PhaseSyncs > 0)
+        {
+            r.UiTextRight("SYNC " + w.PhaseSyncs, x + wdt, 824, 1.3f, M.WithAlpha(p.Accent, 0.65f));
+        }
     }
 
     public static void DrawPause(Renderer r, Palette p, GameWorld w, int menuIndex, AudioState audio)
     {
         r.UiRect(0, 0, 1600, 900, new Vector4(0.002f, 0.004f, 0.012f, 0.72f));
-        DrawCard(r, p, 500, 220, 600, 500, M.WithAlpha(p.Primary, 0.75f));
-        r.UiTextCentered("SIGNAL HELD", 800, 260, 5.2f, p.Text, true);
-        r.UiTextCentered("WAVE " + w.Wave.ToString("00") + "  //  " + SeedCode.ToCode(w.Seed), 800, 326, 1.7f, M.WithAlpha(p.Dim, 0.9f));
-        r.UiLine(560, 362, 1040, 362, 1f, M.WithAlpha(p.Primary, 0.3f));
+        DrawCard(r, p, 500, 214, 600, 508, M.WithAlpha(p.Primary, 0.75f));
+        r.UiTextCentered("SIGNAL HELD", 800, 254, 5.2f, p.Text, true);
+        r.UiTextCentered("WAVE " + w.Wave.ToString("00") + "  //  " + SeedCode.ToCode(w.Seed), 800, 320, 1.7f, M.WithAlpha(p.Dim, 0.9f));
+        r.UiLine(560, 354, 1040, 354, 1f, M.WithAlpha(p.Primary, 0.3f));
         for (int i = 0; i < PauseItems.Length; i++)
         {
             bool sel = i == menuIndex;
-            float y = 388 + i * 58;
+            float y = 380 + i * 56;
             if (sel)
             {
                 r.UiRect(610, y - 7, 380, 44, M.WithAlpha(p.Primary, 0.08f));
@@ -339,8 +447,74 @@ public static class Screens
             }
             r.UiTextCentered(PauseItems[i], 800, y, sel ? 2.9f : 2.5f, sel ? p.Text : M.WithAlpha(p.Dim, 0.9f), sel);
         }
-        r.UiText("AUDIO // " + SourceLabel(audio), 546, 646, 1.45f, M.WithAlpha(p.Dim, 0.75f));
-        r.UiTextRight("P / START // RESUME", 1054, 646, 1.35f, M.WithAlpha(p.Dim, 0.65f));
+        r.UiLine(546, 602, 1054, 602, 1f, M.WithAlpha(p.Primary, 0.24f));
+        DrawPauseAttunements(r, p, w.Player);
+        r.UiText("AUDIO // " + SourceLabel(audio), 546, 690, 1.45f, M.WithAlpha(p.Dim, 0.75f));
+        r.UiTextRight("P / START // RESUME", 1054, 690, 1.35f, M.WithAlpha(p.Dim, 0.65f));
+    }
+
+    private static void DrawHudAttunements(Renderer r, Palette p, World.Player player)
+    {
+        Span<ActiveAttunement> active = stackalloc ActiveAttunement[12];
+        int count = AttunementCatalog.GetActive(player, active);
+        if (count <= 0) return;
+
+        const float startX = 56f, bw = 58f, bh = 20f, gapX = 4.4f;
+        float baseY = count > 6 ? 712f : 736f;
+        for (int i = 0; i < count; i++)
+        {
+            int col = i % 6;
+            int row = i / 6;
+            float bx = startX + col * (bw + gapX);
+            float by = baseY + row * 24f;
+            DrawAttunementBadge(r, p, active[i], bx, by, bw, bh);
+        }
+    }
+
+    private static void DrawPauseAttunements(Renderer r, Palette p, World.Player player)
+    {
+        Span<ActiveAttunement> active = stackalloc ActiveAttunement[12];
+        int count = AttunementCatalog.GetActive(player, active);
+        r.UiText("ATTUNEMENTS // " + player.AttunementCount.ToString("00"), 546, 612, 1.35f, M.WithAlpha(p.Accent, 0.85f));
+        r.UiTextRight(count.ToString("00") + " / " + AttunementCatalog.All.Length.ToString("00") + " SIGNALS", 1054, 612, 1.3f, M.WithAlpha(p.Dim, 0.7f));
+        if (count <= 0)
+        {
+            r.UiTextCentered("NO ATTUNEMENTS ACTIVE", 800, 642, 1.4f, M.WithAlpha(p.Dim, 0.55f));
+            return;
+        }
+
+        const float bw = 74f, bh = 20f, gapX = 8f;
+        int rows = count > 6 ? 2 : 1;
+        float baseY = rows == 2 ? 630f : 640f;
+        for (int row = 0; row < rows; row++)
+        {
+            int start = row * 6;
+            int rowCount = Math.Min(6, count - start);
+            float rowW = rowCount * bw + (rowCount - 1) * gapX;
+            float startX = 800f - rowW * 0.5f;
+            float by = baseY + row * 24f;
+            for (int c = 0; c < rowCount; c++)
+                DrawAttunementBadge(r, p, active[start + c], startX + c * (bw + gapX), by, bw, bh);
+        }
+    }
+
+    private static void DrawAttunementBadge(Renderer r, Palette p, ActiveAttunement entry, float bx, float by, float bw, float bh)
+    {
+        var accent = M.Hsv((p.BaseHue + entry.CatalogIndex * 0.055f) % 1f, 0.62f, 1f);
+        bool maxed = entry.Level >= entry.MaxStacks;
+        r.UiRect(bx, by, bw, bh, new Vector4(0.008f, 0.012f, 0.028f, 0.88f));
+        r.UiFrame(bx, by, bw, bh, 1f, M.WithAlpha(accent, maxed ? 0.78f : 0.44f), maxed);
+        r.UiRect(bx, by, bw, 1.5f, M.WithAlpha(accent, 0.72f), true);
+        r.UiText(entry.Tag, bx + 5f, by + 5.5f, 1.3f, maxed ? p.Accent : M.WithAlpha(p.Text, 0.95f), true);
+        int maxPips = Math.Max(1, entry.MaxStacks);
+        float pipStep = 5.5f;
+        float pipsRight = bx + bw - 5f;
+        float pipsStart = pipsRight - maxPips * pipStep + 1.5f;
+        for (int k = 0; k < maxPips; k++)
+        {
+            bool lit = k < entry.Level;
+            r.UiRect(pipsStart + k * pipStep, by + 6f, 4f, 8f, lit ? M.WithAlpha(accent, 0.95f) : new Vector4(0.08f, 0.10f, 0.16f, 0.85f), lit);
+        }
     }
 
     public static void DrawAttunement(Renderer r, Palette p, GameWorld w, float time, int hover)
@@ -376,7 +550,7 @@ public static class Screens
         r.UiTextCentered("THE NEXT WAVE BEGINS WHEN YOU CHOOSE.", 800, 760, 1.3f, M.WithAlpha(p.Dim, 0.65f));
     }
 
-    public static void DrawGameOver(Renderer r, Palette p, GameWorld w, MetaProgress meta, List<string> unlocks, float time)
+    public static void DrawGameOver(Renderer r, Palette p, GameWorld w, MetaProgress meta, List<string> unlocks, RecordBreak records, float time)
     {
         r.UiRect(0, 0, 1600, 900, new Vector4(0.002f, 0.003f, 0.010f, 0.80f));
         DrawCard(r, p, 280, 94, 1040, 728, M.WithAlpha(p.Danger, 0.7f));
@@ -385,28 +559,31 @@ public static class Screens
         if (s != null)
             r.UiTextCentered("SEED " + SeedCode.ToCode(s.Seed) + "  //  " + (s.Daily ? "DAILY SIGNAL" : "ENDLESS SIGNAL") + "  //  " + (int)s.Duration + "S", 800, 214, 1.7f, M.WithAlpha(p.Dim, 0.9f));
         r.UiLine(340, 250, 1260, 250, 1f, M.WithAlpha(p.Danger, 0.3f));
+        float pulse = 0.72f + 0.28f * MathF.Sin(time * 5.5f);
         if (s != null)
         {
-            DrawStat(r, "WAVE", s.Wave.ToString("00"), 380, 292, p);
-            DrawStat(r, "SCORE", FormatScore(s.Score), 800, 292, p);
-            DrawStat(r, "CHAIN", s.MaxCombo.ToString(), 1180, 292, p);
+            DrawStat(r, "WAVE", s.Wave.ToString("00"), 380, 292, p, records.Wave, pulse);
+            DrawStat(r, "SCORE", FormatScore(s.Score), 800, 292, p, records.Score, pulse);
+            DrawStat(r, "CHAIN", s.MaxCombo.ToString(), 1180, 292, p, records.Combo, pulse);
             DrawStat(r, "GRAZES", s.Grazes.ToString(), 380, 380, p);
             DrawStat(r, "KILLS", s.Kills.ToString(), 800, 380, p);
             DrawStat(r, "BOSSES", s.BossKills.ToString(), 1180, 380, p);
             DrawStat(r, "SHATTERS", s.Shatters.ToString(), 380, 468, p);
             DrawStat(r, "BURSTS", s.Bursts.ToString(), 800, 468, p);
             DrawStat(r, "MOVEMENT", s.MovementName, 1180, 468, p);
-            r.UiTextCentered("BEST WAVE " + meta.BestWave.ToString("00") + "  //  BEST SCORE " + FormatScore(meta.BestScore), 800, 550, 1.65f, M.WithAlpha(p.Accent, 0.9f));
+            r.UiTextCentered("BEST WAVE " + meta.BestWave.ToString("00") + "  //  BEST SCORE " + FormatScore(meta.BestScore) + "  //  BEST CHAIN " + meta.BestCombo, 800, 540, 1.65f, M.WithAlpha(p.Accent, 0.9f));
+            if (records.Any)
+                r.UiTextCentered(RecordBanner(records, s), 800, 566, 1.75f, M.WithAlpha(p.Accent, pulse), true);
         }
         if (unlocks.Count > 0)
         {
-            r.UiTextCentered("NEW SIGNALS UNLOCKED", 800, 594, 1.6f, M.WithAlpha(p.Accent, 0.9f));
+            r.UiTextCentered("NEW SIGNALS UNLOCKED", 800, 600, 1.6f, M.WithAlpha(p.Accent, 0.9f));
             for (int i = 0; i < Math.Min(3, unlocks.Count); i++)
-                r.UiTextCentered(unlocks[i], 800, 620 + i * 22, 1.5f, p.Text, true);
+                r.UiTextCentered(unlocks[i], 800, 624 + i * 22, 1.5f, p.Text, true);
         }
         else
         {
-            r.UiTextCentered("NO NEW SIGNAL UNLOCKED", 800, 606, 1.4f, M.WithAlpha(p.Dim, 0.6f));
+            r.UiTextCentered("NO NEW SIGNAL UNLOCKED", 800, 610, 1.4f, M.WithAlpha(p.Dim, 0.6f));
         }
         r.UiLine(340, 698, 1260, 698, 1f, M.WithAlpha(p.Primary, 0.24f));
         r.UiTextCentered("R  RETRY SEED        N  NEW SIGNAL        TAB  ARCHIVE        ESC  TITLE", 800, 730, 1.75f, M.WithAlpha(p.Dim, 0.95f));
@@ -492,6 +669,63 @@ public static class Screens
     {
         r.UiTextCentered(label, centerX, y, 1.45f, M.WithAlpha(p.Dim, 0.8f));
         r.UiTextCentered(value, centerX, y + 20, 2.8f, p.Text, true);
+    }
+
+    /// <summary>Stat with a pulsing gold "NEW BEST" tag under the value when it broke a personal best.</summary>
+    private static void DrawStat(Renderer r, string label, string value, float centerX, float y, Palette p, bool best, float pulse)
+    {
+        if (!best)
+        {
+            DrawStat(r, label, value, centerX, y, p);
+            return;
+        }
+        r.UiTextCentered(label, centerX, y, 1.45f, M.WithAlpha(p.Accent, 0.9f));
+        r.UiTextCentered(value, centerX, y + 20, 2.8f, p.Accent, true);
+        float tagW = r.UiTextWidth("NEW BEST", 1.3f) + 16f;
+        r.UiFrame(centerX - tagW * 0.5f, y + 45, tagW, 17, 1f, M.WithAlpha(p.Accent, 0.55f * pulse), true);
+        r.UiTextCentered("NEW BEST", centerX, y + 49, 1.3f, M.WithAlpha(p.Accent, pulse), true);
+    }
+
+    /// <summary>"NEW RECORD // SCORE +12,300 // CHAIN +6" (no delta when there was no previous best).</summary>
+    public static string RecordBanner(RecordBreak b, RunSummary s)
+    {
+        var parts = new List<string>(3);
+        if (b.Score) parts.Add(b.PreviousScore > 0 ? "SCORE +" + FormatScore(s.Score - b.PreviousScore) : "SCORE");
+        if (b.Wave) parts.Add(b.PreviousWave > 0 ? "WAVE +" + (s.Wave - b.PreviousWave) : "WAVE");
+        if (b.Combo) parts.Add(b.PreviousCombo > 0 ? "CHAIN +" + (s.MaxCombo - b.PreviousCombo) : "CHAIN");
+        return parts.Count == 0 ? "" : (parts.Count > 1 ? "NEW RECORDS // " : "NEW RECORD // ") + string.Join(" // ", parts);
+    }
+
+    /// <summary>One flight-recorder entry for the archive strip: "D 4F2A9C1B W12 84,500 CH36*".</summary>
+    public static string RecentSignalEntry(RunRecord run) =>
+        (run.Daily ? "D " : "") + run.Seed + " W" + run.Wave.ToString("00") + " " + FormatScore(run.Score) + " CH" + run.MaxCombo + (run.Records != RunRecords.None ? "*" : "");
+
+    private static void DrawRecentSignals(Renderer r, Palette p, MetaProgress meta, float x, float right, float y, string selectedSeed = "")
+    {
+        const float size = 1.4f;
+        const string label = "RECENT SIGNALS //";
+        r.UiText(label, x, y, size, M.WithAlpha(p.Accent, 0.85f));
+        float cx = x + r.UiTextWidth(label, size) + 14f;
+        float gap = r.UiTextWidth("  |  ", size);
+        for (int i = 0; i < meta.RecentRuns.Count; i++)
+        {
+            string entry = RecentSignalEntry(meta.RecentRuns[i]);
+            float w = r.UiTextWidth(entry, size);
+            if (cx + w > right) break;
+            bool picked = !string.IsNullOrEmpty(selectedSeed) && string.Equals(meta.RecentRuns[i].Seed, selectedSeed, StringComparison.OrdinalIgnoreCase);
+            if (picked)
+            {
+                r.UiRect(cx - 5f, y - 4f, w + 10f, 17f, M.WithAlpha(p.Accent, 0.14f));
+                r.UiFrame(cx - 5f, y - 4f, w + 10f, 17f, 1f, M.WithAlpha(p.Accent, 0.8f), true);
+            }
+            var color = picked ? p.Accent : i == 0 ? M.WithAlpha(p.Text, 0.9f) : M.WithAlpha(p.Dim, 0.85f - i * 0.05f);
+            if (!picked && meta.RecentRuns[i].Records != RunRecords.None) color = M.WithAlpha(p.Accent, i == 0 ? 0.95f : 0.75f);
+            r.UiText(entry, cx, y, size, color, i == 0 || picked);
+            cx += w;
+            if (i + 1 < meta.RecentRuns.Count && cx + gap < right)
+                r.UiText("  |  ", cx, y, size, M.WithAlpha(p.Dim, 0.4f));
+            cx += gap;
+        }
     }
 
     private static void DrawHeart(Renderer r, Vector2 c, float s, Vector4 color, bool glow)

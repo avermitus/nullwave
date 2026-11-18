@@ -52,6 +52,10 @@ public sealed class PostFx : IDisposable
         }
     }
 
+    /// <summary>
+    /// Bloom + composite into the default framebuffer. Always exits in <see cref="RenderBaseline.Default"/>
+    /// (see <see cref="RestoreBaseline"/>), so callers can draw on top without re-deriving state.
+    /// </summary>
     public void Process(uint sceneTexture, int width, int height, float time, float bloom, float aberration, float flash, float beat, int damage, PostMood mood)
     {
         EnsureSize(width, height);
@@ -133,7 +137,54 @@ public sealed class PostFx : IDisposable
         _gl.ActiveTexture(TextureUnit.Texture3);
         _gl.BindTexture(TextureTarget.Texture2D, _downs[2].Texture);
         DrawFullscreen();
-        _gl.BindVertexArray(0);
+        RestoreBaseline(_gl);
+    }
+
+    /// <summary>Texture units the post chain binds (scene + three bloom levels).</summary>
+    public const int SamplerUnits = 4;
+
+    /// <summary>
+    /// Leaves <see cref="RenderBaseline.Default"/>: the passes above disable blending and park bloom
+    /// textures on units 1-3 with unit 3 active. Without this, anything drawn after the composite
+    /// (a second render in the same frame, the recorder, tools) inherited that state.
+    /// </summary>
+    public static void RestoreBaseline(GL gl)
+    {
+        var b = RenderBaseline.Default;
+        for (int unit = b.SamplerUnits - 1; unit >= 0; unit--)
+        {
+            gl.ActiveTexture(TextureUnit.Texture0 + unit);
+            gl.BindTexture(TextureTarget.Texture2D, 0);
+        }
+        gl.ActiveTexture(TextureUnit.Texture0 + b.ActiveUnit);
+        if (b.Blend) gl.Enable(EnableCap.Blend); else gl.Disable(EnableCap.Blend);
+        if (b.DepthTest) gl.Enable(EnableCap.DepthTest); else gl.Disable(EnableCap.DepthTest);
+        b.Mode.Apply(gl);
+        gl.BindVertexArray(b.VertexArray);
+    }
+
+    /// <summary>Reads the live GL state back and compares it with <see cref="RenderBaseline.Default"/>. Debug/smoke only (glGet stalls).</summary>
+    public static bool VerifyBaseline(GL gl, out string detail)
+    {
+        var b = RenderBaseline.Default;
+        var problems = new List<string>();
+        if (gl.IsEnabled(EnableCap.Blend) != b.Blend) problems.Add("blend");
+        if (gl.IsEnabled(EnableCap.DepthTest) != b.DepthTest) problems.Add("depth");
+        if (gl.GetInteger(GetPName.BlendSrcRgb) != (int)b.Mode.SrcColor) problems.Add("srcRgb");
+        if (gl.GetInteger(GetPName.BlendDstRgb) != (int)b.Mode.DstColor) problems.Add("dstRgb");
+        if (gl.GetInteger(GetPName.BlendSrcAlpha) != (int)b.Mode.SrcAlphaFactor) problems.Add("srcAlpha");
+        if (gl.GetInteger(GetPName.BlendDstAlpha) != (int)b.Mode.DstAlphaFactor) problems.Add("dstAlpha");
+        if (gl.GetInteger(GetPName.VertexArrayBinding) != (int)b.VertexArray) problems.Add("vao");
+        int active = gl.GetInteger(GetPName.ActiveTexture);
+        for (int unit = 0; unit < b.SamplerUnits; unit++)
+        {
+            gl.ActiveTexture(TextureUnit.Texture0 + unit);
+            if (gl.GetInteger(GetPName.TextureBinding2D) != 0) problems.Add("tex" + unit);
+        }
+        gl.ActiveTexture((TextureUnit)active);
+        if (active != (int)(TextureUnit.Texture0 + b.ActiveUnit)) problems.Add("activeUnit");
+        detail = problems.Count == 0 ? "baseline" : "leak:" + string.Join(",", problems);
+        return problems.Count == 0;
     }
 
     private void DrawFullscreen()

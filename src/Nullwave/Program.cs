@@ -250,8 +250,37 @@ internal static class Program
         {
             var w = _game.ActiveWorld;
             Console.WriteLine($"SMOKE | {now:0.0}s fps={_game.Fps:0} wave={w?.Wave} score={w?.Score} enemies={w?.Enemies.Count} bullets={w?.EnemyBullets.Count} bpm={_game.Audio.State.Bpm:0.0} audio={_game.Audio.State.SourceName} capture={_game.Audio.CaptureAvailable}");
+            CheckRenderState();
             _window!.Close();
         }
+    }
+
+    /// <summary>
+    /// End-of-smoke render hygiene check: GL state after Render() must be the baseline, the backbuffer
+    /// must be opaque, and rendering the same frame a second time (no Update in between) must not
+    /// pick up anything from the first pass (the old recorder "ghost HUD" path).
+    /// </summary>
+    private static void CheckRenderState()
+    {
+        if (_game == null || _renderer == null) return;
+        bool stateOk = _renderer.VerifyBaselineState(out string state);
+        var first = new byte[_renderer.Width * _renderer.Height * 4];
+        var second = new byte[first.Length];
+        _renderer.ReadPixelsInto(first);
+        _game.Render();
+        bool secondOk = _renderer.VerifyBaselineState(out string state2);
+        _renderer.ReadPixelsInto(second);
+        int alphaMin = 255;
+        long diff = 0;
+        for (int i = 0; i < first.Length; i += 4)
+        {
+            alphaMin = Math.Min(alphaMin, Math.Min(first[i + 3], second[i + 3]));
+            if (first[i] != second[i] || first[i + 1] != second[i + 1] || first[i + 2] != second[i + 2]) diff++;
+        }
+        double diffFrac = diff / (double)(first.Length / 4);
+        bool ok = stateOk && secondOk && alphaMin == 255;
+        Console.WriteLine($"RENDERSTATE | after1={state} after2={state2} alphaMin={alphaMin} rerenderDiff={diffFrac:P3} -> {(ok ? "PASS" : "FAIL")}");
+        if (!ok) Environment.ExitCode = 1;
     }
 
     private static void StartEncoder()

@@ -498,14 +498,41 @@ public static class WorldRenderer
             batch.Add(Models.BossHalo, Xf(e.Pos, lift, e.Angle * 2.1f, R * 1.55f, MathF.Cos(time * 0.7f) * 0.45f, 0.5f), mats);
         if (e.BossPhase >= 2)
         {
-            for (int i = 0; i < 14; i++)
+            int shards = e.BossPhase >= 3 ? 18 : 14;
+            float shardSpeed = e.BossPhase >= 3 ? -1.6f : -1.2f;
+            for (int i = 0; i < shards; i++)
             {
-                float a = -time * 1.2f + i * M.Tau / 14f;
+                float a = time * shardSpeed + i * M.Tau / shards;
                 Vector2 sp = e.Pos + M.FromAngle(a, R * 1.85f);
                 batch.Add(Models.BossShard, Xf(sp, lift + MathF.Sin(a * 3f + time) * R * 0.2f, a, R), mats);
             }
         }
+        if (e.BossPhase >= 3)
+        {
+            var apex = MaterialSet.ForHue(new Vector4(1f, 0.42f, 0.35f, 1f), glow * 1.15f, flash);
+            batch.Add(Models.BossHalo, Xf(e.Pos, lift, -e.Angle * 2.8f, R * 1.82f, MathF.Sin(time * 0.9f) * 0.55f, -0.45f), apex);
+        }
         r.Circle(e.Pos, R * 1.2f, 2.2f, M.WithAlpha(hue, 0.3f), 48, true);
+        if (e.Telegraph > 0.04f && GameSettings.Current.BeatTelegraphs)
+        {
+            float tele = e.Telegraph;
+            float teleR = R * M.Lerp(2.1f, 1.15f, tele);
+            r.Circle(e.Pos, teleR, 1.5f + tele * 2.8f, M.WithAlpha(hue, 0.25f + tele * 0.65f + w.BeatPulse * 0.1f), 48, true);
+            r.Circle(e.Pos, teleR * 0.92f, 1.0f + tele, new Vector4(1f, 1f, 1f, 0.15f + tele * 0.35f), 36, true);
+        }
+        if (e.PhaseBreakTimer > 0f)
+        {
+            float pfrac = 1f - M.Clamp01(e.PhaseBreakTimer / MathF.Max(0.01f, e.PhaseBreakDuration));
+            float fade = 1f - pfrac;
+            float ringR = M.Lerp(R * 1.1f, GameWorld.BossPhaseClearRadius, M.EaseOutCubic(pfrac));
+            r.Circle(e.Pos, ringR, 4f * fade + 1.5f, M.WithAlpha(hue, 0.78f * fade), 56, true);
+            r.Circle(e.Pos, ringR * 0.72f, 2f * fade + 1f, new Vector4(1f, 1f, 1f, 0.65f * fade), 44, true);
+            for (int i = 0; i < 12; i++)
+            {
+                float a = i * M.Tau / 12f + time * 1.8f;
+                r.Line(e.Pos + M.FromAngle(a, ringR * 0.88f), e.Pos + M.FromAngle(a, ringR * 1.02f), 2f * fade, M.WithAlpha(hue, 0.7f * fade), true);
+            }
+        }
         if (e.BossInvuln > 0)
             r.Circle(e.Pos, R * (1.3f + MathF.Sin(time * 20f) * 0.04f), 5f, new Vector4(1f, 1f, 1f, 0.35f), 48, true);
     }
@@ -614,9 +641,9 @@ public static class WorldRenderer
                 }
             }
         }
-        // afterimages: ghost copies of the ship strung out behind it in flow or while dashing
+        // afterimages: ghost copies of the ship strung out behind it in flow, while dashing, or during Phase Sync
         _ghostTimer -= dt;
-        bool ghosting = speed > 0.75f && (w.Flow > 0.45f || player.IsDashing);
+        bool ghosting = (speed > 0.75f && (w.Flow > 0.45f || player.IsDashing)) || player.PhaseSyncFlash > 0.15f;
         if (_ghostTimer <= 0f)
         {
             _ghostTimer = 0.045f;
@@ -660,14 +687,14 @@ public static class WorldRenderer
         r.FillCircle(pos + new Vector2(9, 12), 15f, Shadow, 16);
         r.FillCircle(pos, 30f, new Vector4(col.X, col.Y, col.Z, 0.04f * (player.IsDashing ? 2f : 1f)), 24, true);
 
-        var mats = MaterialSet.ForHue(col, (1f + (player.IsDashing ? 1f : 0f) + w.BeatPulse * 0.3f) * flicker, player.HitFlash, 1f);
+        var mats = MaterialSet.ForHue(col, (1f + (player.IsDashing ? 1f : 0f) + w.BeatPulse * 0.3f + player.PhaseSyncFlash * 0.65f) * flicker, player.HitFlash, 1f);
         mats.Trim = new Vector4(0.62f, 0.68f, 0.78f, 1f);
         mats.Hull = new Vector4(0.16f, 0.18f, 0.24f, 1f);
         var ship = Xf(pos, z, aim, 1.35f, roll);
         DrawSpeedFx(r, w, p, time, ship, aim);
         r.Meshes.Add(Models.Player, ship, mats);
 
-        float thrust = 0.35f + M.Clamp01(speed / 312f) * 0.9f + (player.IsDashing ? 1.4f : 0f);
+        float thrust = 0.35f + M.Clamp01(speed / 312f) * 0.9f + (player.IsDashing ? 1.4f : 0f) + player.PhaseSyncFlash * 0.45f;
         var flame = MaterialSet.ForHue(p.Secondary, 1.6f * flicker);
         for (int s = -1; s <= 1; s += 2)
         {
@@ -677,6 +704,13 @@ public static class WorldRenderer
         }
 
         // readability overlays: rings, the true hitbox and the aim guide stay flat and bright
+        if (player.PhaseSyncFlash > 0.02f)
+        {
+            float sf = player.PhaseSyncFlash;
+            float ringR = 28f + (1f - sf) * 18f;
+            r.Circle(pos, ringR, 2f * sf, new Vector4(0.45f, 1f, 0.95f, 0.75f * sf), 28, true);
+            r.Circle(pos, ringR * 0.72f, 1.2f * sf, new Vector4(1f, 0.86f, 0.42f, 0.5f * sf), 24, true);
+        }
         r.Circle(pos, 22f, 4.5f, M.WithAlpha(col, 0.08f * flicker), 30, true);
         r.Arc(pos, 25f, time * 1.6f, 2.2f, 1.2f, M.WithAlpha(p.Secondary, 0.35f * flicker), 12, true);
         r.FillCircle(pos, 4.2f, new Vector4(0f, 0f, 0f, 0.6f), 10);

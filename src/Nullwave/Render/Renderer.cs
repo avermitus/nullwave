@@ -125,7 +125,7 @@ public sealed class Renderer : IDisposable
         _gl.Enable(EnableCap.Blend);
         _gl.Disable(EnableCap.DepthTest);
         _gl.Disable(EnableCap.CullFace);
-        _gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+        BlendMode.Alpha.Apply(_gl);
     }
 
     public void Resize(int width, int height)
@@ -320,19 +320,26 @@ public sealed class Renderer : IDisposable
             (aberration + build * 0.5f + drop * 0.6f) * settings.Aberration / 100f,
             settings.ReduceFlashing ? MathF.Min(flash, 0.15f) : flash, audio.BeatPulse, damage, WithSpeed(BuildPostMood(mood, fx, settings.ReduceFlashing)));
 
+        // Post.Process leaves RenderBaseline.Default bound to the default framebuffer. The composite is
+        // opaque (alpha 1); the UI blends colour normally but must not pull destination alpha below 1,
+        // or screenshots/recorder frames read back translucent.
         _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
         _gl.Viewport(0, 0, (uint)Width, (uint)Height);
         _gl.Enable(EnableCap.Blend);
         _uiShader.Use();
         _uiShader.SetVec2("uSize", DesignWidth, DesignHeight);
-        _gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+        BlendMode.Alpha.Apply(_gl);
         _uiAlpha.Draw();
-        _gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.One);
+        BlendMode.Additive.Apply(_gl);
         _uiGlow.Draw();
-        _gl.BindVertexArray(0);
+        // exit in the same baseline PostFx guarantees, so a second Render() in one frame starts clean
+        PostFx.RestoreBaseline(_gl);
 
         _useA = !_useA;
     }
+
+    /// <summary>Live GL state check after <see cref="Render"/> (smoke/tools only; glGet stalls the pipeline).</summary>
+    public bool VerifyBaselineState(out string detail) => PostFx.VerifyBaseline(_gl, out detail);
 
     /// <summary>
     /// Maps the song's state to grading: breakdowns go cool, dark and desaturated with a heavy

@@ -35,6 +35,7 @@ public sealed class GameSettings
     public bool ThreatArrows { get; set; } = true;
     public bool EnemyHealthBars { get; set; } = true;
     public bool BeatTelegraphs { get; set; } = true;
+    public bool ShowAttunements { get; set; } = true;
     public int CrosshairSize { get; set; } = 100;
 
     [System.Text.Json.Serialization.JsonIgnore] public float Master => MasterVolume / 100f;

@@ -31,6 +31,7 @@ public sealed class RunSummary
     public int Movement;
     public string MovementName = "";
     public int Attunements;
+    public int PhaseSyncs;
     public List<string> Modifiers = new();
 }
 
@@ -137,6 +138,7 @@ public sealed partial class World
     public int Bursts;
     public int NoHitWaves;
     public int AttunementsTaken;
+    public int PhaseSyncs;
     public float HitStop;
     public float Flash;
     public float DamageFlash;
@@ -378,6 +380,31 @@ public sealed partial class World
     }
 
     private float _beatConfidence = 1f;
+
+    public const float PhaseSyncWindowMs = 65f;
+    public const float PhaseSyncMaxPhase = 0.18f;
+
+    /// <summary>
+    /// Returns true when the beat clock is inside the positive Phase Sync window around the beat
+    /// boundary (±65 ms, capped at 0.18 beat phase), outputting the timing delta in milliseconds.
+    /// </summary>
+    public bool IsInPhaseSyncWindow(out float errorMs)
+    {
+        float phaseDist = MathF.Min(BeatPhase, 1f - BeatPhase);
+        float beatMs = 60_000f / MathF.Max(30f, Bpm);
+        errorMs = phaseDist * beatMs;
+        return errorMs <= PhaseSyncWindowMs && phaseDist <= PhaseSyncMaxPhase;
+    }
+
+    /// <summary>Sets the beat clock state directly for deterministic tests.</summary>
+    public void SetBeatClockForTest(double beatPos, float bpm = 120f)
+    {
+        _beatPos = beatPos;
+        Bpm = bpm;
+        BeatPhase = (float)(beatPos - Math.Floor(beatPos));
+        _lastBeatIndex = (int)Math.Floor(beatPos);
+        _lastEighth = (long)Math.Floor(beatPos * 2.0);
+    }
 
     // ---------------------------------------------------------------- song lasers
 
@@ -854,6 +881,7 @@ public sealed partial class World
             Movement = Movement,
             MovementName = Rules.Name,
             Attunements = Player.AttunementCount,
+            PhaseSyncs = PhaseSyncs,
             Modifiers = new List<string>(Mods.Active),
         };
         if (!Demo) RunEnded?.Invoke(Summary);
