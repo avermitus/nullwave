@@ -179,6 +179,7 @@ internal static class Program
                 "laser" => 26,
                 "combat" => 420,
                 "synergy" => 260,
+                "overdrive" => 260,
                 "roster" => 40,
                 "songlasers" => 150,
                 "attune" => 1,

@@ -268,6 +268,7 @@ public sealed partial class World
 
         Time += dt;
         if (StartGrace > 0) StartGrace -= dt;
+        if (DropOverdriveTimer > 0f) DropOverdriveTimer = MathF.Max(0f, DropOverdriveTimer - dt);
         UpdateCombo(dt);
 
         if (Phase == GamePhase.Intermission)
@@ -548,9 +549,20 @@ public sealed partial class World
         MaxCombo = Math.Max(MaxCombo, Combo);
     }
 
+    public float DropOverdriveTimer;
+    public bool IsDropOverdrive => DropOverdriveTimer > 0f;
+    public float OverdriveFireScale => (IsDropOverdrive ? 0.80f : 1f) * (Player.IsSyncOverdrive ? 0.87f : 1f);
+    public float OverdriveDamageScale => IsDropOverdrive ? 1.18f : 1f;
+    public float OverdriveResonanceScale => Player.IsSyncOverdrive ? 1.30f : 1f;
+    public float OverdriveScoreBonus => (IsDropOverdrive ? 0.50f : 0f) + (Player.IsSyncOverdrive ? 0.35f : 0f);
+    public float OverdriveIntensity => M.Clamp01(MathF.Max(DropOverdriveTimer / 4.0f, Player.SyncOverdriveTimer / 5.0f));
+
+    public void AddMicroHitStop(float seconds) =>
+        HitStop = MathF.Max(HitStop, MathF.Min(seconds, 0.09f));
+
     public void AddScore(int value, Vector2? at = null, string? label = null, Vector4? color = null)
     {
-        long added = (long)(value * ComboMultiplier * Mods.ScoreMultiplier * (1f + Flow * 1.5f));
+        long added = (long)(value * ComboMultiplier * Mods.ScoreMultiplier * (1f + Flow * 1.5f + OverdriveScoreBonus));
         Score += added;
         if (at.HasValue && (label != null || value >= 200))
         {
@@ -576,7 +588,7 @@ public sealed partial class World
         if (Phase == GamePhase.Dead) return;
         strength = MathF.Max(0.2f, strength);
         Vector4 hot = new(1f, 0.55f, 0.95f, 1f);
-        AddShockwave(Player.Pos, 1400f * strength, 1.4f, 22f * strength, hot, true);
+        AddShockwave(Player.Pos, 1400f * strength, 1.4f, 22f * strength, hot, filled: true, heavy: true);
         AddShockwave(Player.Pos, 820f * strength, 0.9f, 8f, new Vector4(0.6f, 1f, 1f, 1f));
         BurstParticles(Player.Pos, new Vector4(1f, 0.7f, 1f, 0.85f), (int)(140 * strength), 900f, 3.4f, 1.1f, ParticleKind.Spark);
         foreach (var e in Enemies) if (!e.Dead) e.HitFlash = MathF.Max(e.HitFlash, 0.6f);
@@ -584,8 +596,15 @@ public sealed partial class World
         Cam.AddShake(12f * strength);
         Flash = MathF.Max(Flash, reduceFlashing ? 0.12f : 0.55f * strength);
         if (Phase == GamePhase.Playing)
-            Player.Resonance = MathF.Min(Player.ResonanceMax, Player.Resonance + 20f);
-        EmitEvent("// DROP //  RESONANCE SURGE", 1.8f);
+        {
+            Player.Resonance = MathF.Min(Player.ResonanceMax, Player.Resonance + 20f * OverdriveResonanceScale);
+            DropOverdriveTimer = MathF.Max(DropOverdriveTimer, 4.0f);
+            EmitEvent("// DROP OVERDRIVE //", 2.2f);
+        }
+        else
+        {
+            EmitEvent("// DROP //  RESONANCE SURGE", 1.8f);
+        }
     }
 
     /// <summary>
@@ -598,7 +617,7 @@ public sealed partial class World
     private void UpdateFlow(float dt)
     {
         float s = Player.SpeedFrac;
-        if (s > 0.7f || Player.IsDashing) Flow += dt * 0.16f * MathF.Min(1.5f, s);
+        if (s > 0.7f || Player.IsDashing) Flow += dt * 0.16f * MathF.Min(1.5f, s) * (IsDropOverdrive ? 1.5f : 1f);
         else if (s < 0.35f) Flow -= dt * 0.22f;
         else Flow -= dt * 0.03f;
         Flow = M.Clamp01(Flow);
@@ -713,7 +732,7 @@ public sealed partial class World
         }
     }
 
-    public void AddShockwave(Vector2 pos, float maxRadius, float life, float width, Vector4 color, bool filled = false)
+    public void AddShockwave(Vector2 pos, float maxRadius, float life, float width, Vector4 color, bool filled = false, bool heavy = false)
     {
         Shockwaves.Add(new Shockwave
         {
@@ -725,6 +744,7 @@ public sealed partial class World
             Width = width,
             Color = color,
             Filled = filled,
+            Heavy = heavy,
         });
     }
 
@@ -806,7 +826,8 @@ public sealed partial class World
         Player.Invuln = MathF.Max(Player.Invuln, 0.7f);
         Flash = MathF.Max(Flash, 0.65f);
         Cam.AddShake(17f);
-        AddShockwave(Player.Pos, 760, 0.8f, 18, new Vector4(0.6f, 0.95f, 1f, 1f), true);
+        AddMicroHitStop(0.032f);
+        AddShockwave(Player.Pos, 760, 0.8f, 18, new Vector4(0.6f, 0.95f, 1f, 1f), filled: true, heavy: true);
         AddShockwave(Player.Pos, 430, 0.55f, 4, new Vector4(1f, 1f, 1f, 1f));
         Sfx?.Trigger(SfxType.Burst, 0.9f);
         BurstParticles(Player.Pos, new Vector4(0.65f, 1f, 1f, 0.8f), 100, 700, 3.5f, 0.9f, ParticleKind.Spark);
@@ -859,6 +880,7 @@ public sealed partial class World
         if (Phase != GamePhase.Playing || Player.InvincibleDemo) return;
         if (Player.Invuln > 0f || Player.IsDashing || StartGrace > 0f) return;
         Player.Health--;
+        Player.PhaseSyncStreak = 0;
         Flow *= 0.35f;
         _sinceHit = 0f;
         Hype *= 0.5f;

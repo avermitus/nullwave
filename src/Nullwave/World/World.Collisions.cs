@@ -105,7 +105,7 @@ public sealed partial class World
             if (p.IsDashing && distSq < (absorbRadius + b.Radius) * (absorbRadius + b.Radius))
             {
                 ReturnBullet(EnemyBullets, i);
-                p.Resonance = MathF.Min(p.ResonanceMax, p.Resonance + 4.5f * p.TotalResonanceGain * Mods.GrazeGain);
+                p.Resonance = MathF.Min(p.ResonanceMax, p.Resonance + 4.5f * p.TotalResonanceGain * Mods.GrazeGain * OverdriveResonanceScale);
                 Grazes++;
                 FlowGain(0.03f);
                 AddCombo(1);
@@ -131,7 +131,7 @@ public sealed partial class World
                 b.Grazed = true;
                 Grazes++;
                 FlowGain(0.03f);
-                p.Resonance = MathF.Min(p.ResonanceMax, p.Resonance + 1.25f * p.TotalResonanceGain * Mods.GrazeGain);
+                p.Resonance = MathF.Min(p.ResonanceMax, p.Resonance + 1.25f * p.TotalResonanceGain * Mods.GrazeGain * OverdriveResonanceScale);
                 AddCombo(1);
                 AddScore(18);
                 SpawnParticle(b.Pos, -M.SafeNorm(b.Vel) * 30f + FxRng.InCircle(40), 0.24f, 1.8f, M.Hsv(b.Hue, 0.5f, 1f, 0.65f), ParticleKind.Spark, 4f);

@@ -2,7 +2,7 @@
 
 - **Reviewer:** `@qa` (Independent QA / Performance Reviewer)
 - **Date:** `2026-11-19`
-- **Task Reviewed:** `TASK-001` through `TASK-010` (Harmonic Overclock — Attunement Synergy Evolutions)
+- **Task Reviewed:** `TASK-001` through `TASK-011` (Drop Overdrive, Micro-Hitstop, Radial Shockwave Distortion, 3× Phase-Sync Overdrive & High-Intensity Reactive Backdrops)
 - **Overall Verdict:** **PASS (`APPROVED — 0 DEFECTS`)**
 
 ---
@@ -645,3 +645,59 @@ All `TASK-009` acceptance criteria are satisfied with **0 defects**. `TASK-009` 
 
 ### 15.4 Final QA Sign-Off (`TASK-010`)
 All `TASK-010` acceptance criteria are satisfied with **0 defects**. `TASK-010` is **APPROVED** and marked **`done`**.
+
+---
+
+## 16. Independent QA Verification (`TASK-011` — Drop Overdrive, Micro-Hitstop, Radial Shockwave Distortion, 3× Phase-Sync Overdrive & High-Intensity Reactive Backdrops)
+
+### 16.1 Code, Zero-Allocation & Accessibility Audit
+- **Drop Overdrive, 3× Phase-Sync Overdrive & Micro-Hitstop (`Entities.cs`, `World.cs`, `World.Player.cs`, `World.Enemies.cs`):**
+  - `OnMusicDrop` ignites `4.0s` Drop Overdrive (`0.80x` fire interval, `+18%` damage, `1.5x` Flow gain, `+0.50x` score multiplier, `"// DROP OVERDRIVE //"` + `Heavy` shockwave).
+  - 3 consecutive on-beat dashes (`PhaseSyncStreak % 3 == 0`) ignite `5.0s` Sync Overdrive (`+30%` Resonance, `0.87x` fire interval, `+0.35x` score bonus, concentric cyan-gold `Heavy` shockwave); off-beat dashes and damage reset `PhaseSyncStreak = 0` with zero penalty.
+  - `AddMicroHitStop` caps at `0.09f` and pauses overdrive timer decay during hitstop (`26 ms` Elite kill, `32 ms` `Burst()`, `55 ms` Choir phase break, `85 ms` Boss kill).
+- **Zero-Alloc GPU Radial Shockwaves & High-Intensity Reactive Backdrops (`PostFx.cs`, `Renderer.cs`, `Shaders.cs`, `WorldRenderer.cs`):**
+  - `Renderer` uses pre-allocated `_screenShockwaves[4]` + `ReadOnlySpan<Vector4>` passed to `PostFx.Process` with static `ShockwaveNames[4]` (zero per-frame heap allocations).
+  - `EffectiveShockwaveStrength` strictly gates distortion to `0` when `ReduceFlashing` is enabled or `ScreenShake <= 0`; `ComputeBackdropAudioDrives` and `uMotionScale` cleanly dampen reactive surges when `ReduceFlashing` or low `BackgroundMotion` is configured.
+  - `BackgroundFrag` adds `uOverdrive`, `uMotionScale`, overdrive palette cycling, global beat-locked breathing/snare torque, 3-plane layer parallax, harmonic sonar wave ridge ignition, bloom-safe high-contrast Standard tone curve, and thresholded Abyssal ridge gating (`alpha = 1.0`).
+
+### 16.2 Independent Build, SelfTest & Dual-Theme Smoke Verification (`TASK-011`)
+- **Release Build:**
+  ```text
+  ./.dotnet/dotnet.exe build src/Nullwave/Nullwave.csproj -c Release --nologo
+  Build succeeded.
+      0 Warning(s)
+      0 Error(s)
+  Time Elapsed 00:00:00.55
+  ```
+- **Headless Self-Test Suite (`--selftest`):**
+  ```text
+  ./run.cmd --selftest
+  ...
+    beat: beats=85 expected~84 eighths=170 volleys=10 offgrid=0 telegraphMax=1.00
+    on-beat fire: volleys=30 median=21.4 ms within45ms=30/30 surgeMean=1.002
+    overdrive & hitstop: dropOD=4.0s syncOD=5.0s burstStop=32ms dropDrive=0.80->1.45 safe=0.58
+  RESULT: PASS (78270 assertions, 2.3s)
+  ```
+- **Live OpenGL Smoke Runs (`--smoke 5` Standard & `--smoke 4 --attune synergy --theme abyssal`):**
+  ```text
+  ./run.cmd --smoke 5
+  NULLWAVE | GL 4.1.0 NVIDIA 617.42 | NVIDIA GeForce RTX 5060 Laptop GPU/PCIe/SSE2
+  SMOKECONFIG | seed=00Z9DUE9 mods=5 mult=x2.29 bossPhases=3 attunes=0 synergies=0
+  SMOKE | 5.0s fps=113 wave=1 score=4750 enemies=2 bullets=4 bpm=126.0 audio=GENERATIVE SCORE capture=True
+  RENDERSTATE | after1=baseline after2=baseline alphaMin=255 rerenderDiff=0.000 % -> PASS
+
+  ./run.cmd --smoke 4 --attune synergy --theme abyssal
+  NULLWAVE | GL 4.1.0 NVIDIA 617.42 | NVIDIA GeForce RTX 5060 Laptop GPU/PCIe/SSE2
+  SMOKECONFIG | seed=00Z9DUE9 mods=5 mult=x2.29 bossPhases=3 attunes=12 synergies=3
+  SMOKE | 4.0s fps=112 wave=1 score=6302 enemies=2 bullets=4 bpm=126.0 audio=GENERATIVE SCORE capture=True
+  RENDERSTATE | after1=baseline after2=baseline alphaMin=255 rerenderDiff=0.000 % -> PASS
+  ```
+
+### 16.3 Visual Capture & Documentation Hygiene Verification (`TASK-011`)
+- Visually inspected both showcase captures via `read_file`:
+  - `docs/screenshots/drop_overdrive.png` (Abyssal) — Pitch-black OLED valleys with razor-sharp electric neon plasma contours, visible circular GPU radial shockwave refraction lens warping the contours around the ship, glowing magenta-violet overdrive ship aura, and zero-overlap `DROP OD 3.6S` / `// FLOW STATE //` / `SYNC OD 4.1S` (`x3.35`) HUD with overdrive countdown strip.
+  - `docs/screenshots/reactive_backdrop_standard.png` (Standard) — Vibrant high-contrast reactive overdrive backdrop with visible shockwave refraction ring, clear foreground bullets/ship (zero white-out), and crisp zero-overlap HUD.
+- Verified `README.md` and `CHANGELOG.md`: every image link resolves (`Test-Path == True`) with strictly game-focused copy and zero non-game/internal references.
+
+### 16.4 Final QA Sign-Off (`TASK-011`)
+All `TASK-011` acceptance criteria are satisfied with **0 defects**. `TASK-011` is **APPROVED** and marked **`done`**.

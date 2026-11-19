@@ -13,6 +13,7 @@ public sealed partial class World
         p.HitFlash = MathF.Max(0, p.HitFlash - dt * 4.5f);
         p.PhaseSyncFlash = MathF.Max(0f, p.PhaseSyncFlash - dt * 2.6f);
         p.VoidPhantomFlash = MathF.Max(0f, p.VoidPhantomFlash - dt * 3f);
+        p.SyncOverdriveTimer = MathF.Max(0f, p.SyncOverdriveTimer - dt);
         p.Invuln = MathF.Max(0, p.Invuln - dt);
         p.DashCooldown = MathF.Max(0, p.DashCooldown - dt);
         p.TrailTimer -= dt;
@@ -49,7 +50,7 @@ public sealed partial class World
                         DamageEnemy(e, 35f, p.Pos);
                 }
                 const float cancelR2 = 135f * 135f;
-                float resPerBullet = 2f * p.TotalResonanceGain * Mods.ResonanceGain;
+                float resPerBullet = 2f * p.TotalResonanceGain * Mods.ResonanceGain * OverdriveResonanceScale;
                 for (int i = EnemyBullets.Count - 1; i >= 0; i--)
                 {
                     var eb = EnemyBullets[i];
@@ -65,14 +66,24 @@ public sealed partial class World
             {
                 PhaseSyncs++;
                 p.PhaseSyncs++;
+                p.PhaseSyncStreak++;
                 p.PhaseSyncFlash = 1f;
                 p.LastPhaseSyncErrorMs = syncErrMs;
                 FlowGain(0.05f);
-                float resGain = 5f * p.TotalResonanceGain * Mods.ResonanceGain;
+                bool triggeredSyncOd = p.PhaseSyncStreak > 0 && p.PhaseSyncStreak % 3 == 0;
+                if (triggeredSyncOd)
+                {
+                    p.SyncOverdriveTimer = 5.0f;
+                    AddShockwave(p.Pos, 280f, 0.55f, 6.5f, new Vector4(0.45f, 1f, 0.95f, 1f), heavy: true);
+                    AddShockwave(p.Pos, 175f, 0.42f, 3.5f, new Vector4(1f, 0.88f, 0.40f, 1f));
+                    EmitEvent("SYNC OVERDRIVE // 3x PHASE", 1.8f);
+                    Sfx?.Trigger(SfxType.Unlock, 0.55f);
+                }
+                float resGain = 5f * p.TotalResonanceGain * Mods.ResonanceGain * OverdriveResonanceScale;
                 p.Resonance = MathF.Min(p.ResonanceMax, p.Resonance + resGain);
                 p.DashCooldown *= 0.82f;
                 p.Invuln = MathF.Max(p.Invuln, 0.30f);
-                AddScore(120, p.Pos, "PHASE SYNC", new Vector4(0.45f, 1f, 0.95f, 1f));
+                AddScore(120, p.Pos, triggeredSyncOd ? "SYNC OVERDRIVE" : "PHASE SYNC", new Vector4(0.45f, 1f, 0.95f, 1f));
                 AddShockwave(p.Pos, 195f, 0.42f, 3.6f, new Vector4(0.45f, 1f, 0.95f, 1f));
                 for (int i = 0; i < 10; i++)
                 {
@@ -80,6 +91,10 @@ public sealed partial class World
                     SpawnParticle(p.Pos, -p.DashDir * FxRng.Range(110, 420) + FxRng.InCircle(120), FxRng.Range(0.25f, 0.5f), 2.8f, sc, ParticleKind.Spark, 3f);
                 }
                 Sfx?.Trigger(SfxType.Pickup, 0.28f);
+            }
+            else
+            {
+                p.PhaseSyncStreak = 0;
             }
         }
 
@@ -141,7 +156,8 @@ public sealed partial class World
     {
         var p = Player;
         p.ShotCounter++;
-        p.FireTimer = p.FireInterval / MathF.Max(0.4f, Mods.PlayerFireRate);
+        p.FireTimer = p.FireInterval * OverdriveFireScale / MathF.Max(0.4f, Mods.PlayerFireRate);
+        float dmgMult = OverdriveDamageScale;
         float baseAngle = M.AngleOf(p.AimDir);
         int fired = 0;
 
@@ -151,7 +167,7 @@ public sealed partial class World
             Vector2 side = M.Perp(dir) * sideOffset;
             Vector2 pos = p.Pos + dir * 18f + side;
             float spread = FxRng.Signed() * 0.012f;
-            SpawnPlayerBullet(pos, M.FromAngle(angle + spread, p.BulletSpeed), p.BulletRadius, p.Damage * damageScale, p.BulletLife, p.PierceLevel, p.HomingLevel * 2.2f, p.RicochetLevel);
+            SpawnPlayerBullet(pos, M.FromAngle(angle + spread, p.BulletSpeed), p.BulletRadius, p.Damage * damageScale * dmgMult, p.BulletLife, p.PierceLevel, p.HomingLevel * 2.2f, p.RicochetLevel);
             fired++;
         }
 
@@ -181,7 +197,7 @@ public sealed partial class World
         {
             float seekHoming = p.HomingLevel * 3.85f;
             float seekLife = p.BulletLife * 1.25f;
-            float seekDmg = p.Damage * 0.62f;
+            float seekDmg = p.Damage * 0.62f * dmgMult;
             float seekRad = p.BulletRadius * 0.92f;
             for (int s = -1; s <= 1; s += 2)
             {
@@ -200,7 +216,7 @@ public sealed partial class World
                 p.Pos + dir * 22f,
                 dir * 2350f,
                 p.BulletRadius * 1.45f,
-                p.Damage * 2.1f,
+                p.Damage * 2.1f * dmgMult,
                 p.BulletLife * 1.15f,
                 p.PierceLevel + 2,
                 p.HomingLevel * 1.4f,

@@ -50,6 +50,7 @@ public static class SelfTest
             TestBackdropAudioReactivity();
             TestAbyssalThemeAndLighting();
             TestAttunementSynergies();
+            TestOverdriveAndHitStop();
             Console.WriteLine($"RESULT: PASS ({_checks} assertions, {sw.Elapsed.TotalSeconds:0.0}s)");
             return 0;
         }
@@ -1476,5 +1477,111 @@ public static class SelfTest
         Check(target.Hp < hpBefore, "Void Phantom dash shockwave damages enemies inside 180u");
 
         Console.WriteLine($"  synergies: active=4/4 seekers={seekerCount} railSpeed={railSpeed:0} prismDmg={startDmg:0.0}->{lance.Damage:0.0} voidRes=+{wVoid.Player.Resonance:0.0}");
+    }
+
+    /// <summary>TASK-011: Drop Overdrive, 3x Phase-Sync Overdrive, micro-hitstop, GPU shockwave refraction, and high-intensity reactive backdrop drives.</summary>
+    private static void TestOverdriveAndHitStop()
+    {
+        var audio = new AudioState { Bpm = 120f, BeatPulse = 0.7f, SnarePulse = 0.8f, HatPulse = 0.6f };
+        var w = new GameWorld(new RunConfig { Seed = 0x1101UL });
+        w.Player.InvincibleDemo = true;
+        w.StartGrace = 0f;
+
+        // 1. Drop Overdrive window
+        Check(!w.IsDropOverdrive && MathF.Abs(w.OverdriveFireScale - 1f) < 1e-5f, "no overdrive active initially");
+        w.OnMusicDrop(1.0f, false);
+        Check(w.IsDropOverdrive && w.DropOverdriveTimer >= 3.9f, "OnMusicDrop activates 4.0s Drop Overdrive");
+        Check(w.OverdriveFireScale < 0.85f && w.OverdriveDamageScale > 1.15f && w.OverdriveScoreBonus >= 0.5f, "Drop Overdrive boosts fire rate, damage, and score multiplier");
+        bool hasDropHeavy = false;
+        foreach (var sw in w.Shockwaves) if (sw.Heavy) hasDropHeavy = true;
+        Check(hasDropHeavy, "OnMusicDrop spawns Heavy shockwave for GPU refraction");
+        for (int i = 0; i < 250; i++) w.Step(1f / 60f, audio, InputFrame.Empty);
+        Check(!w.IsDropOverdrive && w.DropOverdriveTimer == 0f, "Drop Overdrive decays cleanly to zero after 4s");
+
+        // 2. 3x Phase-Sync Overdrive + off-beat / damage streak reset
+        var ws = new GameWorld(new RunConfig { Seed = 0x1102UL });
+        ws.StartGrace = 0f;
+        ws.Player.Health = 3;
+        ws.Player.MaxHealth = 3;
+        int syncHeavyCount = 0;
+        for (int k = 1; k <= 3; k++)
+        {
+            ws.Shockwaves.Clear();
+            ws.Player.DashCooldown = 0f;
+            ws.Player.IsDashing = false;
+            ws.BeatPhase = 0.02f; // dead-center on beat
+            ws.Step(1f / 60f, audio, new InputFrame(new Vector2(1, 0), new Vector2(1, 0), false, true, false, false));
+            Check(ws.Player.PhaseSyncStreak == k, $"on-beat dash {k} increments PhaseSyncStreak");
+            if (k == 3)
+            {
+                foreach (var sw in ws.Shockwaves) if (sw.Heavy) syncHeavyCount++;
+            }
+        }
+        Check(ws.Player.IsSyncOverdrive && ws.Player.SyncOverdriveTimer >= 4.9f, "3rd consecutive Phase Sync ignites 5.0s Sync Overdrive");
+        Check(syncHeavyCount >= 1, "3x Sync Overdrive emits a Heavy shockwave");
+        Check(ws.OverdriveResonanceScale >= 1.29f && ws.OverdriveScoreBonus >= 0.34f, "Sync Overdrive boosts Resonance and score multiplier");
+
+        // Off-beat dash resets streak with zero health or cooldown penalty
+        ws.Player.DashCooldown = 0f;
+        ws.Player.IsDashing = false;
+        ws.BeatPhase = 0.50f; // dead off-beat
+        int hpBefore = ws.Player.Health;
+        ws.Step(1f / 60f, audio, new InputFrame(new Vector2(1, 0), new Vector2(1, 0), false, true, false, false));
+        Check(ws.Player.PhaseSyncStreak == 0 && ws.Player.Health == hpBefore, "off-beat dash resets streak with zero health penalty");
+
+        // Taking damage resets streak
+        ws.Player.PhaseSyncStreak = 2;
+        ws.Player.IsDashing = false;
+        ws.Player.Invuln = 0f;
+        ws.HurtPlayer();
+        Check(ws.Player.PhaseSyncStreak == 0, "HurtPlayer resets PhaseSyncStreak");
+
+        // 3. Micro-Hitstop on Elite kill and Resonance Cascade (Burst)
+        var wh = new GameWorld(new RunConfig { Seed = 0x1103UL });
+        wh.Player.InvincibleDemo = true;
+        wh.ClearSpawnQueueForCapture();
+        wh.Enemies.Clear();
+        wh.SpawnForCapture(EnemyRole.Drifter, wh.Player.Pos + new Vector2(80f, 0f));
+        var elite = wh.Enemies[0];
+        elite.Elite = true;
+        elite.Spawning = false;
+        elite.Hp = 1f;
+        wh.SpawnPlayerBullet(elite.Pos, new Vector2(1000f, 0f), 8f, 50f, 1f, 0);
+        wh.Step(1f / 60f, audio, InputFrame.Empty);
+        Check(wh.HitStop >= 0.02f && wh.HitStop <= 0.09f, "Elite kill triggers bounded micro-hitstop");
+        float sessionBefore = wh.SessionTime;
+        for (int i = 0; i < 6; i++) wh.Step(1f / 60f, audio, InputFrame.Empty);
+        Check(wh.HitStop <= 0f && wh.SessionTime > sessionBefore, "HitStop drains cleanly without stalling SessionTime");
+
+        wh.BeginWave(1);
+        wh.Player.Resonance = wh.Player.ResonanceMax;
+        wh.Burst();
+        Check(wh.HitStop >= 0.028f && wh.HitStop <= 0.09f, "Burst triggers micro-hitstop");
+
+        // 4. GPU Shockwave Projection & High-Intensity Reactive Backdrop Drives + shader contracts
+        Vector2 cam = new(100f, -50f);
+        Vector2 view = new(800f, 450f);
+        var swCenter = Renderer.ProjectScreenShockwave(cam, 450f, 0.85f, cam, view);
+        Check(MathF.Abs(swCenter.X - 0.5f) < 1e-5f && MathF.Abs(swCenter.Y - 0.5f) < 1e-5f && MathF.Abs(swCenter.Z - 0.5f) < 1e-5f, "ProjectScreenShockwave centers camera at (0.5, 0.5)");
+        var swBad = Renderer.ProjectScreenShockwave(new Vector2(float.NaN, 0f), -10f, float.PositiveInfinity, cam, view);
+        Check(float.IsFinite(swBad.X) && swBad.Z == 0f && swBad.W == 0f, "ProjectScreenShockwave sanitizes non-finite inputs");
+        Check(Renderer.EffectiveShockwaveStrength(0.85f, true, 100) == 0f, "ReduceFlashing suppresses shockwave distortion");
+        Check(Renderer.EffectiveShockwaveStrength(0.85f, false, 0) == 0f, "ScreenShake=0 suppresses shockwave distortion");
+        Check(Renderer.EffectiveShockwaveStrength(0.85f, false, 100) > 0.8f, "normal settings allow shockwave distortion");
+
+        var mood = new MusicDirector();
+        mood.ForceForCapture(0.9f, 0.2f, 0f, 0.8f, 0.1f, 0.7f);
+        var dBase = Renderer.ComputeBackdropAudioDrives(audio, mood, 1.0f, overdrive: 0f, reduceFlashing: false);
+        var dOd = Renderer.ComputeBackdropAudioDrives(audio, mood, 1.0f, overdrive: 1.0f, reduceFlashing: false);
+        var dSafe = Renderer.ComputeBackdropAudioDrives(audio, mood, 1.0f, overdrive: 1.0f, reduceFlashing: true);
+        Check(dOd.Drop > dBase.Drop && dOd.Kick > dBase.Kick && dOd.Snare > dBase.Snare, "Overdrive amplifies reactive backdrop drives");
+        Check(dSafe.Drop < dOd.Drop * 0.5f && dSafe.Kick < dOd.Kick * 0.5f, "ReduceFlashing dampens reactive backdrop drives");
+
+        Check(Shaders.BackgroundFrag.Contains("uniform float uOverdrive;", StringComparison.Ordinal), "BackgroundFrag declares uOverdrive");
+        Check(Shaders.BackgroundFrag.Contains("uniform float uMotionScale;", StringComparison.Ordinal), "BackgroundFrag declares uMotionScale");
+        Check(Shaders.CompositeFrag.Contains("uniform int uShockwaveCount;", StringComparison.Ordinal), "CompositeFrag declares uShockwaveCount");
+        Check(Shaders.CompositeFrag.Contains("uniform vec4 uShockwaves[4];", StringComparison.Ordinal), "CompositeFrag declares uShockwaves[4]");
+
+        Console.WriteLine($"  overdrive & hitstop: dropOD=4.0s syncOD=5.0s burstStop={wh.HitStop * 1000f:0}ms dropDrive={dBase.Drop:0.00}->{dOd.Drop:0.00} safe={dSafe.Drop:0.00}");
     }
 }

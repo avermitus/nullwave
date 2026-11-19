@@ -64,6 +64,7 @@ public sealed class Renderer : IDisposable
     public Vector2 ObliqueVec => ComputeObliqueVec(AimTilt);
 
     public const int MaxBackdropLights = 12;
+    public const int MaxScreenShockwaves = 4;
 
     private static readonly string[] LightPosNames =
     [
@@ -82,8 +83,45 @@ public sealed class Renderer : IDisposable
     private readonly Vector4[] _lightData = new Vector4[MaxBackdropLights];
     private readonly Vector3[] _lightCols = new Vector3[MaxBackdropLights];
     private int _lightCount;
+    private readonly Vector4[] _screenShockwaves = new Vector4[MaxScreenShockwaves];
+    private int _screenShockwaveCount;
 
     public int BackdropLightCount => _lightCount;
+    public int ScreenShockwaveCount => _screenShockwaveCount;
+    /// <summary>Live Drop/Sync Overdrive intensity (0..1) amplifying reactive backdrop surges.</summary>
+    public float Overdrive { get; set; }
+
+    public static Vector4 ProjectScreenShockwave(
+        Vector2 worldPos, float radiusWorld, float strength,
+        Vector2 camera, Vector2 view)
+    {
+        float vx = MathF.Max(1f, float.IsFinite(view.X) ? view.X : 800f);
+        float vy = MathF.Max(1f, float.IsFinite(view.Y) ? view.Y : 450f);
+        float dx = float.IsFinite(worldPos.X) && float.IsFinite(camera.X) ? worldPos.X - camera.X : 0f;
+        float dy = float.IsFinite(worldPos.Y) && float.IsFinite(camera.Y) ? worldPos.Y - camera.Y : 0f;
+        float r = float.IsFinite(radiusWorld) ? MathF.Max(0f, radiusWorld) : 0f;
+        float w = float.IsFinite(strength) ? Math.Clamp(strength, 0f, 1.5f) : 0f;
+        return new Vector4(
+            0.5f + dx / (2f * vx),
+            0.5f - dy / (2f * vy),
+            r / (2f * vy),
+            w);
+    }
+
+    public static float EffectiveShockwaveStrength(float strength, bool reduceFlashing, int screenShakePercent)
+    {
+        if (reduceFlashing || screenShakePercent <= 0 || !float.IsFinite(strength) || strength <= 0f) return 0f;
+        return Math.Clamp(strength * (Math.Clamp(screenShakePercent, 0, 150) / 100f), 0f, 1.5f);
+    }
+
+    public void AddScreenShockwave(Vector2 worldPos, float radiusWorld, float strength)
+    {
+        if (_screenShockwaveCount >= MaxScreenShockwaves) return;
+        var s = GameSettings.Current;
+        float eff = EffectiveShockwaveStrength(strength, s.ReduceFlashing, s.ScreenShake);
+        if (eff <= 0.005f) return;
+        _screenShockwaves[_screenShockwaveCount++] = ProjectScreenShockwave(worldPos, radiusWorld, eff, _camera, _view);
+    }
 
     public static Vector4 ProjectBackdropLight(
         Vector2 worldPos, float worldRadius, float intensity,
@@ -112,19 +150,29 @@ public sealed class Renderer : IDisposable
     public readonly record struct BackdropAudioDrives(
         float Kick, float Snare, float Hat, float Drop, float Build, float Breakdown);
 
-    private static float ClampDrive(float v) => float.IsFinite(v) ? Math.Clamp(v, 0f, 3f) : 0f;
+    private static float ClampDrive(float v) => float.IsFinite(v) ? Math.Clamp(v, 0f, 3.5f) : 0f;
 
     public static BackdropAudioDrives ComputeBackdropAudioDrives(
-        AudioState audio, MusicDirector? mood, float fx)
+        AudioState audio, MusicDirector? mood, float fx, float overdrive = 0f, bool reduceFlashing = false)
     {
         float scale = float.IsFinite(fx) ? MathF.Max(0f, fx) : 0f;
+        float od = float.IsFinite(overdrive) ? Math.Clamp(overdrive, 0f, 1f) : 0f;
+        float damp = reduceFlashing ? 0.40f : 1f;
+        float s = scale * damp;
+        float kick = (mood?.Kick ?? audio.BeatPulse) * s + od * 0.28f * s;
+        float snare = audio.SnarePulse * s + od * 0.22f * s;
+        float hat = audio.HatPulse * s + od * 0.16f * s;
+        float drop = (mood?.DropPulse ?? 0f) * s + od * 0.65f * s;
+        // Preserve legacy cap of 3.0 when overdrive is 0 for existing extreme-input contract
+        float cap = od > 0f ? 3.5f : 3f;
+        float Clamp(float v) => float.IsFinite(v) ? Math.Clamp(v, 0f, cap) : 0f;
         return new BackdropAudioDrives(
-            Kick: ClampDrive((mood?.Kick ?? audio.BeatPulse) * scale),
-            Snare: ClampDrive(audio.SnarePulse * scale),
-            Hat: ClampDrive(audio.HatPulse * scale),
-            Drop: ClampDrive((mood?.DropPulse ?? 0f) * scale),
-            Build: ClampDrive((mood?.Build ?? 0f) * scale),
-            Breakdown: ClampDrive((mood?.Breakdown ?? 0f) * scale));
+            Kick: Clamp(kick),
+            Snare: Clamp(snare),
+            Hat: Clamp(hat),
+            Drop: Clamp(drop),
+            Build: Clamp((mood?.Build ?? 0f) * s),
+            Breakdown: Clamp((mood?.Breakdown ?? 0f) * scale));
     }
 
     public static Vector2 ClampAimTilt(Vector2 raw) => new(
@@ -261,6 +309,7 @@ public sealed class Renderer : IDisposable
         _worldMeshes.Clear();
         _backdropMeshes.Clear();
         _lightCount = 0;
+        _screenShockwaveCount = 0;
     }
 
     /// <summary>Perspective camera for the background 3D layer (its own space, z up).</summary>
@@ -316,21 +365,31 @@ public sealed class Renderer : IDisposable
         var settings = GameSettings.Current;
         var mood = Mood;
         float fx = settings.MusicFx / 100f * HypeScale;
-        var drives = ComputeBackdropAudioDrives(audio, mood, fx);
-        // breakdowns slow the liquid right down, drops make it surge
-        _flow += frameDt * (0.35f + audio.Energy * 1.6f + audio.BeatPulse * 0.9f + drives.Drop * 4f) * (1f - drives.Breakdown * 0.65f) * settings.BackgroundMotion / 100f;
+        float overdriveRaw = float.IsFinite(Overdrive) ? Math.Clamp(Overdrive, 0f, 1f) : 0f;
+        float overdriveEff = settings.ReduceFlashing ? overdriveRaw * 0.35f : overdriveRaw;
+        float motionScale = settings.BackgroundMotion / 100f * (settings.ReduceFlashing ? 0.45f : 1f);
+        var drives = ComputeBackdropAudioDrives(audio, mood, fx, overdriveRaw, settings.ReduceFlashing);
+        float flashDamp = settings.ReduceFlashing ? 0.40f : 1f;
+        float punchKick = ClampDrive(drives.Kick * 1.35f + audio.DownPulse * 0.45f * fx * flashDamp);
+        float punchSnare = ClampDrive(drives.Snare * 1.40f);
+        float punchHat = ClampDrive(drives.Hat * 1.35f);
+        float punchDrop = ClampDrive(drives.Drop * 1.35f);
+        // breakdowns slow the liquid right down, drops and Overdrive make it surge
+        _flow += frameDt * (0.38f + audio.Energy * 1.85f + audio.BeatPulse * 1.05f + punchDrop * 4.4f + overdriveEff * 1.8f) * (1f - drives.Breakdown * 0.65f) * settings.BackgroundMotion / 100f;
 
         _background.Use();
         _background.SetVec2("uResolution", Width, Height);
         _background.SetVec2("uCam", _camera);
         _background.SetFloat("uTime", time);
         _background.SetFloat("uFlow", _flow);
-        _background.SetFloat("uIntensity", settings.BackgroundIntensity / 100f * (1f - drives.Breakdown * 0.35f + (mood?.DropGlow ?? 0f) * fx * 0.25f));
-        _background.SetFloat("uDrop", drives.Drop);
+        _background.SetFloat("uIntensity", settings.BackgroundIntensity / 100f * Math.Clamp(1f - drives.Breakdown * 0.35f + (mood?.DropGlow ?? 0f) * fx * 0.14f + overdriveEff * 0.08f, 0.2f, 1.15f));
+        _background.SetFloat("uDrop", punchDrop);
         _background.SetFloat("uBuild", drives.Build);
-        _background.SetFloat("uKick", drives.Kick);
-        _background.SetFloat("uSnare", drives.Snare);
-        _background.SetFloat("uHat", drives.Hat);
+        _background.SetFloat("uKick", punchKick);
+        _background.SetFloat("uSnare", punchSnare);
+        _background.SetFloat("uHat", punchHat);
+        _background.SetFloat("uOverdrive", overdriveEff);
+        _background.SetFloat("uMotionScale", motionScale);
         _background.SetFloat("uBass", audio.Bass);
         _background.SetFloat("uLowMid", audio.LowMid);
         _background.SetFloat("uMid", audio.Mid);
@@ -345,7 +404,7 @@ public sealed class Renderer : IDisposable
         _background.SetVec3("uPrim", new Vector3(Palette.Primary.X, Palette.Primary.Y, Palette.Primary.Z));
         _background.SetVec3("uSec", new Vector3(Palette.Secondary.X, Palette.Secondary.Y, Palette.Secondary.Z));
         // travel: how far the ship has "flown" - drives tunnels and fields rushing past
-        _travel += frameDt * (0.15f + PlayerSpeed * 1.4f + Flow * 0.8f + drives.Drop * 2f) * settings.BackgroundMotion / 100f;
+        _travel += frameDt * (0.18f + PlayerSpeed * 1.55f + Flow * 0.9f + punchDrop * 2.4f + overdriveEff * 1.8f) * settings.BackgroundMotion / 100f;
         _background.SetFloat("uTravel", _travel);
         _background.SetFloat("uSpeed", PlayerSpeed);
         _background.SetVec2("uVel", PlayerDirection.X, -PlayerDirection.Y);
@@ -429,9 +488,11 @@ public sealed class Renderer : IDisposable
 
         var postMood = WithSpeed(BuildPostMood(mood, fx, settings.ReduceFlashing));
         postMood.DarkTheme = darkTheme;
-        Post.Process(scene.Texture, Width, Height, time, (1.18f + audio.Energy * 0.32f + drives.Drop * 0.8f) * settings.Bloom / 100f,
-            (aberration + drives.Build * 0.5f + drives.Drop * 0.6f) * settings.Aberration / 100f,
-            settings.ReduceFlashing ? MathF.Min(flash, 0.15f) : flash, audio.BeatPulse, damage, postMood);
+        float bloomAmt = (1.18f + audio.Energy * 0.32f + MathF.Min(drives.Drop, 1.2f) * 0.55f) * settings.Bloom / 100f;
+        Post.Process(scene.Texture, Width, Height, time, bloomAmt,
+            (aberration + drives.Build * 0.45f + MathF.Min(drives.Drop, 1.2f) * 0.45f) * settings.Aberration / 100f,
+            settings.ReduceFlashing ? MathF.Min(flash, 0.15f) : flash, audio.BeatPulse, damage, postMood,
+            _screenShockwaves.AsSpan(0, _screenShockwaveCount));
 
         // Post.Process leaves RenderBaseline.Default bound to the default framebuffer. The composite is
         // opaque (alpha 1); the UI blends colour normally but must not pull destination alpha below 1,
@@ -476,8 +537,8 @@ public sealed class Renderer : IDisposable
             Hue = m.MoodHue * 0.55f * fx,
             Saturation = 1f + fx * (intensity * 0.25f - breakdown * 0.55f + drop * 0.5f + glow * 0.15f),
             Contrast = 1f + fx * (build * 0.15f + intensity * 0.08f - breakdown * 0.1f + drop * 0.1f),
-            Thump = fx * (m.Kick * 0.010f + drop * 0.05f),
-            Glitch = reduceFlashing ? 0f : fx * MathF.Min(1f, m.Sparkle * 0.3f * intensity + drop * 0.8f),
+            Thump = MathF.Min(0.018f, fx * (m.Kick * 0.008f + drop * 0.016f)),
+            Glitch = reduceFlashing ? 0f : fx * MathF.Min(0.42f, m.Sparkle * 0.25f * intensity + drop * 0.42f),
             Vignette = Math.Clamp(1f + fx * (breakdown * 0.45f + build * 0.35f - m.Kick * 0.25f - drop * 0.6f), 0.2f, 1.8f),
             Tint = Vector3.Lerp(Vector3.One, new Vector3(0.82f, 0.9f, 1.1f), breakdown * fx * 0.8f),
         };

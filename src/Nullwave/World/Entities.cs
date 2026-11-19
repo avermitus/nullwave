@@ -90,8 +90,11 @@ public sealed class Player
     public float Time;
     public bool InvincibleDemo;
     public int PhaseSyncs;
+    public int PhaseSyncStreak;
     public float PhaseSyncFlash;
     public float LastPhaseSyncErrorMs;
+    public float SyncOverdriveTimer;
+    public bool IsSyncOverdrive => SyncOverdriveTimer > 0f;
     public int ShotCounter;
     public SynergyFlags ActiveSynergies;
     public float VoidPhantomFlash;
@@ -312,6 +315,7 @@ public sealed class Shockwave
     public float Width;
     public Vector4 Color;
     public bool Filled;
+    public bool Heavy;
 }
 
 public sealed class Pickup

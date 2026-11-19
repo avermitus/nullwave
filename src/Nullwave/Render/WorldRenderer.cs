@@ -35,13 +35,19 @@ public static class WorldRenderer
     {
         static Vector3 Rgb(Vector4 c) => new(c.X, c.Y, c.Z);
 
-        // 1. Player interceptor light (+ Phase Sync / Void Phantom / dash surge)
+        // 1. Player interceptor light (+ Phase Sync / Void Phantom / Overdrive / dash surge)
         var pl = w.Player;
+        float od = w.OverdriveIntensity;
         Vector3 playerCol = Vector3.Lerp(Rgb(p.Player), new Vector3(0.55f, 0.96f, 1f), pl.PhaseSyncFlash);
         if (pl.VoidPhantomFlash > 0.02f)
             playerCol = Vector3.Lerp(playerCol, new Vector3(0.75f, 0.45f, 1f), pl.VoidPhantomFlash * 0.85f);
-        float playerRad = 290f + pl.PhaseSyncFlash * 150f + pl.VoidPhantomFlash * 170f + (pl.IsDashing ? 90f : 0f);
-        float playerInt = 0.95f + pl.PhaseSyncFlash * 0.65f + pl.VoidPhantomFlash * 0.75f + (pl.IsDashing ? 0.25f : 0f);
+        if (od > 0.02f)
+        {
+            Vector3 odCol = w.IsDropOverdrive ? new Vector3(1f, 0.48f, 0.88f) : new Vector3(0.45f, 0.98f, 1f);
+            playerCol = Vector3.Lerp(playerCol, odCol, MathF.Min(0.75f, od * 0.65f));
+        }
+        float playerRad = 290f + pl.PhaseSyncFlash * 150f + pl.VoidPhantomFlash * 170f + od * 220f + (pl.IsDashing ? 90f : 0f);
+        float playerInt = 0.95f + pl.PhaseSyncFlash * 0.65f + pl.VoidPhantomFlash * 0.75f + od * 0.75f + (pl.IsDashing ? 0.25f : 0f);
         r.AddBackdropLight(pl.Pos, playerRad, playerCol, playerInt);
 
         // 2. Choir Boss core light (if alive)
@@ -62,7 +68,7 @@ public static class WorldRenderer
             var s = w.Shockwaves[i];
             if (s.Life <= 0f || !r.InView(s.Pos, 350f)) continue;
             float frac = M.Clamp01(s.Life / MathF.Max(0.01f, s.MaxLife));
-            r.AddBackdropLight(s.Pos, MathF.Max(140f, s.Radius * 1.15f), Rgb(s.Color), 0.9f * frac);
+            r.AddBackdropLight(s.Pos, Math.Clamp(s.Radius * 0.85f, 140f, 360f), Rgb(s.Color), 0.78f * frac);
             shockAdded++;
         }
 
@@ -878,6 +884,17 @@ public static class WorldRenderer
             r.Arc(pos, haloR * 0.82f, time * 4.5f, 1.9f, 1.8f * vf, new Vector4(0.48f, 0.98f, 1f, 0.82f * vf), 14, true);
             r.Arc(pos, haloR * 0.82f, time * 4.5f + MathF.PI, 1.9f, 1.8f * vf, new Vector4(0.85f, 0.48f, 1f, 0.82f * vf), 14, true);
         }
+        if (w.IsDropOverdrive || player.IsSyncOverdrive)
+        {
+            float odPulse = 0.75f + 0.25f * MathF.Sin(time * 12f);
+            var odPrimary = w.IsDropOverdrive ? new Vector4(1f, 0.48f, 0.88f, 0.78f * odPulse) : new Vector4(0.45f, 1f, 0.95f, 0.78f * odPulse);
+            var odGold = new Vector4(1f, 0.86f, 0.38f, 0.72f * odPulse);
+            float odR = 42f + MathF.Sin(time * 8f) * 3f + w.BeatPulse * 5f;
+            r.Arc(pos, odR, time * 3.2f, 1.65f, 2.2f, odPrimary, 16, true);
+            r.Arc(pos, odR, time * 3.2f + MathF.PI, 1.65f, 2.2f, odGold, 16, true);
+            if (w.IsDropOverdrive && player.IsSyncOverdrive)
+                r.Circle(pos, odR + 6f, 1.4f, new Vector4(0.55f, 1f, 0.98f, 0.48f * odPulse), 36, true);
+        }
         r.Circle(pos, 22f, 4.5f, M.WithAlpha(col, 0.08f * flicker), 30, true);
         r.Arc(pos, 25f, time * 1.6f, 2.2f, 1.2f, M.WithAlpha(p.Secondary, 0.35f * flicker), 12, true);
         r.FillCircle(pos, 4.2f, new Vector4(0f, 0f, 0f, 0.6f), 10);
@@ -944,6 +961,12 @@ public static class WorldRenderer
         foreach (var s in w.Shockwaves)
         {
             float t = M.Clamp01(s.Life / MathF.Max(0.01f, s.MaxLife));
+            if (s.Heavy)
+            {
+                float prog = 1f - t;
+                float env = MathF.Sin(prog * MathF.PI) * (1f - prog * 0.35f);
+                r.AddScreenShockwave(s.Pos, s.Radius, env * 0.85f);
+            }
             var col = M.WithAlpha(s.Color, s.Color.W * t * 0.65f);
             if (s.Filled)
                 r.FillCircle(s.Pos, s.Radius, M.WithAlpha(s.Color, 0.012f * t), 48, true);

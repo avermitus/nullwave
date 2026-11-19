@@ -278,6 +278,20 @@ public sealed class Game : IDisposable
             return;
         }
 
+        if (scenario == "overdrive")
+        {
+            StartRun(0x5EEDC0DEUL, false);
+            _autoPilot = true;
+            _world!.Player.InvincibleDemo = true;
+            ApplyAttuneOverride(_world.Player, string.IsNullOrWhiteSpace(AttuneOverride) ? "synergy" : AttuneOverride);
+            _world.BeginWave(4);
+            _world.PhaseSyncs = 3;
+            _world.Player.PhaseSyncs = 3;
+            _world.Player.PhaseSyncStreak = 3;
+            _world.Player.ShotCounter = 3;
+            _director.ForceForCapture(0.95f, 0f, 0f, 0.90f, 0.35f, 0.92f);
+            return;
+        }
         if (scenario == "synergy")
         {
             StartRun(0x5EEDC0DEUL, false);
@@ -387,6 +401,12 @@ public sealed class Game : IDisposable
                 boss.Spawning = false;
                 boss.BossHealthDisplay = MathF.Max(boss.BossHealthDisplay, 0.72f);
                 boss.Hp = boss.MaxHp * 0.56f;
+            }
+            if (CaptureScenario == "overdrive" && i == frames - 18 && _world != null)
+            {
+                _world.OnMusicDrop(1.0f, false);
+                _world.Player.SyncOverdriveTimer = 4.5f;
+                _world.Player.PhaseSyncFlash = 0.75f;
             }
             Update(1f / 60f);
         }
@@ -1083,6 +1103,7 @@ public sealed class Game : IDisposable
         _renderer.PlayerDirection = M.SafeNorm(world.Player.Vel) * _renderer.PlayerSpeed;
         _renderer.Flow = world.Flow;
         _renderer.Hype = world.Demo ? 0.6f : world.Hype;
+        _renderer.Overdrive = world.Demo ? 0f : world.OverdriveIntensity;
         if (!BackdropOnly && world.Movement != _backdropMovement)
         {
             _backdropMovement = world.Movement;

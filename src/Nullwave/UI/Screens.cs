@@ -417,18 +417,47 @@ public static class Screens
         bool hot = flow > 0.85f;
         var col = Vector4.Lerp(M.WithAlpha(p.Primary, 0.9f), new Vector4(1f, 0.55f, 0.95f, 1f), M.Clamp01((flow - 0.5f) * 2f));
         r.UiTextCentered(hot ? "// FLOW STATE //" : "FLOW", 800, 824, 1.45f, hot ? M.WithAlpha(col, 0.75f + 0.25f * MathF.Sin(time * 10f)) : M.WithAlpha(p.Dim, 0.8f), hot);
-        r.UiRect(x - 2, y - 2, wdt + 4, h + 4, new Vector4(0.01f, 0.012f, 0.03f, 0.85f));
+        if (w.IsDropOverdrive)
+        {
+            float odPulse = 0.76f + 0.24f * MathF.Sin(time * 11f);
+            var dropCol = Vector4.Lerp(new Vector4(1f, 0.45f, 0.88f, 1f), new Vector4(1f, 0.88f, 0.40f, 1f), odPulse * 0.5f);
+            r.UiText("DROP OD " + w.DropOverdriveTimer.ToString("0.0") + "S", x, 824, 1.3f, M.WithAlpha(dropCol, 0.95f), true);
+        }
+        if (w.IsDropOverdrive || w.Player.IsSyncOverdrive)
+        {
+            float frac = w.IsDropOverdrive
+                ? M.Clamp01(w.DropOverdriveTimer / 4.0f)
+                : M.Clamp01(w.Player.SyncOverdriveTimer / 5.0f);
+            var odBarCol = w.IsDropOverdrive
+                ? new Vector4(1f, 0.58f, 0.88f, 0.92f)
+                : new Vector4(0.45f, 1f, 0.95f, 0.92f);
+            r.UiRect(x, 839, wdt, 3, new Vector4(0.015f, 0.015f, 0.03f, 0.82f));
+            r.UiRect(x, 839, wdt * frac, 3, odBarCol, true);
+        }
+        r.UiRect(x - 2, y - 2, wdt + 4, h + 4, PanelFill(new Vector4(0.01f, 0.012f, 0.03f, 0.85f), 0.94f));
         r.UiRect(x, y, wdt * flow, h, M.WithAlpha(col, 0.9f), true);
         // speed tick: where your current speed sits (keep it right of the line to build flow)
         r.UiRect(x + wdt * 0.7f - 1, y - 4, 2, h + 8, M.WithAlpha(p.Dim, 0.5f));
         r.UiRect(x + wdt * speed - 2, y - 5, 4, h + 10, new Vector4(1f, 1f, 1f, 0.85f), true);
-        r.UiTextRight("x" + (1f + flow * 1.5f).ToString("0.00"), x + wdt, 862, 1.3f, M.WithAlpha(col, 0.85f), hot);
+        float mult = 1f + flow * 1.5f + w.OverdriveScoreBonus;
+        r.UiTextRight("x" + mult.ToString("0.00"), x + wdt, 862, 1.3f, M.WithAlpha(w.OverdriveScoreBonus > 0f ? new Vector4(1f, 0.88f, 0.45f, 1f) : col, 0.92f), hot || w.OverdriveScoreBonus > 0f);
         r.UiText("STAY FAST // GRAZE // KILL", x, 862, 1.2f, M.WithAlpha(p.Dim, 0.45f));
-        if (w.Player.PhaseSyncFlash > 0.01f)
+        if (w.Player.IsSyncOverdrive)
+        {
+            float sp = 0.76f + 0.24f * MathF.Sin(time * 11f);
+            var syncOdCol = Vector4.Lerp(new Vector4(0.45f, 1f, 0.95f, 1f), new Vector4(1f, 0.88f, 0.45f, 1f), sp * 0.45f);
+            r.UiTextRight("SYNC OD " + w.Player.SyncOverdriveTimer.ToString("0.0") + "S", x + wdt, 824, 1.3f, M.WithAlpha(syncOdCol, 0.96f), true);
+        }
+        else if (w.Player.PhaseSyncFlash > 0.01f)
         {
             float sf = w.Player.PhaseSyncFlash;
             var syncCol = Vector4.Lerp(new Vector4(0.45f, 1f, 0.95f, 1f), new Vector4(1f, 0.88f, 0.45f, 1f), sf);
-            r.UiTextRight("PHASE SYNC +RES", x + wdt, 824, 1.35f, M.WithAlpha(syncCol, 0.45f + 0.55f * sf), true);
+            int pip = w.Player.PhaseSyncStreak > 0 && w.Player.PhaseSyncStreak % 3 == 0 ? 3 : w.Player.PhaseSyncStreak % 3;
+            r.UiTextRight("PHASE SYNC " + pip + "/3", x + wdt, 824, 1.3f, M.WithAlpha(syncCol, 0.45f + 0.55f * sf), true);
+        }
+        else if (w.Player.PhaseSyncStreak > 0)
+        {
+            r.UiTextRight("SYNC " + w.PhaseSyncs + " (" + (w.Player.PhaseSyncStreak % 3) + "/3)", x + wdt, 824, 1.3f, M.WithAlpha(p.Accent, 0.72f));
         }
         else if (w.PhaseSyncs > 0)
         {

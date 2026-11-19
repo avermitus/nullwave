@@ -279,7 +279,7 @@ public sealed partial class World
                 {
                     desired = Vector2.Zero;
                     e.DashDir = dir;
-                    if (e.StateTimer <= 0)
+                    if (e.StateTimer <= 0 && EighthTick)
                     {
                         e.State = 2;
                         e.StateTimer = 0.34f;
@@ -502,12 +502,13 @@ public sealed partial class World
             ReturnBullet(EnemyBullets, i);
         }
 
-        AddShockwave(e.Pos, BossPhaseClearRadius, 0.85f, 12f, M.Hsv(e.Hue, 0.65f, 1f, 1f), true);
+        AddShockwave(e.Pos, BossPhaseClearRadius, 0.85f, 12f, M.Hsv(e.Hue, 0.65f, 1f, 1f), filled: true, heavy: true);
         AddShockwave(e.Pos, 320f, 0.55f, 4f, Vector4.One);
         BurstParticles(e.Pos, M.Hsv(e.Hue, 0.7f, 1f, 0.9f), 28, 360f, 3.2f, 0.65f, ParticleKind.Spark);
         EmitEvent($"THE CHOIR // {BossPhaseSubtitle(e.BossPhase, totalPhases)}", 2.0f);
         Sfx?.Trigger(SfxType.Boss, 0.9f);
-        Cam.AddShake(12f);
+        AddMicroHitStop(0.055f);
+        Cam.AddShake(18f);
         Flash = MathF.Max(Flash, 0.35f);
         for (int i = 0; i < 3; i++)
         {
@@ -689,15 +690,17 @@ public sealed partial class World
         {
             BossKills++;
             BossEnemy = null;
+            AddMicroHitStop(0.085f);
             for (int i = EnemyBullets.Count - 1; i >= 0; i--) ReturnBullet(EnemyBullets, i);
             for (int i = 0; i < 4; i++)
                 SpawnPickup(e.Pos + FxRng.InCircle(180), i == 0 ? PickupKind.Health : PickupKind.Core, 1f, e.Hue);
-            AddShockwave(e.Pos, 1200, 1.8f, 30f, new Vector4(0.8f, 0.5f, 1f, 1f), true);
+            AddShockwave(e.Pos, 1200, 1.8f, 30f, new Vector4(0.8f, 0.5f, 1f, 1f), filled: true, heavy: true);
             EmitEvent("CHOIR SILENCED // MOVE ON", 3.2f);
             Flash = 0.9f;
         }
         else
         {
+            if (e.Elite) AddMicroHitStop(0.026f);
             float drop = FxRng.NextFloat();
             if (drop < 0.055f * Mods.PickupRate) SpawnPickup(e.Pos, PickupKind.Health, 1, 0.4f);
             else if (drop < 0.24f * Mods.PickupRate) SpawnPickup(e.Pos, PickupKind.Resonance, 1, 0.55f);

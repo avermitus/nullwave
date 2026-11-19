@@ -14,7 +14,7 @@ Candidates are scored on a 1–5 scale for **Player Impact** (higher is better),
 | **8** | `TASK-008` | **Fully Generative Animated Backdrops + Per-Generator Audio Reactivity & Visual Harmony (TASK-008 + TASK-009)** | **5 / 5** | **2 / 5** | **3 / 5** | `TASK-007` | **Done** |
 | **9** | `TASK-009` | **Abyssal / Void Noir Dark Theme + Dynamic Combat Illumination (`uLights[]`)** | **5 / 5** | **2 / 5** | **2 / 5** | `TASK-008` | **Done** |
 | **10** | `TASK-010` | **Attunement Synergy Evolutions ("Harmonic Overclock")** | **5 / 5** | **2 / 5** | **3 / 5** | `TASK-002` | **Done** |
-| **11** | `TASK-011` | **Drop Overdrive, Micro-Hitstop, Radial Shockwave Distortion & 3× Phase-Sync Overdrive** | **4 / 5** | **2 / 5** | **3 / 5** | `TASK-004` | Proposed |
+| **11** | `TASK-011` | **Drop Overdrive, Micro-Hitstop, Radial Shockwave Distortion, 3× Phase-Sync Overdrive & High-Intensity Reactive Backdrops** | **5 / 5** | **2 / 5** | **3 / 5** | `TASK-004`, `TASK-009` | **Done** |
 | **12** | `TASK-012` | **Frame-Pacing Telemetry (`P95/P99` + Alloc Guard) & Seed PB Pace Splits** | **4 / 5** | **1 / 5** | **2 / 5** | `TASK-003` | Proposed |
 
 ---

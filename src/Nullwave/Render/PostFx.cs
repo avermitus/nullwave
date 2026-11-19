@@ -52,11 +52,16 @@ public sealed class PostFx : IDisposable
         }
     }
 
+    private static readonly string[] ShockwaveNames =
+    [
+        "uShockwaves[0]", "uShockwaves[1]", "uShockwaves[2]", "uShockwaves[3]",
+    ];
+
     /// <summary>
     /// Bloom + composite into the default framebuffer. Always exits in <see cref="RenderBaseline.Default"/>
     /// (see <see cref="RestoreBaseline"/>), so callers can draw on top without re-deriving state.
     /// </summary>
-    public void Process(uint sceneTexture, int width, int height, float time, float bloom, float aberration, float flash, float beat, int damage, PostMood mood)
+    public void Process(uint sceneTexture, int width, int height, float time, float bloom, float aberration, float flash, float beat, int damage, PostMood mood, ReadOnlySpan<System.Numerics.Vector4> shockwaves = default)
     {
         EnsureSize(width, height);
         _gl.Disable(EnableCap.Blend);
@@ -130,6 +135,10 @@ public sealed class PostFx : IDisposable
         _composite.SetFloat("uSpeedLines", mood.SpeedLines);
         _composite.SetVec2("uSpeedDir", mood.SpeedDir.X, -mood.SpeedDir.Y);
         _composite.SetFloat("uDarkTheme", mood.DarkTheme);
+        int swCount = Math.Min(4, shockwaves.Length);
+        _composite.SetInt("uShockwaveCount", swCount);
+        for (int i = 0; i < swCount; i++)
+            _composite.SetVec4(ShockwaveNames[i], shockwaves[i]);
         _gl.ActiveTexture(TextureUnit.Texture0);
         _gl.BindTexture(TextureTarget.Texture2D, sceneTexture);
         _gl.ActiveTexture(TextureUnit.Texture1);

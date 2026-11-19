@@ -4,9 +4,11 @@ All notable gameplay, rendering, audio-intelligence, and UI updates to **NULLWAV
 
 ---
 
-## Latest Updates — Harmonic Overclock Synergies, Abyssal Dark Theme, Generative Backdrops, HDR Lasers & Spotify Integration
+## Latest Updates — Drop Overdrive, High-Intensity Reactive Backdrops, Shockwave Refraction, Harmonic Overclock & Abyssal Theme
 
 ### Rendering, Visual Themes & Visual Effects
+- **High-Intensity Reactive Backdrop Upgrade:** Supercharged the real-time combinatorial GPU backdrop synthesizer across all 13 generators and space transforms with live **Overdrive** visual coupling (`Drop Overdrive` & `Sync Overdrive`), punchier kick/snare/hi-hat/drop audio drives, beat-locked global spatial breathing and snare angular torque, progressive **3-plane layer parallax** (`layer 0 / 1 / 2`), overdrive palette cycling, and beat-synced outward **harmonic sonar waves** that ignite existing pattern ridges without flooding flat glare. Upgraded **Standard** tone-mapping for bolder neon peaks with crisp dark valleys, and tightened **Abyssal** ridge gating so kicks, drops, sonar waves, and dynamic combat lights carve razor-sharp electric neon contours out of pitch-black OLED obsidian — cleanly dampened when `REDUCE FLASHING` is enabled or `BACKGROUND MOTION` is lowered.
+- **GPU Radial Shockwave Refraction Distortion:** Heavy combat shockwaves (musical drops, **Resonance Cascade**, **THE CHOIR** phase breaks and kills, and **Sync Overdrive**) now project up to **4 simultaneous annular screen-space refraction rings** with subtle chromatic crest fringing in the post-processing composite pass — gated automatically by `REDUCE FLASHING` and `SCREEN SHAKE` settings.
 - **Abyssal / Void Noir Dark Theme & Dynamic Combat Illumination:** Added a selectable **VISUAL THEME** (`STANDARD` / `ABYSSAL`) in **SETTINGS** (and `--theme <standard|abyssal>` CLI override) while keeping `STANDARD` untouched. In **ABYSSAL** mode, the arena drops to near-OLED obsidian (`#010104`) between beats, audio transients (`kick`, `snare`, `drop`) ignite razor-thin bioluminescent contours, and up to **12 live combat light pools** (player interceptor + Phase Sync flare, **THE CHOIR** core, active shockwaves, and laser beams) dynamically illuminate the underlying generative shader geometry right around the fight, paired with matte-obsidian 3D hulls, heightened Fresnel rims, tighter bloom threshold, brighter beat sonar ripples, and smoked-glass HUD panels.
 - **Fully Generative Multi-Layer Animated Backdrops:** Replaced the fixed 6-style backdrop roster with a combinatorial real-time GPU backdrop synthesizer (`BackdropGenome` + `BackgroundFrag`). Every run, act shift, and musical drop assembles a brand-new backdrop from scratch out of **1–3 layers**, each chaining **0–4 motion/space transforms** (`SPIN`, `TUNNEL`, `FOLD`, `WARP`, `SWIRL`, `MIRROR`, `SPIRAL`, `STREAM`, `RIPPLE`, `TILES`, `BREATHE`) into **13 animated pattern generators** (`INK`, `CELLS`, `FRACTAL`, `CIRCUIT`, `MOIRE`, `STREAMS`, `GRID`, `LIQUID`, `FIELD`, `PLASMA`, `AURORA`, `HEX`, `HYPERSPACE`) with randomized blend modes, per-backdrop cosine palette families, and seamless `1.8s` radial bloom transitions.
 - **Per-Generator Drum, Snare & Hi-Hat Reactivity:** Connected real-time kick, snare, hi-hat, bass, high, and drop drives directly into all 13 generators and space transforms (`WARP`, `SWIRL`, `RIPPLE`, `BREATHE`), upgrading `PLASMA` into crisp multi-band harmonic contour ridges and tuning the drifting ambient fog floor and highlight soft-clipping so foreground combat stays razor-sharp against every generated world.
@@ -15,6 +17,10 @@ All notable gameplay, rendering, audio-intelligence, and UI updates to **NULLWAV
 - **Composite & UI Alpha Hygiene:** Clean OpenGL blend-state and texture-unit restoration after post-processing, plus alpha-preserving UI blending so screenshots and captured video frames remain fully opaque.
 
 ### Gameplay, Audio & Choreography
+- **Drop Overdrive, 3× Phase-Sync Overdrive & Tactile Micro-Hitstop:**
+  - **Drop Overdrive (`4.0s`):** Every musical drop now ignites a **Drop Overdrive** surge (`// DROP OVERDRIVE //`), granting **`+25%` fire cadence**, **`+18%` weapon damage**, **`1.5x` Flow gain**, and **`+0.50x` score multiplier**, with a rotating ship overdrive aura and live `DROP OD` HUD countdown bar.
+  - **3× Phase-Sync Streak Overdrive (`5.0s`):** Chaining **3 consecutive on-beat dashes** triggers **`SYNC OVERDRIVE // 3x PHASE`**, awarding **`+30%` Resonance gain**, **`+15%` fire cadence** (stacking multiplicatively with Drop Overdrive), **`+0.35x` score multiplier**, a concentric cyan-gold shockwave, and a live `SYNC OD` HUD countdown bar (combined Flow+Overdrive multiplier up to `x3.35`). Off-beat emergency dodges remain completely unpenalized and only reset the streak counter.
+  - **Tactile Micro-Hitstop:** Added crisp, bounded impact hitstop on **Elite kills** (`26 ms`), **Resonance Cascade** (`32 ms`), **THE CHOIR** phase breaks (`55 ms` + camera punch), and **Boss kills** (`85 ms`), paused cleanly so micro-hitstop never drains active Overdrive timers.
 - **Harmonic Overclock (Attunement Synergy Evolutions):** Stacking complementary Attunement pairs to **Stack 2+** automatically awakens 4 signature combat evolutions, accompanied by an `"OVERCLOCK // <NAME>"` celebration shockwave, unlock chime, draft-card preview banners (`OVERCLOCK // <NAME>`), a solar-gold HUD pill row (`*SLV`, `*LNC`, `*RAL`, `*VPH`), and a centered Pause header badge:
   - **`SEEKER SALVO` (`SPL 2+` & `HOM 2+`):** Launches twin flanking micro-seekers (`±38°` arcs, high homing turn rate, `640`-unit lock range) with vivid magenta-cyan plasma ribbons.
   - **`PRISM LANCE` (`PRC 2+` & `RIC 2+`):** Wall and monolith ricochets supercharge bolts (`1.35x` damage, `+1` bonus pierce, `+12%` speed up to `2400`, `+0.35s` lifetime) into refractive solar-gold lances with prism spark bursts.
@@ -34,8 +40,10 @@ All notable gameplay, rendering, audio-intelligence, and UI updates to **NULLWAV
 
 ![Generative Animated Backdrops Contact Sheet](docs/screenshots/generative_backdrops.png)
 
-| Harmonic Overclock — Synergy Evolutions | Abyssal Theme — Dynamic Combat Illumination |
+| Drop Overdrive & Shockwave Refraction (Abyssal) | High-Intensity Reactive Backdrop (Standard) |
 |---|---|
+| ![Drop Overdrive Abyssal](docs/screenshots/drop_overdrive.png) | ![Reactive Backdrop Standard](docs/screenshots/reactive_backdrop_standard.png) |
+| **Harmonic Overclock — Synergy Evolutions** | **Abyssal Theme — Dynamic Combat Illumination** |
 | ![Harmonic Overclock](docs/screenshots/synergy_overclock.png) | ![Abyssal Combat](docs/screenshots/abyssal_combat.png) |
 | **Abyssal Theme — Choir Boss Chiaroscuro** | **Abyssal Theme — Starburst Lasers** |
 | ![Abyssal Boss](docs/screenshots/abyssal_boss.png) | ![Abyssal Song Lasers](docs/screenshots/abyssal_songlasers.png) |
