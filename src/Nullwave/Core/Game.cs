@@ -187,8 +187,17 @@ public sealed class Game : IDisposable
         _meta.SeedRecords[SeedCode.ToCode(s3)] = new SeedRecord { SeedValue = s3, BestScore = 18_900, BestWave = 6, Runs = 1, LastPlayedUtc = "2026-11-16T18:00:00Z" };
     }
 
+    /// <summary>Capture: draw only the generated backdrop (no arena, entities or HUD).</summary>
+    public bool BackdropOnly { get; private set; }
+
     public void ConfigureCapture(string scenario)
     {
+        if (scenario == "backdrop")
+        {
+            BackdropOnly = true;
+            _state = AppState.Title;
+            return;
+        }
         CaptureScenario = scenario;
         _state = AppState.Title;
         _menuIndex = 0;
@@ -412,7 +421,7 @@ public sealed class Game : IDisposable
         _audio.Update(dt);
         _director.Update(_audio.State, dt);
         _renderer.Mood = _director;
-        if (_state == AppState.Title && (_titleReroll -= dt) <= 0f)
+        if (_state == AppState.Title && !BackdropOnly && (_titleReroll -= dt) <= 0f)
         {
             _titleReroll = 22f;
             _renderer.RerollBackdrop();
@@ -1035,7 +1044,7 @@ public sealed class Game : IDisposable
         _renderer.PlayerDirection = M.SafeNorm(world.Player.Vel) * _renderer.PlayerSpeed;
         _renderer.Flow = world.Flow;
         _renderer.Hype = world.Demo ? 0.6f : world.Hype;
-        if (world.Movement != _backdropMovement)
+        if (!BackdropOnly && world.Movement != _backdropMovement)
         {
             _backdropMovement = world.Movement;
             _renderer.RerollBackdrop();
@@ -1045,6 +1054,13 @@ public sealed class Game : IDisposable
         float punch = 1f + fx * (_director.Kick * 0.014f + _director.Build * 0.05f - _director.DropPulse * 0.07f);
         _renderer.AimTilt = _aimTilt;
         _renderer.BeginWorld(world.Cam.Position + world.Cam.ShakeOffset, world.Cam.Zoom * punch);
+        if (BackdropOnly)
+        {
+            _renderer.Palette = _palette;
+            _renderer.BeginUi();
+            _renderer.Render(_audio.State, _elapsed, 0f, 0.16f + Audio.State.BeatPulse * 0.4f, 0);
+            return;
+        }
         WorldRenderer.Draw(_renderer, world, _palette, _audio.State, _elapsed);
         _renderer.BeginUi();
 

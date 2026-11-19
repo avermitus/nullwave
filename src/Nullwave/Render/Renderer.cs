@@ -63,6 +63,24 @@ public sealed class Renderer : IDisposable
     public Vector2 AimTilt { get; set; }
     public Vector2 ObliqueVec => ComputeObliqueVec(AimTilt);
 
+    public readonly record struct BackdropAudioDrives(
+        float Kick, float Snare, float Hat, float Drop, float Build, float Breakdown);
+
+    private static float ClampDrive(float v) => float.IsFinite(v) ? Math.Clamp(v, 0f, 3f) : 0f;
+
+    public static BackdropAudioDrives ComputeBackdropAudioDrives(
+        AudioState audio, MusicDirector? mood, float fx)
+    {
+        float scale = float.IsFinite(fx) ? MathF.Max(0f, fx) : 0f;
+        return new BackdropAudioDrives(
+            Kick: ClampDrive((mood?.Kick ?? audio.BeatPulse) * scale),
+            Snare: ClampDrive(audio.SnarePulse * scale),
+            Hat: ClampDrive(audio.HatPulse * scale),
+            Drop: ClampDrive((mood?.DropPulse ?? 0f) * scale),
+            Build: ClampDrive((mood?.Build ?? 0f) * scale),
+            Breakdown: ClampDrive((mood?.Breakdown ?? 0f) * scale));
+    }
+
     public static Vector2 ClampAimTilt(Vector2 raw) => new(
         float.IsFinite(raw.X) ? Math.Clamp(raw.X, -1f, 1f) : 0f,
         float.IsFinite(raw.Y) ? Math.Clamp(raw.Y, -1f, 1f) : 0f);
@@ -90,6 +108,8 @@ public sealed class Renderer : IDisposable
     public Vector2 Lift(Vector2 pos, float z) => LiftPoint(pos, z, ObliqueVec);
     public BackdropGenome Backdrop0 => _genA;
     private BackdropGenome _genA = BackdropGenome.Random(new Random());
+    /// <summary>Description of the backdrop currently on screen (diagnostics overlay).</summary>
+    public string BackdropName => (_genB ?? _genA).Name;
     private BackdropGenome? _genB;
     private float _mix;
     private float _travel;
@@ -99,17 +119,14 @@ public sealed class Renderer : IDisposable
     public void RerollBackdrop()
     {
         if (_genB != null) return;
-        _genB = BackdropGenome.Random(_genRng, _genA.Style);
+        _genB = BackdropGenome.Random(_genRng, _genA);
         _mix = 0f;
     }
 
     /// <summary>Pins a specific style (capture/debug).</summary>
-    public void ForceBackdrop(int style, int seed)
+    public void ForceBackdrop(int seed)
     {
-        var rng = new Random(seed);
-        BackdropGenome g;
-        do g = BackdropGenome.Random(rng); while (g.Style != style);
-        _genA = g;
+        _genA = BackdropGenome.Random(new Random(seed));
         _genB = null;
         _mix = 0f;
     }
@@ -117,18 +134,33 @@ public sealed class Renderer : IDisposable
     /// <summary>Replaces the backdrop immediately (new run).</summary>
     public void ResetBackdrop()
     {
-        _genA = BackdropGenome.Random(_genRng, _genA.Style);
+        _genA = BackdropGenome.Random(_genRng, _genA);
         _genB = null;
         _mix = 0f;
     }
 
     private void SetGenome(string suffix, BackdropGenome g)
     {
-        _background.SetInt("uStyle" + suffix, g.Style);
-        _background.SetVec4("uParam" + suffix, g.Params);
-        _background.SetVec4("uMut" + suffix, g.Mutators);
-        _background.SetVec3("uPalOff" + suffix, g.PaletteOffset);
-        _background.SetVec3("uPalFreq" + suffix, g.PaletteFrequency);
+        string arr = "uL" + suffix;
+        _background.SetInt("uCount" + suffix, g.Layers.Count);
+        _background.SetVec4("uGlob" + suffix, g.Global);
+        for (int i = 0; i < g.Layers.Count; i++)
+        {
+            var l = g.Layers[i];
+            string n = arr + "[" + i + "].";
+            for (int k = 0; k < 4; k++)
+            {
+                _background.SetInt(n + "op" + k, l.Ops[k]);
+                _background.SetVec4(n + "p" + k, l.OpParams[k]);
+            }
+            _background.SetInt(n + "gen", l.Generator);
+            _background.SetVec4(n + "ga", l.GenA);
+            _background.SetVec4(n + "gb", l.GenB);
+            _background.SetInt(n + "blend", l.Blend);
+            _background.SetFloat(n + "gain", l.Gain);
+            _background.SetVec3(n + "po", l.PaletteOffset);
+            _background.SetVec3(n + "pf", l.PaletteFrequency);
+        }
     }
 
     public Renderer(GL gl, int width, int height)
@@ -237,21 +269,21 @@ public sealed class Renderer : IDisposable
         var settings = GameSettings.Current;
         var mood = Mood;
         float fx = settings.MusicFx / 100f * HypeScale;
-        float drop = (mood?.DropPulse ?? 0f) * fx;
-        float breakdown = (mood?.Breakdown ?? 0f) * fx;
-        float build = (mood?.Build ?? 0f) * fx;
+        var drives = ComputeBackdropAudioDrives(audio, mood, fx);
         // breakdowns slow the liquid right down, drops make it surge
-        _flow += frameDt * (0.35f + audio.Energy * 1.6f + audio.BeatPulse * 0.9f + drop * 4f) * (1f - breakdown * 0.65f) * settings.BackgroundMotion / 100f;
+        _flow += frameDt * (0.35f + audio.Energy * 1.6f + audio.BeatPulse * 0.9f + drives.Drop * 4f) * (1f - drives.Breakdown * 0.65f) * settings.BackgroundMotion / 100f;
 
         _background.Use();
         _background.SetVec2("uResolution", Width, Height);
         _background.SetVec2("uCam", _camera);
         _background.SetFloat("uTime", time);
         _background.SetFloat("uFlow", _flow);
-        _background.SetFloat("uIntensity", settings.BackgroundIntensity / 100f * (1f - breakdown * 0.35f + (mood?.DropGlow ?? 0f) * fx * 0.25f));
-        _background.SetFloat("uDrop", drop);
-        _background.SetFloat("uBuild", build);
-        _background.SetFloat("uKick", (mood?.Kick ?? audio.BeatPulse) * fx);
+        _background.SetFloat("uIntensity", settings.BackgroundIntensity / 100f * (1f - drives.Breakdown * 0.35f + (mood?.DropGlow ?? 0f) * fx * 0.25f));
+        _background.SetFloat("uDrop", drives.Drop);
+        _background.SetFloat("uBuild", drives.Build);
+        _background.SetFloat("uKick", drives.Kick);
+        _background.SetFloat("uSnare", drives.Snare);
+        _background.SetFloat("uHat", drives.Hat);
         _background.SetFloat("uBass", audio.Bass);
         _background.SetFloat("uLowMid", audio.LowMid);
         _background.SetFloat("uMid", audio.Mid);
@@ -266,7 +298,7 @@ public sealed class Renderer : IDisposable
         _background.SetVec3("uPrim", new Vector3(Palette.Primary.X, Palette.Primary.Y, Palette.Primary.Z));
         _background.SetVec3("uSec", new Vector3(Palette.Secondary.X, Palette.Secondary.Y, Palette.Secondary.Z));
         // travel: how far the ship has "flown" - drives tunnels and fields rushing past
-        _travel += frameDt * (0.15f + PlayerSpeed * 1.4f + Flow * 0.8f + drop * 2f) * settings.BackgroundMotion / 100f;
+        _travel += frameDt * (0.15f + PlayerSpeed * 1.4f + Flow * 0.8f + drives.Drop * 2f) * settings.BackgroundMotion / 100f;
         _background.SetFloat("uTravel", _travel);
         _background.SetFloat("uSpeed", PlayerSpeed);
         _background.SetVec2("uVel", PlayerDirection.X, -PlayerDirection.Y);
@@ -338,8 +370,8 @@ public sealed class Renderer : IDisposable
         _gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.One);
         _worldGlow.Draw();
 
-        Post.Process(scene.Texture, Width, Height, time, (1.18f + audio.Energy * 0.32f + drop * 0.8f) * settings.Bloom / 100f,
-            (aberration + build * 0.5f + drop * 0.6f) * settings.Aberration / 100f,
+        Post.Process(scene.Texture, Width, Height, time, (1.18f + audio.Energy * 0.32f + drives.Drop * 0.8f) * settings.Bloom / 100f,
+            (aberration + drives.Build * 0.5f + drives.Drop * 0.6f) * settings.Aberration / 100f,
             settings.ReduceFlashing ? MathF.Min(flash, 0.15f) : flash, audio.BeatPulse, damage, WithSpeed(BuildPostMood(mood, fx, settings.ReduceFlashing)));
 
         // Post.Process leaves RenderBaseline.Default bound to the default framebuffer. The composite is

@@ -61,6 +61,8 @@ uniform float uIntensity;
 uniform float uDrop;
 uniform float uBuild;
 uniform float uKick;
+uniform float uSnare;
+uniform float uHat;
 uniform float uBass;
 uniform float uLowMid;
 uniform float uMid;
@@ -79,18 +81,8 @@ uniform float uSpeed;
 uniform vec2 uVel;
 uniform vec2 uAim;
 uniform float uTravel;
-// two backdrop genomes, blended by uMix during a transition
-uniform int uStyleA;
-uniform int uStyleB;
+// transition blend factor between genome A and genome B
 uniform float uMix;
-uniform vec4 uParamA;
-uniform vec4 uParamB;
-uniform vec4 uMutA;
-uniform vec4 uMutB;
-uniform vec3 uPalOffA;
-uniform vec3 uPalOffB;
-uniform vec3 uPalFreqA;
-uniform vec3 uPalFreqB;
 
 vec4 P;      // current style params
 vec4 MUT;    // current mutators: x mirror, y swirl, z zoom pulse, w roll speed
@@ -191,11 +183,11 @@ vec3 styleLiquid(vec2 uv) {
             float fres = pow(1.0 - clamp(dot(n, -rd), 0.0, 1.0), 3.0);
             float spec = pow(max(dot(reflect(rd, n), normalize(vec3(-0.5, 0.7, -0.6))), 0.0), 40.0);
             vec3 tint = pal(dot(n, rd) * 0.8 + p.y * 0.25 + uFlow * 0.04);
-            vec3 surf = tint * 0.05 + nebula(reflect(rd, n).xy * 1.2) * 0.6 + tint * fres * (0.7 + uKick * 1.3 + uDrop * 2.5) + vec3(spec) * 0.3;
+            vec3 surf = tint * 0.05 + nebula(reflect(rd, n).xy * 1.2) * 0.6 + tint * fres * (0.7 + uKick * 1.3 + uSnare * 0.75 + uDrop * 2.5) + vec3(spec) * (0.3 + uHat * 0.85 + uSnare * 0.35);
             col = mix(col, surf, 0.85);
         }
     }
-    return col + pal(uFlow * 0.05) * glow * (0.06 + uKick * 0.14 + uDrop * 0.4);
+    return col + pal(uFlow * 0.05) * glow * (0.06 + uKick * 0.14 + uSnare * 0.08 + uDrop * 0.4);
 }
 
 // ---------------------------------------------------------------- 1: hyperspace tunnel
@@ -209,10 +201,10 @@ vec3 styleTunnel(vec2 uv) {
     float aa = mod(a + uFlow * 0.1 * P.z, seg) - seg * 0.5;
     float pr = r * cos(aa) / cos(seg * 0.5);   // polygonal tunnel cross-section
     float depth = 0.32 / max(pr, 0.015) + uTravel * (1.2 + P.x * 2.0) + uFlow * 0.8;
-    float rings = pow(0.5 + 0.5 * sin(depth * 3.14159 * (1.0 + P.z)), 18.0 - uKick * 10.0);
+    float rings = pow(0.5 + 0.5 * sin(depth * 3.14159 * (1.0 + P.z)), max(5.0, 18.0 - uKick * 10.0 - uSnare * 3.0));
     float stripes = pow(0.5 + 0.5 * sin(a * sides * (1.0 + floor(P.x * 3.0)) + depth * 0.7), 24.0);
     float panel = step(0.82, hash21(vec2(floor(depth * 2.0), floor(a / seg * 3.0 + depth * 0.1))));
-    vec3 col = pal(depth * 0.03 + a * 0.05) * (rings * (0.7 + uKick * 1.2 + uDrop * 2.0) + stripes * (0.35 + uHigh) + panel * 0.25 * (0.4 + uBass));
+    vec3 col = pal(depth * 0.03 + a * 0.05) * (rings * (0.7 + uKick * 1.2 + uSnare * 0.85 + uDrop * 2.0) + stripes * (0.35 + uHigh + uHat * 0.35) + panel * (0.25 * (0.4 + uBass) + uHat * 0.45));
     col *= smoothstep(0.0, 0.5, pr);           // far end fades into the vanishing point
     col += pal(0.5 + uFlow * 0.02) * exp(-r * 7.0) * (0.35 + uBass * 0.8 + uDrop * 2.0);
     return col;
@@ -234,9 +226,11 @@ vec3 styleKaleido(vec2 uv) {
     for (int i = 0; i < 10; i++) {
         p = abs(p) / max(dot(p, p), 0.04) - c;
         float l = length(p);
-        col += pal(float(i) * 0.07 + l * 0.08 + uFlow * 0.02) * exp(-abs(l - 1.0) * (3.5 - uKick * 1.5)) * (0.22 + band(i % 6) * 0.15);
+        float lace = exp(-abs(l - 1.0) * max(1.3, 3.5 - uKick * 1.3 - uSnare * 0.5));
+        float glint = exp(-abs(l - 1.0) * 18.0) * uHat * 0.45;
+        col += pal(float(i) * 0.07 + l * 0.08 + uFlow * 0.02) * (lace * (0.22 + band(i % 6) * 0.15) + glint);
     }
-    return col * (0.9 + uKick * 0.5 + uDrop * 1.5);
+    return col * (0.9 + uKick * 0.5 + uSnare * 0.35 + uDrop * 1.5);
 }
 
 // ---------------------------------------------------------------- 3: flythrough of an endless field
@@ -268,13 +262,13 @@ vec3 styleField(vec2 uv) {
         glow += exp(-max(d, 0.0) * 5.0) * 0.05;
         if (d < 0.003) {
             float fog = exp(-t * 0.06);
-            col = pal(id + p.z * 0.02) * (0.45 + 0.9 * step(0.7, id) * (0.6 + uKick + uDrop)) * fog;
+            col = pal(id + p.z * 0.02) * (0.45 + 0.9 * step(0.7, id) * (0.6 + uKick + uSnare * 0.65 + uDrop) + uHat * 0.25 * step(0.45, id)) * fog;
             break;
         }
         t += d * 0.9;
         if (t > 45.0) break;
     }
-    return col + pal(uFlow * 0.03 + 0.3) * glow * (0.35 + uKick * 0.6 + uDrop);
+    return col + pal(uFlow * 0.03 + 0.3) * glow * (0.35 + uKick * 0.6 + uSnare * 0.35 + uHat * 0.25 + uDrop);
 }
 
 // ---------------------------------------------------------------- 4: aurora ribbons
@@ -289,9 +283,9 @@ vec3 styleAurora(vec2 uv) {
         float curve = sin(uv.x * (1.5 + fi * 0.7 * P.y) + uFlow * speed + fi * 1.7) * (0.12 + band(i % 6) * 0.18)
                     + (fbm(vec2(uv.x * 1.3 + uFlow * 0.1, fi)) - 0.5) * 0.4;
         float y = uv.y - curve + 0.45 - fi * 0.13;
-        float core = exp(-abs(y) * (55.0 - uKick * 20.0));
-        float veil = exp(-max(y, 0.0) * 6.0) * step(0.0, y) * 0.25;
-        col += pal(fi * 0.11 + uv.x * 0.08 + uFlow * 0.02) * (core * (0.8 + uDrop * 2.0) + veil * (0.5 + uHigh));
+        float core = exp(-abs(y) * max(18.0, 55.0 - uKick * 20.0 - uSnare * 10.0));
+        float veil = exp(-max(y, 0.0) * 6.0) * step(0.0, y) * (0.25 + uHat * 0.18 * (0.5 + 0.5 * sin(uv.x * 24.0 + fi * 3.1 + uFlow * 6.0)));
+        col += pal(fi * 0.11 + uv.x * 0.08 + uFlow * 0.02) * (core * (0.8 + uSnare * 0.65 + uDrop * 2.0) + veil * (0.5 + uHigh + uHat * 0.45));
     }
     return col;
 }
@@ -314,57 +308,307 @@ vec3 styleCells(vec2 uv) {
             else if (d < f2) f2 = d;
         }
     float edge = f2 - f1;
-    float lit = step(1.0 - (0.08 + uKick * 0.25 + uDrop * 0.6), fract(cid * 7.0 + floor(uFlow * 0.5) * 0.37));
-    vec3 col = pal(cid + uFlow * 0.02) * (0.08 + 0.1 * f1 + lit * (0.5 + uKick));
-    col += pal(cid * 0.3 + 0.5) * exp(-edge * (12.0 - uBass * 5.0)) * (0.6 + uHigh * 0.6 + uDrop);
+    float lit = step(1.0 - clamp(0.08 + uKick * 0.25 + uSnare * 0.22 + uDrop * 0.6, 0.0, 0.92), fract(cid * 7.0 + floor(uFlow * 0.5) * 0.37));
+    vec3 col = pal(cid + uFlow * 0.02) * (0.08 + 0.1 * f1 + lit * (0.5 + uKick + uSnare * 0.55));
+    col += pal(cid * 0.3 + 0.5) * (exp(-edge * max(4.0, 12.0 - uBass * 5.0)) * (0.6 + uHigh * 0.6 + uDrop) + exp(-edge * 42.0) * uHat * 0.85);
     return col;
 }
 
-vec3 runStyle(int style, vec2 uv) {
-    if (style == 0) return styleLiquid(uv);
-    if (style == 1) return styleTunnel(uv);
-    if (style == 2) return styleKaleido(uv);
-    if (style == 3) return styleField(uv);
-    if (style == 4) return styleAurora(uv);
-    return styleCells(uv);
+// ================================================================ generative backdrop
+// A backdrop is 1-3 randomly assembled layers. Each layer runs its own chain of up to four
+// motion transforms (space itself moves: tunnels, spiral zooms, folds, flowing warps, ripples,
+// scrolling, tiled cells) into one of 13 pattern generators, then blends onto the layers below.
+struct Layer {
+    int op0; int op1; int op2; int op3;
+    vec4 p0; vec4 p1; vec4 p2; vec4 p3;
+    int gen; vec4 ga; vec4 gb;
+    int blend; float gain;
+    vec3 po; vec3 pf;
+};
+uniform Layer uLA[3];
+uniform Layer uLB[3];
+uniform int uCountA;
+uniform int uCountB;
+uniform vec4 uGlobA;   // x spin speed, y zoom, z mirror, w drift angle
+uniform vec4 uGlobB;
+
+float fbm3(vec2 p) {
+    float v = 0.0, a = 0.5;
+    mat2 r = mat2(0.8, 0.6, -0.6, 0.8);
+    for (int i = 0; i < 3; i++) { v += a * noise(p); p = r * p * 2.03 + 1.7; a *= 0.5; }
+    return v;
 }
 
-// mutators shared by every style: mirror, swirl, zoom pulse
-vec3 renderGenome(int style, vec4 params, vec4 mut, vec3 po, vec3 pf, vec2 uv) {
-    P = params; MUT = mut; PO = po; PF = pf;
-    if (MUT.x > 0.6) uv.x = abs(uv.x);
-    float r = length(uv);
-    uv *= rot(MUT.y * 2.5 * exp(-r * 1.5) * sin(uFlow * 0.2));
-    uv *= 1.0 - MUT.z * 0.12 * uKick;
-    return runStyle(style, uv);
+vec2 applyOp(int op, vec4 q, vec2 p, float t) {
+    if (op == 1) {            // rotate: steady spin
+        p *= rot(t * (q.x - 0.5) * 0.7 + q.y * 6.2832);
+    } else if (op == 2) {     // tunnel: fly down an endless tube
+        float r = length(p), a = atan(p.y, p.x);
+        // abs(angle): mirrored around the tube so there is no seam where atan wraps at +-pi
+        p = vec2(abs(a) / 3.14159 * (1.0 + floor(q.x * 4.0)), (0.22 + q.y * 0.3) / max(r, 0.02) + uTravel * (1.0 + q.z * 2.0) + t * 0.25 * q.w);
+    } else if (op == 3) {     // kaleidoscope fold, slowly turning
+        float n = 3.0 + floor(q.x * 9.0);
+        float r = length(p), a = atan(p.y, p.x) + t * 0.06 * (q.y - 0.5);
+        a = mod(a, 6.2832 / n);
+        a = abs(a - 3.14159 / n);
+        p = r * vec2(cos(a), sin(a));
+    } else if (op == 4) {     // flowing domain warp
+        float f = 0.7 + q.x * 2.0;
+        vec2 w = vec2(fbm3(p * f + vec2(t * 0.21 * (0.3 + q.y), 0.0)), fbm3(p * f + vec2(5.2, 1.3) - t * 0.17 * (0.3 + q.y)));
+        p += (w - 0.5) * (0.35 + q.z * 1.3) * (1.0 + uBass * 0.4 + uSnare * 0.22 + uDrop * 0.45);
+    } else if (op == 5) {     // swirl: a vortex that winds and unwinds
+        float r = length(p);
+        p *= rot((1.0 + q.x * 2.5) * exp(-r * (0.8 + q.y * 2.0)) * sin(t * (0.15 + q.z * 0.3) + q.w * 6.0) + (uKick * 0.25 + uSnare * 0.18 + uDrop * 0.35) * (0.35 + q.w));
+    } else if (op == 6) {     // mirror symmetry
+        p.x = abs(p.x) - q.x * 0.35;
+        if (q.y > 0.5) p.y = abs(p.y) - q.z * 0.25;
+    } else if (op == 7) {     // log-spiral: an infinite zoom that never ends
+        float r = max(length(p), 1e-3), a = atan(p.y, p.x);
+        float lr = log(r);
+        p = vec2(lr * (0.8 + q.x * 1.8) - t * (0.12 + q.y * 0.35) - uTravel * 0.25, abs(a) / 3.14159 * (1.0 + floor(q.z * 3.0)) + lr * (q.w - 0.5) * 2.0);
+    } else if (op == 8) {     // scroll: the pattern streams past in one direction
+        vec2 d = vec2(cos(q.x * 6.2832), sin(q.x * 6.2832));
+        p += d * (t * (0.04 + q.y * 0.3) + uTravel * q.z * 0.6);
+    } else if (op == 9) {     // ripple: rings of displacement radiating outward
+        float r = max(length(p), 1e-3);
+        p += p / r * sin(r * (8.0 + q.x * 20.0) - t * (1.0 + q.y * 3.0)) * (0.02 + q.z * 0.06) * (1.0 + uKick + uSnare * 0.55 + uDrop * 0.9);
+    } else if (op == 10) {    // tiled cells, each spinning on its own
+        float s = 1.5 + q.x * 4.5;
+        vec2 id = floor(p * s);
+        vec2 f = fract(p * s) - 0.5;
+        float h = hash21(id + floor(q.w * 50.0));
+        f *= rot(t * (h - 0.5) * 2.0 * (0.3 + q.y) + h * 6.2832);
+        p = f * (1.0 + q.z * 2.0) + vec2(h * 7.0, h * 3.0) * q.w;
+    } else if (op == 11) {    // breathing zoom on the beat
+        p *= max(0.45, 1.0 - (uKick * 0.14 + uDrop * 0.12) * (0.3 + q.x * 0.7) + sin(t * 0.35 + q.z * 6.0) * 0.12 * q.y);
+    }
+    return p;
+}
+
+// ---------------------------------------------------------------- new generators
+vec3 genInk(vec2 p, vec4 a, float t) {
+    p *= 0.8 + a.x * 1.6;
+    vec2 q = vec2(fbm(p + vec2(0.0, t * 0.11)), fbm(p + vec2(5.2, 1.3) - t * 0.07));
+    float foldGain = 3.6 + uKick * 0.45 + uDrop * 0.8;
+    vec2 r = vec2(fbm(p + foldGain * q + vec2(1.7, 9.2) + t * 0.13), fbm(p + foldGain * q + vec2(8.3, 2.8) - t * 0.09));
+    float f = fbm(p + (2.5 + a.y * 2.0 + uBass + uDrop * 0.9) * r);
+    float ridge = exp(-abs(fract(f * 3.5 + length(r) * 0.4) - 0.5) * 18.0);
+    float sheen = exp(-abs(fract(f * 8.0 - t * 0.35) - 0.5) * 26.0) * (0.14 + uHat * 0.78);
+    vec3 base = mix(pal(f * 0.7 + a.z), pal(0.5 + length(q) * 0.5), clamp(length(r) * 0.7, 0.0, 1.0));
+    return base * (f * f * (1.45 + uDrop * 0.45) + 0.03)
+         + pal(0.25 + f + a.z) * (ridge * (0.16 + uSnare * 0.85 + uKick * 0.25) + sheen);
+}
+
+vec3 genTruchet(vec2 p, vec4 a, float t) {
+    // quarter-circle tiles; light dashes race along the joined arcs like a circuit
+    float s = 2.5 + a.x * 6.0;
+    vec2 g = p * s;
+    vec2 id = floor(g), f = fract(g) - 0.5;
+    float h = hash21(id + floor(a.w * 40.0));
+    if (h > 0.5) f.x = -f.x;
+    vec2 c = f.x + f.y > 0.0 ? vec2(0.5) : vec2(-0.5);
+    float d = abs(length(f - c) - 0.5);
+    float ang = atan(f.y - c.y, f.x - c.x);
+    float dir = (h > 0.5 ? 1.0 : -1.0) * (mod(id.x + id.y, 2.0) * 2.0 - 1.0);
+    float phase = ang * (1.0 + floor(a.y * 3.0)) / 1.5708 + dir * t * (0.6 + a.z * 2.0);
+    float dash = smoothstep(0.35, 0.5, fract(phase));
+    float sparkle = smoothstep(0.84, 0.98, fract(phase * 3.0 + h * 7.0)) * uHat;
+    float surge = step(0.55, fract(h * 11.3 + floor(t * 2.0) * 0.37)) * uSnare;
+    float line = exp(-d * max(16.0, 40.0 - uKick * 15.0 - uDrop * 10.0));
+    float core = exp(-d * 70.0);
+    return pal(h * 0.4 + t * 0.03) * (line * (0.24 + dash * (1.05 + uHigh + uDrop * 0.75) + surge * 0.95)
+         + core * (sparkle * 1.4 + uDrop * 0.55));
+}
+
+vec3 genInterference(vec2 p, vec4 a, float t) {
+    // drifting wave sources whose crests interfere into shifting moire
+    float v = 0.0;
+    float overtone = 0.0;
+    float f = 10.0 + a.x * 30.0;
+    for (int i = 0; i < 4; i++) {
+        float fi = float(i);
+        vec2 c = 0.7 * vec2(sin(t * (0.21 + a.y * 0.3) + fi * 2.1), cos(t * (0.17 + a.z * 0.3) + fi * 1.3));
+        float ph = length(p - c) * f - t * (1.5 + a.w * 3.0) - uSnare * 0.85;
+        v += sin(ph);
+        overtone += sin(ph * 2.0 + fi);
+    }
+    v *= 0.25;
+    overtone *= 0.25;
+    float crest = pow(0.5 + 0.5 * v, max(2.2, 6.0 - uBass * 2.0 - uDrop * 1.5));
+    float sharp = pow(0.5 + 0.5 * overtone, 10.0) * uHat;
+    return pal(v * 0.3 + t * 0.02) * (0.06 + crest * (0.85 + uKick + uSnare * 0.75 + uDrop * 1.15))
+         + pal(v * 0.3 + 0.42 + t * 0.02) * sharp * 0.95;
+}
+
+vec3 genStreams(vec2 p, vec4 a, float t) {
+    // particle streams: three depth layers of particles scrolling past with motion streaks
+    vec2 dir = vec2(cos(a.x * 6.2832), sin(a.x * 6.2832));
+    vec3 col = vec3(0.0);
+    for (int k = 0; k < 3; k++) {
+        float fk = float(k);
+        float s = 5.0 + fk * 4.0 + a.y * 6.0;
+        float speed = (0.15 + a.z * 0.6) * (1.0 + fk * 0.6) * (1.0 + uSpeed * 1.5 + uDrop * 0.85);
+        vec2 q = p * s + dir * (t * speed + uTravel * (1.0 + fk)) * s;
+        vec2 id = floor(q), f = fract(q) - 0.5;
+        float h = hash21(id + fk * 13.0);
+        if (h > clamp(0.50 + uHigh * 0.15 + uHat * 0.18, 0.25, 0.88)) continue;
+        vec2 o = (hash22(id + 3.0) - 0.5) * 0.6;
+        vec2 rel = f - o;
+        float along = dot(rel, dir);
+        float tailLen = 0.45 * (0.3 + uSpeed + uDrop * 0.55 + uSnare * 0.25);
+        float side = length(rel - dir * clamp(along, -tailLen, 0.0));
+        float streak = exp(-side * (56.0 + fk * 20.0)) * (0.5 + 0.5 * sin(t * 4.0 + h * 40.0));
+        float headGlint = exp(-length(rel) * 32.0) * (0.2 + uHat * 1.15);
+        float flash = 1.0 + uKick * 0.55 + uSnare * 0.85 * step(0.45, fract(h * 17.0 + fk * 0.31)) + uDrop * 0.65;
+        col += pal(h + fk * 0.2) * (streak * (0.62 - fk * 0.12) * flash + headGlint * 0.45);
+    }
+    return col;
+}
+
+vec3 genGridPulse(vec2 p, vec4 a, float t) {
+    // neon lattice with light pulses running along its lines
+    float s = 2.0 + a.x * 5.0;
+    vec2 g = p * s;
+    vec2 f = abs(fract(g) - 0.5);
+    float lines = exp(-min(f.x, f.y) * max(18.0, 35.0 - uDrop * 12.0));
+    float node = exp(-length(f) * 28.0);
+    float rowH = hash21(vec2(floor(g.y), 3.0));
+    float colH = hash21(vec2(floor(g.x), 9.0));
+    float pulseX = exp(-fract(g.x * 0.25 - t * (0.5 + a.y * 1.5) * (rowH > 0.5 ? 1.0 : -1.0) + rowH) * 9.0) * step(f.y, 0.06);
+    float pulseY = exp(-fract(g.y * 0.25 - t * (0.5 + a.z * 1.5) * (colH > 0.5 ? 1.0 : -1.0) + colH) * 9.0) * step(f.x, 0.06);
+    float snareWave = exp(-abs(fract(length(floor(g)) * 0.18 - t * 1.2) - 0.5) * 14.0) * lines * uSnare;
+    return pal(rowH * 0.3 + colH * 0.3 + t * 0.02) * (lines * (0.18 + uDrop * 0.35) + (pulseX + pulseY) * (1.15 + uKick + uDrop * 0.85) + snareWave * 1.1)
+         + pal(0.5 + rowH * 0.2 + colH * 0.2 + t * 0.02) * node * (0.2 + uHat * 1.35 + uDrop * 0.4);
+}
+
+vec3 genPlasma(vec2 p, vec4 a, float t) {
+    // crisp harmonic contour bands over a deep silk under-glow
+    float k = 2.0 + a.x * 4.5;
+    float snareKick = uSnare * 0.75;
+    float v = sin(p.x * k + t * (0.5 + a.y) + snareKick)
+            + sin(p.y * k * 1.3 - t * 0.7 - snareKick * 0.6)
+            + sin((p.x + p.y) * k * 0.75 + t * (0.35 + a.z))
+            + sin(length(p * k * 0.9) - t * 1.1 + uBass * 2.0);
+    v *= 0.25;
+    float bands = 2.5 + a.w * 3.5;
+    float phase = v * bands + t * 0.12 + uSnare * 0.22;
+    float d1 = abs(fract(phase) - 0.5);
+    float d2 = abs(fract(phase * 2.0 + 0.25) - 0.5);
+    float ridge = exp(-d1 * max(11.0, 22.0 - uKick * 7.0 - uDrop * 6.0));
+    float core = exp(-d1 * 48.0);
+    float shimmer = exp(-d2 * 36.0) * (0.22 + uHat * 0.95 + uHigh * 0.35);
+    float silk = (0.06 + 0.14 * pow(0.5 + 0.5 * v, 2.0)) * (1.0 + uBass * 0.35);
+    vec3 base = pal(v * 0.65 + t * 0.03 + a.w);
+    vec3 accent = pal(v * 0.65 + 0.38 + t * 0.03 + a.w);
+    return base * (silk + ridge * (0.72 + uKick * 0.7 + uDrop * 1.1))
+         + accent * (core * (0.45 + uSnare * 0.95 + uDrop * 0.7) + shimmer * 0.55);
+}
+
+vec3 genHex(vec2 p, vec4 a, float t) {
+    // hexagon lattice; waves of light travel outward through the cells
+    float s = 2.0 + a.x * 5.0;
+    vec2 g = p * s;
+    const vec2 r = vec2(1.0, 1.7320508);
+    vec2 h = r * 0.5;
+    vec2 ga = mod(g, r) - h;
+    vec2 gb = mod(g - h, r) - h;
+    vec2 gv = dot(ga, ga) < dot(gb, gb) ? ga : gb;
+    vec2 id = g - gv;
+    vec2 av = abs(gv);
+    float edge = 0.5 - max(dot(av, normalize(vec2(1.0, 1.7320508))), av.x);
+    float cid = hash21(id);
+    float dist = length(id) * (0.3 + a.y * 0.5);
+    float wave = pow(0.5 + 0.5 * sin(dist * 3.0 - t * (1.0 + a.z * 2.5) + cid * a.w * 4.0), 8.0);
+    float snareRing = exp(-abs(fract(dist * 0.45 - t * 0.9) - 0.5) * 16.0) * uSnare;
+    float facet = exp(-abs(edge - 0.16) * 32.0) * (0.15 + uHat * 1.1) * step(0.35, fract(cid * 9.7 + floor(t * 2.5) * 0.23));
+    return pal(cid * 0.3 + dist * 0.05 + t * 0.02) * (exp(-edge * max(16.0, 30.0 - uDrop * 10.0)) * (0.24 + (wave + snareRing) * (1.2 + uKick + uDrop * 0.9)) + (wave + snareRing * 0.7) * 0.14)
+         + pal(cid * 0.3 + 0.45 + t * 0.02) * facet * 0.65;
+}
+
+vec3 runGen(int g, vec4 a, vec2 p, float t) {
+    P = a;
+    if (g == 0) return genInk(p, a, t);
+    if (g == 1) return styleCells(p);
+    if (g == 2) return styleKaleido(p);
+    if (g == 3) return genTruchet(p, a, t);
+    if (g == 4) return genInterference(p, a, t);
+    if (g == 5) return genStreams(p, a, t);
+    if (g == 6) return genGridPulse(p, a, t);
+    if (g == 7) return styleLiquid(p);
+    if (g == 8) return styleField(p);
+    if (g == 9) return genPlasma(p, a, t);
+    if (g == 10) return styleAurora(p);
+    if (g == 11) return genHex(p, a, t);
+    return styleTunnel(p);
+}
+
+vec3 renderLayer(Layer L, vec2 uv) {
+    PO = L.po; PF = L.pf;
+    float t = uFlow;
+    vec2 p = uv;
+    p = applyOp(L.op0, L.p0, p, t);
+    p = applyOp(L.op1, L.p1, p, t);
+    p = applyOp(L.op2, L.p2, p, t);
+    p = applyOp(L.op3, L.p3, p, t);
+    MUT = L.gb;
+    return runGen(L.gen, L.ga, p, t) * L.gain;
+}
+
+vec3 blendLayer(int mode, vec3 base, vec3 l) {
+    if (mode == 1) return 1.0 - (1.0 - clamp(base, 0.0, 1.0)) * (1.0 - clamp(l, 0.0, 1.0));
+    if (mode == 2) return max(base, l);
+    if (mode == 3) return base * (0.35 + l * 1.8) + l * 0.12;
+    if (mode == 4) return abs(base - l);
+    return base + l;
+}
+
+vec3 renderGenomeA(vec2 uv) {
+    uv *= rot(uFlow * (uGlobA.x - 0.5) * 0.12) * (0.85 + uGlobA.y * 0.4);
+    if (uGlobA.z > 0.75) uv.x = abs(uv.x);
+    vec3 col = renderLayer(uLA[0], uv);
+    if (uCountA > 1) col = blendLayer(uLA[1].blend, col, renderLayer(uLA[1], uv));
+    if (uCountA > 2) col = blendLayer(uLA[2].blend, col, renderLayer(uLA[2], uv));
+    PO = uLA[0].po; PF = uLA[0].pf;
+    return col;
+}
+
+vec3 renderGenomeB(vec2 uv) {
+    uv *= rot(uFlow * (uGlobB.x - 0.5) * 0.12) * (0.85 + uGlobB.y * 0.4);
+    if (uGlobB.z > 0.75) uv.x = abs(uv.x);
+    vec3 col = renderLayer(uLB[0], uv);
+    if (uCountB > 1) col = blendLayer(uLB[1].blend, col, renderLayer(uLB[1], uv));
+    if (uCountB > 2) col = blendLayer(uLB[2].blend, col, renderLayer(uLB[2], uv));
+    return col;
 }
 
 void main() {
     float aspect = uResolution.x / max(uResolution.y, 1.0);
     vec2 uv = (vUv - 0.5) * vec2(aspect, 1.0);
     uv += uCam * 0.00004 + uAim * 0.038;
-    vec3 col = renderGenome(uStyleA, uParamA, uMutA, uPalOffA, uPalFreqA, uv);
+    vec3 col = renderGenomeA(uv);
     if (uMix > 0.001) {
-        // transition: the new genome blooms out from the centre over the old one
-        vec3 next = renderGenome(uStyleB, uParamB, uMutB, uPalOffB, uPalFreqB, uv);
+        // transition: the new backdrop blooms out from the centre over the old one
+        vec3 next = renderGenomeB(uv);
         float wipe = smoothstep(uMix * 1.6 - 0.25, uMix * 1.6, length(uv) * 0.9);
         col = mix(next, col, wipe);
         col += pal(uMix) * exp(-abs(length(uv) * 0.9 - uMix * 1.6 + 0.12) * 30.0) * 0.6 * (1.0 - uMix);
+        PO = uLA[0].po; PF = uLA[0].pf;
     }
     float r = length(uv);
-    // ambient colour wash from the genome's palette: dark styles never collapse to black, so
-    // dark enemy bodies always have a lit backdrop to read against
-    vec3 ambient = mix(pal(0.15 + uv.y * 0.35 + uFlow * 0.01), pal(0.65 + uv.x * 0.25 - uFlow * 0.01), 0.5 + 0.5 * sin(uFlow * 0.07 + uv.x));
+    // ambient colour wash: dark generators never collapse to black, while dense stacks stay moody
+    // drifting coloured fog under everything: sparse line generators float in atmosphere
+    float fog = fbm3(uv * 1.3 + vec2(uFlow * 0.05, -uFlow * 0.04));
+    vec3 ambient = mix(pal(0.15 + fog * 0.5 + uv.y * 0.2), pal(0.65 + fog * 0.4 - uv.x * 0.1), fog);
     float lum = dot(col, vec3(0.299, 0.587, 0.114));
-    col += ambient * (0.11 + uKick * 0.04) * clamp(1.0 - lum * 3.0, 0.0, 1.0);
+    col += ambient * (0.10 + fog * 0.10 + uKick * 0.03 + uSnare * 0.025) * clamp(1.0 - lum * 3.0, 0.0, 1.0);
     float aimWash = 0.5 + 0.5 * dot(normalize(uv + vec2(0.0001)), normalize(vec2(uAim.x, -uAim.y) + vec2(0.0001)));
     col += mix(uColB, uPrim * 0.28, 0.35) * length(uAim) * aimWash * 0.05 * (0.4 + uEnergy * 0.6);
     col += uColC * exp(-r * 2.2) * uBeat * 0.06;
     float vig = smoothstep(1.35, 0.2, r);
     col *= 0.68 + 0.32 * vig;
     col += 0.003 * hash21(vUv * uResolution + uTime);
-    // soft-clip the highlights: busy styles stay a backdrop, dark ones keep their ambient colour
-    col = col * 1.05 / (1.0 + col * 1.8);
+    // soft-clip the highlights: busy backdrops stay a backdrop
+    col = col * 1.04 / (1.0 + col * 1.85);
     fragColor = vec4(col * 0.85 * uIntensity, 1.0);
 }
 """;

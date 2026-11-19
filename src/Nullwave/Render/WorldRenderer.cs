@@ -13,7 +13,6 @@ public static class WorldRenderer
     public static void Draw(Renderer r, GameWorld world, Palette palette, AudioState audio, float time)
     {
         r.Palette = palette;
-        DrawBackdrop3D(r, world, palette, audio, time);
         DrawArena(r, world, palette, audio, time);
         DrawMotes(r, world, palette, audio, time);
         DrawObstacles(r, world, palette, time);
@@ -25,106 +24,6 @@ public static class WorldRenderer
         DrawPlayer(r, world, palette, time);
         DrawParticles(r, world, palette);
         DrawShockwaves(r, world);
-    }
-
-    /// <summary>
-    /// Perspective 3D architecture behind the arena (rotating monolith columns, orbital rings,
-    /// and crystalline shards) driven by camera parallax, aim tilt, and audio energy.
-    /// </summary>
-    private static void DrawBackdrop3D(Renderer r, GameWorld w, Palette p, AudioState audio, float time)
-    {
-        float intensity = GameSettings.Current.BackgroundIntensity / 100f;
-        r.BackdropBrightness = 0.22f * intensity;
-        if (r.BackdropBrightness <= 0.005f) return;
-
-        Vector2 camParallax = r.Camera * 0.16f;
-        Vector2 aim = r.AimTilt;
-        Vector3 eye = new(camParallax.X + aim.X * 220f, camParallax.Y - aim.Y * 150f, 1150f);
-        Vector3 target = new(camParallax.X - aim.X * 140f, camParallax.Y + aim.Y * 95f, -900f);
-        Vector3 fogColor = Vector3.Lerp(p.BackA, p.BackB, 0.45f) * 0.65f;
-        r.SetBackdropCamera(eye, target, 54f, fogColor);
-
-        float pulse = audio.BeatPulse;
-        float energy = w.Energy;
-        float bass = w.Bass;
-        var batch = r.Backdrop;
-
-        // Two concentric rings of monolith columns in deep space.
-        for (int ring = 0; ring < 2; ring++)
-        {
-            int count = ring == 0 ? 10 : 8;
-            float radius = ring == 0 ? 1520f : 2200f;
-            float baseZ = ring == 0 ? -920f : -1520f;
-            float colW = ring == 0 ? 110f : 150f;
-            float colH = (ring == 0 ? 640f : 920f) * (1f + bass * 0.25f + pulse * 0.12f);
-            for (int i = 0; i < count; i++)
-            {
-                float a = i * M.Tau / count + time * (ring == 0 ? 0.045f : -0.028f) + ring * 0.31f;
-                float bob = MathF.Sin(time * 0.9f + i * 1.1f + ring) * 90f;
-                Vector2 xy = camParallax + M.FromAngle(a, radius);
-                float hue = (p.BaseHue + 0.06f * i + ring * 0.22f) % 1f;
-                var mats = MaterialSet.ForHue(M.Hsv(hue, 0.65f, 1f), 0.24f + pulse * 0.35f + energy * 0.25f);
-                var xf = Matrix4x4.CreateScale(colW, colW, colH)
-                         * Matrix4x4.CreateRotationZ(a + i * 0.4f)
-                         * Matrix4x4.CreateTranslation(xy.X, xy.Y, baseZ + bob);
-                batch.Add(Models.Column, xf, mats);
-            }
-        }
-
-        // Giant rotating orbital rings framing the outer horizon.
-        for (int i = 0; i < 3; i++)
-        {
-            float rad = 1480f + i * 540f;
-            float z = -1150f - i * 520f;
-            float hue = (p.BaseHue + 0.14f + i * 0.18f) % 1f;
-            var mats = MaterialSet.ForHue(M.Hsv(hue, 0.7f, 1f), 0.22f + pulse * 0.35f + energy * 0.22f);
-            var xf = Matrix4x4.CreateScale(rad, rad, rad * (0.9f + pulse * 0.15f))
-                     * Matrix4x4.CreateRotationX(0.32f + aim.Y * 0.22f + MathF.Sin(time * 0.25f + i) * 0.18f)
-                     * Matrix4x4.CreateRotationY(-0.24f - aim.X * 0.24f + MathF.Cos(time * 0.21f + i) * 0.18f)
-                     * Matrix4x4.CreateRotationZ(time * (0.08f + i * 0.04f) * (i % 2 == 0 ? 1f : -1f))
-                     * Matrix4x4.CreateTranslation(camParallax.X, camParallax.Y, z);
-            batch.Add(Models.Ring, xf, mats);
-        }
-
-        // Orbiting halo segments and geometric crystal/octa/knot accents.
-        for (int i = 0; i < 12; i++)
-        {
-            float a = i * M.Tau / 12f - time * 0.14f;
-            float dist = 1120f + (i % 3) * 340f;
-            float z = -760f - (i % 4) * 280f + MathF.Sin(time * 1.2f + i) * 75f;
-            Vector2 xy = camParallax + M.FromAngle(a, dist);
-            float hue = (p.BaseHue + 0.35f + i * 0.055f) % 1f;
-            var mats = MaterialSet.ForHue(M.Hsv(hue, 0.72f, 1f), 0.26f + pulse * 0.40f);
-            var segXf = Matrix4x4.CreateScale(140f, 30f, 38f + energy * 22f)
-                        * Matrix4x4.CreateRotationX(MathF.Sin(time * 0.7f + i) * 0.4f)
-                        * Matrix4x4.CreateRotationZ(a + MathF.PI * 0.5f)
-                        * Matrix4x4.CreateTranslation(xy.X, xy.Y, z);
-            batch.Add(Models.HaloSegment, segXf, mats);
-
-            if (i % 2 == 0)
-            {
-                var mesh = i % 4 == 0 ? Models.Crystal : Models.Octa;
-                float sc = (62f + (i % 3) * 16f) * (1f + pulse * 0.15f);
-                var cxf = Matrix4x4.CreateScale(sc)
-                          * Matrix4x4.CreateRotationY(time * 0.65f + i)
-                          * Matrix4x4.CreateRotationZ(time * 0.45f - i)
-                          * Matrix4x4.CreateTranslation(xy.X * 0.92f + camParallax.X * 0.08f, xy.Y * 0.92f + camParallax.Y * 0.08f, z - 180f);
-                batch.Add(mesh, cxf, mats);
-            }
-        }
-
-        for (int i = 0; i < 2; i++)
-        {
-            float a = time * 0.18f + i * MathF.PI;
-            Vector2 xy = camParallax + M.FromAngle(a, 920f);
-            float z = -1750f - i * 420f;
-            var mats = MaterialSet.ForHue(i == 0 ? p.Primary : p.Secondary, 0.30f + energy * 0.38f + pulse * 0.30f);
-            var kxf = Matrix4x4.CreateScale(260f + pulse * 24f)
-                      * Matrix4x4.CreateRotationX(time * 0.28f + i)
-                      * Matrix4x4.CreateRotationY(time * 0.34f - i)
-                      * Matrix4x4.CreateTranslation(xy.X, xy.Y, z);
-            batch.Add(Models.Knot, kxf, mats);
-        }
     }
 
     private static Matrix4x4 Xf(Vector2 pos, float z, float yaw, float scale, float roll = 0f, float pitch = 0f)

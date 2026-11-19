@@ -10,7 +10,8 @@ Candidates are scored on a 1–5 scale for **Player Impact** (higher is better),
 | **4** | `TASK-004` | **On-Beat Dash / Rhythm Synergy Bonus ("Phase Sync")** | **4 / 5** | **2 / 5** | **3 / 5** | None | **Done** |
 | **5** | `TASK-005` | **Choir Boss Phase-Transition Choreography & Audio-Reactive Telegraph Polish** | **3 / 5** | **2 / 5** | **3 / 5** | None | **Done** |
 | **6** | `TASK-006` | **Local Spotify Integration & Hardcore Riddim Drop-Trailer Recorder Hooks** | **5 / 5** | **2 / 5** | **2 / 5** | `TASK-002`, `TASK-004`, `TASK-005` | **Done** |
-| **7** | `TASK-007` | **Aim-Reactive 3D Backdrop Parallax & Camera Tilt, Richer Laser/Bullet Trails, and Expanded Laser Choreography** | **5 / 5** | **2 / 5** | **3 / 5** | `TASK-005` | **Active** |
+| **7** | `TASK-007` | **Aim-Reactive 3D Backdrop Parallax & Camera Tilt, Richer Laser/Bullet Trails, and Expanded Laser Choreography** | **5 / 5** | **2 / 5** | **3 / 5** | `TASK-005` | **Done** |
+| **8** | `TASK-008` | **Fully Generative Animated Backdrops + Per-Generator Audio Reactivity & Visual Harmony (TASK-008 + TASK-009)** | **5 / 5** | **2 / 5** | **3 / 5** | `TASK-007` | **Done** |
 
 ---
 

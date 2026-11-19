@@ -2,7 +2,7 @@
 
 - **Reviewer:** `@qa` (Independent QA / Performance Reviewer)
 - **Date:** `2026-11-18`
-- **Task Reviewed:** `TASK-001` through `TASK-007`
+- **Task Reviewed:** `TASK-001` through `TASK-008 / TASK-009`
 - **Overall Verdict:** **PASS (`APPROVED — 0 DEFECTS`)**
 
 ---
@@ -483,3 +483,50 @@ All `TASK-006` acceptance criteria are satisfied with **0 defects**. `TASK-006` 
 
 ### 12.4 Final QA Sign-Off (`TASK-007`)
 All `TASK-007` acceptance criteria are satisfied with **0 defects**. `TASK-007` is **APPROVED** and marked **`done`**.
+
+---
+
+## 13. Independent QA Verification (Combined `TASK-008` + `TASK-009` — Fully Generative Backdrops, Per-Generator Audio Reactivity & Visual Harmony)
+
+### 13.1 Code & Shader Hygiene Review (`Renderer.cs`, `Shaders.cs`, `SelfTest.cs`)
+- **Zero-Alloc Onset Drives & Dead-Uniform Cleanup (`Renderer.cs`, `Shaders.cs`):**
+  - `Renderer.BackdropAudioDrives` (`readonly record struct`) and `Renderer.ComputeBackdropAudioDrives(AudioState, MusicDirector?, float)` compute `Kick`, `Snare`, `Hat`, `Drop`, `Build`, and `Breakdown` with finite `[0, 3]` clamping and zero per-frame heap allocations.
+  - All 10 unused V7 uniforms (`uStyleA/B`, `uParamA/B`, `uMutA/B`, `uPalOffA/B`, `uPalFreqA/B`) are removed from `Shaders.BackgroundFrag`, while `uSnare`, `uHat`, `uKick`, `uDrop`, `uAim`, `uMix`, and the active `uLA[3]`/`uLB[3]` genome uniforms are present and bound cleanly in `Renderer.Render(...)`.
+- **Per-Generator Audio Reactivity & Visual Harmony (`Shaders.cs`):**
+  - All 7 new generators (`genInk`, `genTruchet`, `genInterference`, `genStreams`, `genGridPulse`, `genPlasma`, `genHex`), all 6 classic generators (`styleLiquid`, `styleTunnel`, `styleKaleido`, `styleField`, `styleAurora`, `styleCells`), and space transforms (`WARP`, `SWIRL`, `RIPPLE`, `BREATHE`) react distinctly to `uKick`, `uSnare`, `uHat`, `uBass`, `uHigh`, and `uDrop`.
+  - `genPlasma` renders crisp multi-band harmonic contour ridges instead of blurry blobs; `BackgroundFrag.main()` tunes the drifting ambient fog floor (`0.10 + fog * 0.10 + uKick * 0.03 + uSnare * 0.025`, masked by `clamp(1.0 - lum * 3.0, 0.0, 1.0)`) and soft-clipping (`1.04 / (1.0 + col * 1.85)`) while keeping `uAim` shader parallax and `ObliqueVec` aim tilt intact.
+
+### 13.2 Independent Build, SelfTest & Smoke Verification (`TASK-008 / TASK-009`)
+- **Release Build:**
+  ```text
+  ./.dotnet/dotnet.exe build src/Nullwave/Nullwave.csproj -c Release --nologo
+  Build succeeded.
+      0 Warning(s)
+      0 Error(s)
+  Time Elapsed 00:00:00.57
+  ```
+- **Headless Self-Test Suite (`--selftest`):**
+  ```text
+  ./run.cmd --selftest
+  ...
+    backdrops: 1000 generated, 1000 distinct, 13/13 generators, 11/11 transforms, 2.0 layers avg
+  ...
+    backdrop audio: kick=0.84 snare=0.96 hat=0.78 drop=1.08 deadV7Uniforms=0
+  RESULT: PASS (76348 assertions, 2.4s)
+  ```
+- **Live OpenGL Smoke Run (`--smoke 5`):**
+  ```text
+  ./run.cmd --smoke 5
+  NULLWAVE | GL 4.1.0 NVIDIA 617.42 | NVIDIA GeForce RTX 5060 Laptop GPU/PCIe/SSE2
+  SMOKECONFIG | seed=00Z9DUE9 mods=3 mult=x1.66 bossPhases=3 attunes=0
+  AUDIO | capture=True output=True device=Edge error=
+  SMOKE | 5.0s fps=115 wave=1 score=2414 enemies=2 bullets=2 bpm=126.0 audio=GENERATIVE SCORE capture=True
+  RENDERSTATE | after1=baseline after2=baseline alphaMin=255 rerenderDiff=0.000 % -> PASS
+  ```
+
+### 13.3 Visual Captures & Documentation Verification
+- Visually inspected `docs/screenshots/generative_backdrops.png`, `latest_combat.png`, `latest_boss.png`, `latest_songlasers.png`, and `latest_speed.png` via `read_file`: confirmed crisp `PLASMA` harmonic contour bands, rich multi-seed variety, disciplined dark fog floor (no pastel washout, no flat black collapse), and sharp foreground combat readability.
+- Verified `README.md` and `CHANGELOG.md`: all 25 unique file/image links resolve (`exists=True`), technical descriptions match `src/Nullwave/`, and zero non-game content is present.
+
+### 13.4 Final QA Sign-Off (`TASK-008 / TASK-009`)
+All combined `TASK-008` + `TASK-009` acceptance criteria are satisfied with **0 defects**. `TASK-008` is **APPROVED** and marked **`done`**.

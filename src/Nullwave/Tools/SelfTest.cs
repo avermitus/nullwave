@@ -47,6 +47,7 @@ public static class SelfTest
             TestSpotifyIntegration();
             TestHardModifierRecordPreset();
             TestAimCameraAndLaserVisuals();
+            TestBackdropAudioReactivity();
             Console.WriteLine($"RESULT: PASS ({_checks} assertions, {sw.Elapsed.TotalSeconds:0.0}s)");
             return 0;
         }
@@ -482,20 +483,38 @@ public static class SelfTest
     private static void TestBackdropVariety()
     {
         var rng = new Random();
-        var styles = new HashSet<int>();
-        var seen = new HashSet<string>();
-        var prev = Render.BackdropGenome.Random(rng);
-        for (int i = 0; i < 300; i++)
+        var names = new HashSet<string>();
+        var gens = new HashSet<int>();
+        var ops = new HashSet<int>();
+        int layerTotal = 0;
+        Render.BackdropGenome? prev = null;
+        const int count = 1000;
+        for (int i = 0; i < count; i++)
         {
-            var g = Render.BackdropGenome.Random(rng, prev.Style);
-            Check(g.Style != prev.Style, "consecutive backdrops change style");
-            styles.Add(g.Style);
-            string key = $"{g.Style}:{g.Params}:{g.PaletteOffset}";
-            Check(seen.Add(key), "no repeated backdrop genome");
+            var g = Render.BackdropGenome.Random(rng, prev);
+            Check(g.Layers.Count is >= 1 and <= Render.BackdropGenome.MaxLayers, "backdrop has 1-3 layers");
+            int expensive = 0;
+            for (int li = 0; li < g.Layers.Count; li++)
+            {
+                var l = g.Layers[li];
+                Check(l.Generator is >= 0 and < Render.BackdropGenome.GeneratorCount, "generator in range");
+                if (Render.BackdropGenome.IsExpensive(l.Generator)) { expensive++; Check(li == 0, "raymarched generator only as base layer"); }
+                Check(l.Ops.All(o => o is >= 0 and <= Render.BackdropGenome.OpCount), "ops in range");
+                Check(l.Ops.Count(o => o is 2 or 7) <= 1, "at most one space remap per layer");
+                gens.Add(l.Generator);
+                foreach (var o in l.Ops) if (o > 0) ops.Add(o);
+                layerTotal++;
+            }
+            Check(expensive <= 1, "at most one raymarched generator");
+            if (prev != null)
+                Check(g.Layers[0].Generator != prev.Layers[0].Generator || !g.Layers[0].Ops.SequenceEqual(prev.Layers[0].Ops), "consecutive backdrops differ");
+            names.Add(g.Name + g.Global);
             prev = g;
         }
-        Console.WriteLine($"  backdrops: 300 unique genomes over {styles.Count} styles");
-        Check(styles.Count == Render.BackdropGenome.StyleCount, "every style appears");
+        Console.WriteLine($"  backdrops: {count} generated, {names.Count} distinct, {gens.Count}/{Render.BackdropGenome.GeneratorCount} generators, {ops.Count}/{Render.BackdropGenome.OpCount} transforms, {layerTotal / (float)count:0.0} layers avg");
+        Check(names.Count == count, "no two backdrops alike");
+        Check(gens.Count == Render.BackdropGenome.GeneratorCount, "every generator appears");
+        Check(ops.Count == Render.BackdropGenome.OpCount, "every transform appears");
     }
 
     private static void TestRacerFeel()
@@ -1224,5 +1243,73 @@ public static class SelfTest
         Check(maxChoirLasers >= 2, "Choir Phase II+ fires multi-beam laser volleys");
 
         Console.WriteLine($"  aim & lasers: oblique=({obRight.X:0.00},{obRight.Y:0.00}) dropBeams={dropBeams} buildBeams={buildBeams} highVolleys={highWorld.SongLaserVolleys} choirMaxLasers={maxChoirLasers}");
+    }
+
+    /// <summary>TASK-008/009: Per-generator onset drives (Kick/Snare/Hat/Drop/Build/Breakdown) and BackgroundFrag uniform hygiene.</summary>
+    private static void TestBackdropAudioReactivity()
+    {
+        var audio = new AudioState
+        {
+            BeatPulse = 0.45f,
+            SnarePulse = 0.80f,
+            HatPulse = 0.65f,
+        };
+        var mood = new MusicDirector();
+        mood.ForceForCapture(intensity: 0.9f, build: 0.50f, breakdown: 0.25f, drop: 0.90f, hue: 0.2f, kick: 0.70f);
+
+        var d = Renderer.ComputeBackdropAudioDrives(audio, mood, 1.2f);
+        Check(MathF.Abs(d.Kick - 0.84f) < 1e-5f, "Kick uses mood.Kick * fx");
+        Check(MathF.Abs(d.Snare - 0.96f) < 1e-5f, "Snare uses audio.SnarePulse * fx");
+        Check(MathF.Abs(d.Hat - 0.78f) < 1e-5f, "Hat uses audio.HatPulse * fx");
+        Check(MathF.Abs(d.Drop - 1.08f) < 1e-5f, "Drop uses mood.DropPulse * fx");
+        Check(MathF.Abs(d.Build - 0.60f) < 1e-5f, "Build uses mood.Build * fx");
+        Check(MathF.Abs(d.Breakdown - 0.30f) < 1e-5f, "Breakdown uses mood.Breakdown * fx");
+
+        // mood == null falls back to BeatPulse for Kick and 0 for section cues
+        var noMood = Renderer.ComputeBackdropAudioDrives(audio, null, 1.0f);
+        Check(MathF.Abs(noMood.Kick - 0.45f) < 1e-5f, "null mood falls back to audio.BeatPulse");
+        Check(MathF.Abs(noMood.Snare - 0.80f) < 1e-5f && MathF.Abs(noMood.Hat - 0.65f) < 1e-5f, "null mood preserves Snare and Hat");
+        Check(noMood.Drop == 0f && noMood.Build == 0f && noMood.Breakdown == 0f, "null mood zeroes section drives");
+
+        // fx == 0 zeroes all drives
+        var muted = Renderer.ComputeBackdropAudioDrives(audio, mood, 0f);
+        Check(muted == new Renderer.BackdropAudioDrives(0f, 0f, 0f, 0f, 0f, 0f), "fx=0 zeroes all backdrop drives");
+
+        // extreme / non-finite inputs stay safely clamped in [0, 3]
+        var extreme = Renderer.ComputeBackdropAudioDrives(
+            new AudioState { BeatPulse = float.NaN, SnarePulse = 10f, HatPulse = float.PositiveInfinity },
+            mood, 2.5f);
+        Check(extreme.Kick <= 3f && extreme.Snare == 3f && extreme.Hat == 0f && extreme.Drop <= 3f, "extreme/non-finite drives clamped safely");
+        var nanFx = Renderer.ComputeBackdropAudioDrives(audio, mood, float.NaN);
+        Check(nanFx == new Renderer.BackdropAudioDrives(0f, 0f, 0f, 0f, 0f, 0f), "NaN fx yields zero drives");
+
+        // BackgroundFrag uniform contract: active onset/aim/transition uniforms present, zero dead V7 uniforms
+        string frag = Shaders.BackgroundFrag;
+        foreach (string required in new[]
+        {
+            "uniform float uSnare;",
+            "uniform float uHat;",
+            "uniform float uKick;",
+            "uniform float uDrop;",
+            "uniform vec2 uAim;",
+            "uniform float uMix;",
+        })
+        {
+            Check(frag.Contains(required, StringComparison.Ordinal), "BackgroundFrag declares " + required);
+        }
+
+        foreach (string dead in new[]
+        {
+            "uStyleA", "uStyleB",
+            "uParamA", "uParamB",
+            "uMutA", "uMutB",
+            "uPalOffA", "uPalOffB",
+            "uPalFreqA", "uPalFreqB",
+        })
+        {
+            Check(!frag.Contains(dead, StringComparison.Ordinal), "BackgroundFrag removed dead V7 uniform " + dead);
+        }
+
+        Console.WriteLine($"  backdrop audio: kick={d.Kick:0.00} snare={d.Snare:0.00} hat={d.Hat:0.00} drop={d.Drop:0.00} deadV7Uniforms=0");
     }
 }

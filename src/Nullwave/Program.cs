@@ -39,6 +39,9 @@ internal static class Program
     private static int _frame;
     private static bool _saved;
     private static int _forceStyle = -1;
+    private static float _reelSeconds;
+    private static Process? _reelEncoder;
+    private static int _reelFrames;
 
     private static void Main(string[] args)
     {
@@ -73,6 +76,7 @@ internal static class Program
             else if (a == "--list-apps") { _mode = "listapps"; }
             else if (a == "--beatbench") { _mode = "beatbench"; }
             else if (a == "--style" && i + 1 < args.Length && int.TryParse(args[i + 1], out int st)) { _forceStyle = st; i++; }
+            else if (a == "--reel" && i + 1 < args.Length && float.TryParse(args[i + 1], out float rs)) { _reelSeconds = rs; i++; }
         }
 
         if (_mode == "selftest")
@@ -181,10 +185,10 @@ internal static class Program
                 _ => 180,
             };
             _game.CaptureWarmup(warmup);
-            if (_forceStyle >= 0) _renderer.ForceBackdrop(_forceStyle, 1234 + _forceStyle);
+            if (_forceStyle >= 0) _renderer.ForceBackdrop(_forceStyle);
         }
         if (_mode == "smoke") _game.StartSmokeRun(0x5A1E5EEDUL);
-        if (_mode == "smoke" && _forceStyle >= 0) _renderer.ForceBackdrop(_forceStyle, 77 + _forceStyle);
+        if (_mode == "smoke" && _forceStyle >= 0) _renderer.ForceBackdrop(_forceStyle);
         if (_mode == "record")
         {
             _game.StartSmokeRun(0x5A1E5EEDUL);
@@ -195,6 +199,19 @@ internal static class Program
         _clock = Stopwatch.StartNew();
         _lastTime = 0;
         _lastFrameEnd = 0;
+    }
+
+    private static void StartReel()
+    {
+        string dir = Path.GetDirectoryName(Path.GetFullPath(_captureOut)) ?? ".";
+        Directory.CreateDirectory(dir);
+        var psi = new ProcessStartInfo("ffmpeg",
+            $"-y -v error -f rawvideo -pix_fmt rgba -s {_renderer!.Width}x{_renderer.Height} -r 30 -i - -vf vflip,scale=960:-2 -c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p -movflags +faststart \"{_captureOut}\"")
+        {
+            RedirectStandardInput = true,
+            UseShellExecute = false,
+        };
+        _reelEncoder = Process.Start(psi);
     }
 
     private static void OnResize(Vector2D<int> size)
@@ -224,6 +241,47 @@ internal static class Program
         _lastTime = now;
         _frame++;
 
+        if (_mode == "capture" && Environment.GetEnvironmentVariable("NULLWAVE_BENCH") == "1")
+        {
+            // uncapped GPU timing: render 240 frames with a full pipeline flush each frame
+            var sw = Stopwatch.StartNew();
+            double worst = 0;
+            for (int i = 0; i < 240; i++)
+            {
+                double t0 = sw.Elapsed.TotalMilliseconds;
+                _game.Update(1f / 60f);
+                _game.Render();
+                _gl!.Finish();
+                worst = Math.Max(worst, sw.Elapsed.TotalMilliseconds - t0);
+            }
+            Console.WriteLine($"BENCH | {sw.Elapsed.TotalMilliseconds / 240:0.00} ms/frame avg, worst {worst:0.00} ms | {_renderer.BackdropName}");
+            _window!.Close();
+            return;
+        }
+
+        if (_mode == "capture" && _reelSeconds > 0f)
+        {
+            // reel: stream the capture to an mp4 at 30 fps of simulated time
+            _game.Update(1f / 60f);
+            _game.Render();
+            if (_frame % 2 == 0)
+            {
+                if (_reelEncoder == null) StartReel();
+                _frameBuffer ??= new byte[_renderer.Width * _renderer.Height * 4];
+                _renderer.ReadPixelsInto(_frameBuffer);
+                _reelEncoder!.StandardInput.BaseStream.Write(_frameBuffer, 0, _frameBuffer.Length);
+                _reelFrames++;
+            }
+            if (_reelFrames >= (int)(_reelSeconds * 30f))
+            {
+                _reelEncoder!.StandardInput.Close();
+                _reelEncoder.WaitForExit();
+                Console.WriteLine($"REEL | {_captureOut} frames={_reelFrames} backdrop={_renderer.BackdropName}");
+                _window!.Close();
+            }
+            return;
+        }
+
         if (_mode == "capture")
         {
             _game.Update(1f / 60f);
@@ -233,6 +291,7 @@ internal static class Program
                 _saved = true;
                 _renderer.SaveScreenshot(_captureOut);
                 Console.WriteLine($"CAPTURE | {_captureScenario} -> {_captureOut} frame={_frame} size={_renderer.Width}x{_renderer.Height}");
+                Console.WriteLine($"BACKDROP | {_renderer.BackdropName}");
                 var dir = _game.Director;
                 Console.WriteLine($"MOOD | intensity={dir.Intensity:0.00} build={dir.Build:0.00} breakdown={dir.Breakdown:0.00} drop={dir.DropPulse:0.00} hue={dir.MoodHue:0.00} kick={dir.Kick:0.00} worldFlash={(_game.ActiveWorld ?? _game.DemoWorld)?.Flash:0.00}");
                 _window!.Close();
