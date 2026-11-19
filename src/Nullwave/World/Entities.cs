@@ -92,6 +92,9 @@ public sealed class Player
     public int PhaseSyncs;
     public float PhaseSyncFlash;
     public float LastPhaseSyncErrorMs;
+    public int ShotCounter;
+    public SynergyFlags ActiveSynergies;
+    public float VoidPhantomFlash;
     /// <summary>Smoothed health shown by the HUD bar (lags behind real health to show the chunk lost).</summary>
     public float HealthDisplay = 3f;
     public float Bank;
@@ -194,6 +197,8 @@ public sealed class Bullet
     public bool BeatSurge;
     public float BaseSpeed;
     public float Surge;
+    /// <summary>0 = normal, 1 = SeekerSalvo, 2 = PrismLance (supercharged), 3 = RailCadence.</summary>
+    public byte SynergyKind;
 
     public void Reset()
     {
@@ -220,6 +225,7 @@ public sealed class Bullet
         BeatSurge = false;
         BaseSpeed = 0;
         Surge = 0;
+        SynergyKind = 0;
     }
 }
 

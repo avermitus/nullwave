@@ -12,6 +12,7 @@ public sealed partial class World
         p.Time += dt;
         p.HitFlash = MathF.Max(0, p.HitFlash - dt * 4.5f);
         p.PhaseSyncFlash = MathF.Max(0f, p.PhaseSyncFlash - dt * 2.6f);
+        p.VoidPhantomFlash = MathF.Max(0f, p.VoidPhantomFlash - dt * 3f);
         p.Invuln = MathF.Max(0, p.Invuln - dt);
         p.DashCooldown = MathF.Max(0, p.DashCooldown - dt);
         p.TrailTimer -= dt;
@@ -35,6 +36,31 @@ public sealed partial class World
             Sfx?.Trigger(SfxType.Dash, 0.55f);
             for (int i = 0; i < 18; i++)
                 SpawnParticle(p.Pos, -p.DashDir * FxRng.Range(80, 360) + FxRng.InCircle(100), FxRng.Range(0.2f, 0.45f), 2.5f, M.Hsv(0.50f, 0.65f, 1f, 0.8f), ParticleKind.Spark, 3f);
+            if ((p.ActiveSynergies & SynergyFlags.VoidPhantom) != 0)
+            {
+                p.VoidPhantomFlash = 1f;
+                AddShockwave(p.Pos, 180f, 0.38f, 4f, new Vector4(0.75f, 0.45f, 1f, 1f));
+                const float dmgR2 = 180f * 180f;
+                for (int i = Enemies.Count - 1; i >= 0; i--)
+                {
+                    var e = Enemies[i];
+                    if (e.Dead || e.Spawning) continue;
+                    if (M.DistSq(e.Pos, p.Pos) <= dmgR2)
+                        DamageEnemy(e, 35f, p.Pos);
+                }
+                const float cancelR2 = 135f * 135f;
+                float resPerBullet = 2f * p.TotalResonanceGain * Mods.ResonanceGain;
+                for (int i = EnemyBullets.Count - 1; i >= 0; i--)
+                {
+                    var eb = EnemyBullets[i];
+                    if (M.DistSq(eb.Pos, p.Pos) <= cancelR2)
+                    {
+                        SpawnParticle(eb.Pos, FxRng.InCircle(110), 0.28f, 2.4f, new Vector4(0.78f, 0.55f, 1f, 0.9f), ParticleKind.Spark, 2.8f);
+                        ReturnBullet(EnemyBullets, i);
+                        p.Resonance = MathF.Min(p.ResonanceMax, p.Resonance + resPerBullet);
+                    }
+                }
+            }
             if (IsInPhaseSyncWindow(out float syncErrMs))
             {
                 PhaseSyncs++;
@@ -114,6 +140,7 @@ public sealed partial class World
     private void Shoot()
     {
         var p = Player;
+        p.ShotCounter++;
         p.FireTimer = p.FireInterval / MathF.Max(0.4f, Mods.PlayerFireRate);
         float baseAngle = M.AngleOf(p.AimDir);
         int fired = 0;
@@ -149,12 +176,48 @@ public sealed partial class World
             FireAngle(baseAngle + MathF.PI + spread, 0f, 0.55f);
         }
 
+        // Synergy: SEEKER SALVO (SPLIT 2+ & HOMING 2+) -> twin flanking micro-seekers
+        if ((p.ActiveSynergies & SynergyFlags.SeekerSalvo) != 0)
+        {
+            float seekHoming = p.HomingLevel * 3.85f;
+            float seekLife = p.BulletLife * 1.25f;
+            float seekDmg = p.Damage * 0.62f;
+            float seekRad = p.BulletRadius * 0.92f;
+            for (int s = -1; s <= 1; s += 2)
+            {
+                float a = baseAngle + s * 0.66f;
+                Vector2 dir = M.FromAngle(a);
+                SpawnPlayerBullet(p.Pos + dir * 16f, dir * (p.BulletSpeed * 0.92f), seekRad, seekDmg, seekLife, p.PierceLevel, seekHoming, p.RicochetLevel, synergyKind: 1, hue: 0.84f);
+                fired++;
+            }
+        }
+
+        // Synergy: RAIL CADENCE (HEAVY 2+ & RAPID 2+) -> every 4th shot launches a hyper-velocity centerline rail bolt
+        if ((p.ActiveSynergies & SynergyFlags.RailCadence) != 0 && p.ShotCounter % 4 == 0)
+        {
+            Vector2 dir = M.FromAngle(baseAngle);
+            SpawnPlayerBullet(
+                p.Pos + dir * 22f,
+                dir * 2350f,
+                p.BulletRadius * 1.45f,
+                p.Damage * 2.1f,
+                p.BulletLife * 1.15f,
+                p.PierceLevel + 2,
+                p.HomingLevel * 1.4f,
+                p.RicochetLevel,
+                synergyKind: 3,
+                hue: 0.09f);
+            fired++;
+            for (int k = 0; k < 6; k++)
+                SpawnParticle(p.Pos + dir * 22f, dir * FxRng.Range(180f, 440f) + FxRng.InCircle(90f), 0.16f, 3.2f, new Vector4(1f, 0.85f, 0.35f, 0.95f), ParticleKind.Spark, 4f);
+        }
+
         Vector4 flash = M.Hsv(0.51f, 0.5f, 1f, 0.8f);
         SpawnParticle(p.Pos + p.AimDir * 20f, p.AimDir * 120f + FxRng.InCircle(50), 0.12f, 4.5f, flash, ParticleKind.Spark, 4f);
         Sfx?.Trigger(SfxType.Shot, 0.16f + MathF.Min(0.12f, fired * 0.005f), M.Clamp(p.Pos.X / (ArenaW * 0.5f), -1f, 1f) * 0.45f);
     }
 
-    public void SpawnPlayerBullet(Vector2 pos, Vector2 vel, float radius, float damage, float life, int pierce, float homing = 0f, int bounces = 0)
+    public void SpawnPlayerBullet(Vector2 pos, Vector2 vel, float radius, float damage, float life, int pierce, float homing = 0f, int bounces = 0, byte synergyKind = 0, float hue = 0.51f)
     {
         if (PlayerBullets.Count >= 900) return;
         if (!_bulletPool.TryPop(out var b)) b = new Bullet();
@@ -168,11 +231,28 @@ public sealed partial class World
         b.Life = life;
         b.MaxLife = life;
         b.Damage = damage;
-        b.Hue = 0.51f;
+        b.Hue = hue;
         b.Pierce = pierce;
         b.Homing = homing;
         b.Bounces = bounces;
+        b.SynergyKind = synergyKind;
         PlayerBullets.Add(b);
+    }
+
+    /// <summary>PRISM LANCE (PIERCE 2+ & RICOCHET 2+): wall/monolith bounces supercharge bolts.</summary>
+    private void SuperchargePrismLance(Bullet b)
+    {
+        if ((Player.ActiveSynergies & SynergyFlags.PrismLance) == 0) return;
+        b.Damage = MathF.Min(Player.Damage * 4f, b.Damage * 1.35f);
+        b.Pierce += 1;
+        b.Life = MathF.Min(b.MaxLife * 1.5f, b.Life + 0.35f);
+        float speed = b.Vel.Length();
+        if (speed > 1f)
+            b.Vel = b.Vel / speed * MathF.Min(2400f, speed * 1.12f);
+        b.SynergyKind = 2;
+        b.Hue = 0.13f;
+        for (int k = 0; k < 6; k++)
+            SpawnParticle(b.Pos, FxRng.InCircle(170f), 0.24f, 2.5f, new Vector4(1f, 0.92f, 0.48f, 0.92f), ParticleKind.Spark, 3.2f);
     }
 
     /// <summary>All enemy fire travels this much faster than the original tuning (fewer, faster shots).</summary>
@@ -219,7 +299,8 @@ public sealed partial class World
             b.Life -= dt;
             if (b.Homing > 0f)
             {
-                var target = NearestEnemy(b.Pos, 460f);
+                float seekRange = b.SynergyKind == 1 ? 640f : 460f;
+                var target = NearestEnemy(b.Pos, seekRange);
                 if (target != null)
                 {
                     float desired = M.AngleOf(target.Pos - b.Pos);
@@ -242,6 +323,7 @@ public sealed partial class World
                     if (MathF.Abs(b.Pos.X) > ArenaW * 0.5f - 4f) b.Vel = new Vector2(-b.Vel.X, b.Vel.Y);
                     if (MathF.Abs(b.Pos.Y) > ArenaH * 0.5f - 4f) b.Vel = new Vector2(b.Vel.X, -b.Vel.Y);
                     b.Pos = new Vector2(M.Clamp(b.Pos.X, -ArenaW * 0.5f + 5, ArenaW * 0.5f - 5), M.Clamp(b.Pos.Y, -ArenaH * 0.5f + 5, ArenaH * 0.5f - 5));
+                    SuperchargePrismLance(b);
                 }
                 else
                 {

@@ -2,7 +2,7 @@
 
 - **Reviewer:** `@qa` (Independent QA / Performance Reviewer)
 - **Date:** `2026-11-19`
-- **Task Reviewed:** `TASK-001` through `TASK-009` (Abyssal Dark Theme + `uLights[12]`)
+- **Task Reviewed:** `TASK-001` through `TASK-010` (Harmonic Overclock — Attunement Synergy Evolutions)
 - **Overall Verdict:** **PASS (`APPROVED — 0 DEFECTS`)**
 
 ---
@@ -588,3 +588,60 @@ All combined `TASK-008` + `TASK-009` acceptance criteria are satisfied with **0 
 
 ### 14.4 Final QA Sign-Off (`TASK-009`)
 All `TASK-009` acceptance criteria are satisfied with **0 defects**. `TASK-009` is **APPROVED** and marked **`done`**.
+
+---
+
+## 15. Independent QA Verification (`TASK-010` — Attunement Synergy Evolutions / "Harmonic Overclock")
+
+### 15.1 Code, Gameplay & Zero-Allocation Audit
+- **Zero-Alloc Synergy Engine (`Attunements.cs`, `Entities.cs`):**
+  - `[Flags] SynergyFlags` bitmask (`SeekerSalvo`, `PrismLance`, `RailCadence`, `VoidPhantom`) + `SynergyCatalog` (`Evaluate`, `CountActive`, `FirstMatch`, `WouldUnlock`, `GetActive(Span<int>)`) operate with zero heap allocations.
+  - `Player.ActiveSynergies` syncs inside `AttunementCatalog.Apply`; `Bullet.SynergyKind` (`0..3`) is a 1-byte field on pooled `Bullet` instances cleared in `Bullet.Reset()`.
+- **4 Signature Evolutions & Unlock Celebration (`World.cs`, `World.Player.cs`, `World.Collisions.cs`):**
+  - `ChooseAttunement` snapshots `before`, computes `unlocked = Player.ActiveSynergies & ~before`, and emits `"OVERCLOCK // <NAME>"` (`2.6s`), a `380u` golden shockwave, 28 sparks, and the unlock chime.
+  - `SeekerSalvo` (`SPL 2+ & HOM 2+`) launches twin flanking micro-seekers (`±38°`, `3.85x` homing, `640u` seek range); `PrismLance` (`PRC 2+ & RIC 2+`) supercharges wall and monolith bounces via shared `SuperchargePrismLance(Bullet)` (`1.35x` dmg capped `4x`, `+1` pierce, `1.12x` speed capped `2400`, `+0.35s` life); `RailCadence` (`HVY 2+ & RPD 2+`) fires a centerline `2350`-speed hyper-rail every 4th shot (`2.1x` dmg, `1.45x` radius, `+2` pierce); `VoidPhantom` (`PHS 2+ & GRZ 2+`) expands dash absorb/graze radii and unleashes a `180u` shockwave (`35` dmg) + `135u` bullet-cancel ring (`+2` scaled Resonance/bullet).
+- **Renderer & UI (`WorldRenderer.cs`, `Screens.cs`, `Game.cs`):**
+  - `WorldRenderer.DrawBullets` branches cleanly on `b.SynergyKind` (`1..3`) with distinct ribbons/refractions/rails, and `PopulateCombatLights` feeds a violet-cyan `VoidPhantomFlash` light pulse into Abyssal `uLights[]`.
+  - `Screens.DrawHudAttunements` uses `stackalloc int[4]` to draw solar-gold `*SLV`/`*LNC`/`*RAL`/`*VPH` pills cleanly above the attunement strip (`y = 712/688`); `DrawPauseAttunements` centers `"OVERCLOCK // ..."` at `(800, 612)`; `DrawAttunement` previews `"OVERCLOCK // <NAME>"` on draft cards via `WouldUnlock`.
+
+### 15.2 Independent Build, SelfTest & Dual-Theme Smoke Verification (`TASK-010`)
+- **Release Build:**
+  ```text
+  ./.dotnet/dotnet.exe build src/Nullwave/Nullwave.csproj -c Release --nologo
+  Build succeeded.
+      0 Warning(s)
+      0 Error(s)
+  Time Elapsed 00:00:00.56
+  ```
+- **Headless Self-Test Suite (`--selftest`):**
+  ```text
+  ./run.cmd --selftest
+  ...
+    abyssal theme: maxLights=12 offset=(0.50,-0.25) r=0.25 shaders=3/3
+    synergies: active=4/4 seekers=2 railSpeed=2350 prismDmg=8.0->10.8 voidRes=+13.5
+  RESULT: PASS (76467 assertions, 2.4s)
+  ```
+- **Live OpenGL Smoke Runs (`--smoke 5` Standard & `--smoke 4 --attune synergy --theme abyssal`):**
+  ```text
+  ./run.cmd --smoke 5
+  NULLWAVE | GL 4.1.0 NVIDIA 617.42 | NVIDIA GeForce RTX 5060 Laptop GPU/PCIe/SSE2
+  SMOKECONFIG | seed=00Z9DUE9 mods=5 mult=x2.29 bossPhases=3 attunes=0 synergies=0
+  SMOKE | 5.0s fps=115 wave=1 score=4165 enemies=2 bullets=4 bpm=126.0 audio=GENERATIVE SCORE capture=True
+  RENDERSTATE | after1=baseline after2=baseline alphaMin=255 rerenderDiff=0.000 % -> PASS
+
+  ./run.cmd --smoke 4 --attune synergy --theme abyssal
+  NULLWAVE | GL 4.1.0 NVIDIA 617.42 | NVIDIA GeForce RTX 5060 Laptop GPU/PCIe/SSE2
+  SMOKECONFIG | seed=00Z9DUE9 mods=5 mult=x2.29 bossPhases=3 attunes=12 synergies=3
+  SMOKE | 4.0s fps=112 wave=1 score=5510 enemies=2 bullets=4 bpm=126.0 audio=GENERATIVE SCORE capture=True
+  RENDERSTATE | after1=baseline after2=baseline alphaMin=255 rerenderDiff=0.000 % -> PASS
+  ```
+
+### 15.3 Visual Capture & Documentation Hygiene Verification (`TASK-010`)
+- Visually inspected all 3 captures via `read_file`:
+  - `docs/screenshots/synergy_overclock.png` — Pitch OLED-black Abyssal void with curved magenta `SeekerSalvo` micro-seekers, thick solar-amber `RailCadence` hyper-rail bolt, and solar-gold `*SLV *RAL *VPH` pill row cleanly above the attunement strip & `INTEGRITY` with zero HUD overlap.
+  - `screenshots/synergy_pause.png` — Centered solar-gold `OVERCLOCK // SLV/RAL/VPH` in the `SIGNAL HELD` header cleanly separated from `ATTUNEMENTS // 14` and `06 / 12 SIGNALS`.
+  - `screenshots/synergy_standard.png` — Identical legibility and zero HUD overlap against the Standard theme backdrop.
+- Verified `README.md` and `CHANGELOG.md`: all image links resolve (`Test-Path == True`, including `docs/screenshots/synergy_overclock.png`) with strictly game-focused copy and zero non-game/internal references.
+
+### 15.4 Final QA Sign-Off (`TASK-010`)
+All `TASK-010` acceptance criteria are satisfied with **0 defects**. `TASK-010` is **APPROVED** and marked **`done`**.

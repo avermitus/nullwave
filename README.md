@@ -10,7 +10,7 @@ A native Windows twin-stick bullet hell in pure C# (OpenGL via Silk.NET, audio v
 - **Per-App Loopback & Local Spotify Now-Playing:** Captures system mix or isolates a single application's audio session via Windows WASAPI process loopback (`F3` in game or `--app <name>`), automatically detects live Spotify desktop/Web Player `Artist - Title` playback, and falls back to a built-in generative synth score when silent.
 - **Fully Generative Animated Backdrops, Abyssal Theme & Aim-Reactive 3D Tilt:** Lit procedural 3D vector-mesh ships, 11 enemy roles, extruded monoliths, and **THE CHOIR** boss with subtle aim-reactive oblique tilt rendered over a combinatorial GPU backdrop synthesizer (**1–3 layers × 11 motion/space transforms × 13 audio-reactive generators** driven by kick, snare, hi-hat, bass, and drop transients), plus an optional **ABYSSAL / VOID NOIR** dark theme in **SETTINGS** (`--theme abyssal`) with OLED-black contrast and dynamic combat light pools around ships, bosses, shockwaves, and lasers.
 - **Racer Flow & Phase Sync:** Momentum-based interceptor handling with **FLOW** multipliers (`// FLOW STATE //`) and **Phase Sync** — dashing within `±65 ms` of a beat grants bonus Flow, Resonance, faster dash recharge, and score without penalizing off-beat survival dodges.
-- **Endless Replayability & Flight Recorder:** 12 stackable **Attunements** with a live HUD/Pause loadout strip, 16 unlockable **Archive** modifiers, Daily Signals, **NEW BEST** personal-best callouts, a rolling 8-run flight recorder, and interactive 8-character **Seed Replay / Custom Seed Entry**.
+- **Harmonic Overclock & Endless Replayability:** 12 stackable **Attunements** with a live HUD/Pause loadout strip and 4 **Harmonic Overclock** Synergy Evolutions (`SEEKER SALVO`, `PRISM LANCE`, `RAIL CADENCE`, `VOID PHANTOM`) that awaken when complementary Attunement pairs reach Stack 2+, plus 16 unlockable **Archive** modifiers, Daily Signals, **NEW BEST** personal-best callouts, a rolling 8-run flight recorder, and interactive 8-character **Seed Replay / Custom Seed Entry**.
 
 ## Controls
 
@@ -42,7 +42,7 @@ powershell -ExecutionPolicy Bypass -File tools/dotnet-install.ps1 -Channel 8.0 -
 ./run.cmd --sfxdump       # render every sound effect to capture/sfx/*.wav
 
 # optional smoke / video capture overrides
-./run.cmd --smoke 5 --mods hard --attune showcase --seed 001N4C4M
+./run.cmd --smoke 5 --mods hard --attune synergy --theme abyssal
 ./run.cmd --record 30 --wave 4 --mods hard --attune showcase --app spotify --theme abyssal
 ```
 
@@ -52,19 +52,19 @@ powershell -ExecutionPolicy Bypass -File tools/dotnet-install.ps1 -Channel 8.0 -
 
 ![Generative Animated Backdrops](docs/screenshots/generative_backdrops.png)
 
-| Abyssal Dark Theme — Dynamic Lighting | Abyssal Dark Theme — Choir Boss |
+| Harmonic Overclock — Synergy Evolutions | Abyssal Dark Theme — Dynamic Lighting |
 |---|---|
-| ![Abyssal Combat](docs/screenshots/abyssal_combat.png) | ![Abyssal Boss](docs/screenshots/abyssal_boss.png) |
-| **Abyssal Dark Theme — Starburst Lasers** | **Title Screen** |
-| ![Abyssal Song Lasers](docs/screenshots/abyssal_songlasers.png) | ![Title](docs/screenshots/latest_title.png) |
-| **Standard Theme — Combat & Loadout** | **HDR Song Lasers & Starburst** |
-| ![Combat](docs/screenshots/latest_combat.png) | ![Song Lasers](docs/screenshots/latest_songlasers.png) |
-| **Phase Sync & Flow State** | **Archive Seed Decoder & History** |
-| ![Speed](docs/screenshots/latest_speed.png) | ![Archive](docs/screenshots/latest_archive.png) |
-| **Signal Held Pause Overlay** | **Signal Lost & Personal Bests** |
-| ![Pause](docs/screenshots/latest_pause.png) | ![Game Over](docs/screenshots/latest_gameover.png) |
-| **Full Enemy Roster** | **Starburst Laser Choreography** |
-| ![Roster](docs/screenshots/v9_roster.png) | ![Starburst](docs/screenshots/v9_starburst.png) |
+| ![Harmonic Overclock](docs/screenshots/synergy_overclock.png) | ![Abyssal Combat](docs/screenshots/abyssal_combat.png) |
+| **Abyssal Dark Theme — Choir Boss** | **Abyssal Dark Theme — Starburst Lasers** |
+| ![Abyssal Boss](docs/screenshots/abyssal_boss.png) | ![Abyssal Song Lasers](docs/screenshots/abyssal_songlasers.png) |
+| **Title Screen** | **Standard Theme — Combat & Loadout** |
+| ![Title](docs/screenshots/latest_title.png) | ![Combat](docs/screenshots/latest_combat.png) |
+| **HDR Song Lasers & Starburst** | **Phase Sync & Flow State** |
+| ![Song Lasers](docs/screenshots/latest_songlasers.png) | ![Speed](docs/screenshots/latest_speed.png) |
+| **Archive Seed Decoder & History** | **Signal Held Pause Overlay** |
+| ![Archive](docs/screenshots/latest_archive.png) | ![Pause](docs/screenshots/latest_pause.png) |
+| **Signal Lost & Personal Bests** | **Full Enemy Roster** |
+| ![Game Over](docs/screenshots/latest_gameover.png) | ![Roster](docs/screenshots/v9_roster.png) |
 
 ## Documentation
 

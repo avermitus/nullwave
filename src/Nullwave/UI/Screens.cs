@@ -205,7 +205,7 @@ public static class Screens
 
         DrawHealthBar(r, p, player, time);
         var settings = GameSettings.Current;
-        if (settings.ShowAttunements && player.AttunementCount > 0) DrawHudAttunements(r, p, player);
+        if (settings.ShowAttunements && player.AttunementCount > 0) DrawHudAttunements(r, p, player, time);
         if (settings.Minimap) DrawMinimap(r, p, w, time);
         if (settings.ThreatArrows) DrawThreatIndicators(r, p, w, time);
         if (settings.ShowFps) r.UiTextRight("FPS " + fps.ToString("0"), 1542, 790, 1.4f, M.WithAlpha(p.Dim, 0.85f));
@@ -462,7 +462,7 @@ public static class Screens
         r.UiTextRight("P / START // RESUME", 1054, 706, 1.35f, M.WithAlpha(p.Dim, 0.65f));
     }
 
-    private static void DrawHudAttunements(Renderer r, Palette p, World.Player player)
+    private static void DrawHudAttunements(Renderer r, Palette p, World.Player player, float time)
     {
         Span<ActiveAttunement> active = stackalloc ActiveAttunement[12];
         int count = AttunementCatalog.GetActive(player, active);
@@ -470,6 +470,27 @@ public static class Screens
 
         const float startX = 56f, bw = 58f, bh = 20f, gapX = 4.4f;
         float baseY = count > 6 ? 712f : 736f;
+
+        if (player.ActiveSynergies != SynergyFlags.None)
+        {
+            Span<int> syns = stackalloc int[4];
+            int synCount = SynergyCatalog.GetActive(player, syns);
+            float synY = count > 6 ? 688f : 712f;
+            float pulse = 0.78f + 0.22f * MathF.Sin(time * 6.5f);
+            var gold = new Vector4(1f, 0.85f, 0.40f, 1f);
+            const float sw = 58f, sh = 18f, sGap = 5f;
+            for (int i = 0; i < synCount; i++)
+            {
+                var def = SynergyCatalog.All[syns[i]];
+                float sx = startX + i * (sw + sGap);
+                var hueCol = M.Hsv(def.Hue, 0.72f, 1f);
+                r.UiRect(sx, synY, sw, sh, PanelFill(new Vector4(0.020f, 0.014f, 0.006f, 0.90f), 0.95f));
+                r.UiFrame(sx, synY, sw, sh, 1f, M.WithAlpha(gold, 0.82f * pulse), true);
+                r.UiRect(sx, synY, sw, 1.5f, M.WithAlpha(hueCol, 0.92f), true);
+                r.UiTextCentered("*" + def.Tag, sx + sw * 0.5f, synY + 4.5f, 1.3f, M.WithAlpha(gold, 0.98f), true);
+            }
+        }
+
         for (int i = 0; i < count; i++)
         {
             int col = i % 6;
@@ -485,6 +506,23 @@ public static class Screens
         Span<ActiveAttunement> active = stackalloc ActiveAttunement[12];
         int count = AttunementCatalog.GetActive(player, active);
         r.UiText("ATTUNEMENTS // " + player.AttunementCount.ToString("00"), 546, 612, 1.35f, M.WithAlpha(p.Accent, 0.85f));
+        if (player.ActiveSynergies != SynergyFlags.None)
+        {
+            Span<int> syns = stackalloc int[4];
+            int synCount = SynergyCatalog.GetActive(player, syns);
+            Span<char> buf = stackalloc char[40];
+            int pos = 0;
+            "OVERCLOCK // ".AsSpan().CopyTo(buf);
+            pos += 13;
+            for (int i = 0; i < synCount; i++)
+            {
+                if (i > 0) buf[pos++] = '/';
+                var tag = SynergyCatalog.All[syns[i]].Tag.AsSpan();
+                tag.CopyTo(buf[pos..]);
+                pos += tag.Length;
+            }
+            r.UiTextCentered(new string(buf[..pos]), 800, 612, 1.15f, new Vector4(1f, 0.85f, 0.40f, 0.95f), true);
+        }
         r.UiTextRight(count.ToString("00") + " / " + AttunementCatalog.All.Length.ToString("00") + " SIGNALS", 1054, 612, 1.3f, M.WithAlpha(p.Dim, 0.7f));
         if (count <= 0)
         {
@@ -548,6 +586,14 @@ public static class Screens
             DrawWrapped(r, offer.Name, x + 24, y + 62, 3.0f, cw - 48, p.Text, 34f, 2, true);
             r.UiLine(x + 24, y + 144, x + cw - 24, y + 144, 1f, M.WithAlpha(accent, 0.32f));
             DrawWrapped(r, offer.Desc, x + 24, y + 168, 1.85f, cw - 48, M.WithAlpha(p.Dim, 0.96f), 24f, 3);
+            if (SynergyCatalog.WouldUnlock(w.Player, offer.Id) is { } syn)
+            {
+                float pulse = 0.78f + 0.22f * MathF.Sin(time * 7f);
+                var gold = new Vector4(1f, 0.85f, 0.40f, 1f);
+                r.UiRect(x + 24, y + ch - 74, cw - 48, 22, PanelFill(new Vector4(0.04f, 0.025f, 0.008f, 0.9f), 0.95f));
+                r.UiFrame(x + 24, y + ch - 74, cw - 48, 22, 1f, M.WithAlpha(gold, 0.85f * pulse), true);
+                r.UiTextCentered("OVERCLOCK // " + syn.Name, x + cw * 0.5f, y + ch - 68, 1.35f, M.WithAlpha(gold, 0.98f), true);
+            }
             r.UiText("STACK " + offer.NextLevel + " / " + offer.MaxStacks, x + 24, y + ch - 42, 1.55f, M.WithAlpha(accent, 0.9f));
             for (int k = 0; k < offer.MaxStacks; k++)
             {

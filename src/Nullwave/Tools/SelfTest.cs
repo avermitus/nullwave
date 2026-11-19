@@ -49,6 +49,7 @@ public static class SelfTest
             TestAimCameraAndLaserVisuals();
             TestBackdropAudioReactivity();
             TestAbyssalThemeAndLighting();
+            TestAttunementSynergies();
             Console.WriteLine($"RESULT: PASS ({_checks} assertions, {sw.Elapsed.TotalSeconds:0.0}s)");
             return 0;
         }
@@ -1378,5 +1379,102 @@ public static class SelfTest
         Check(Shaders.CompositeFrag.Contains("uniform float uDarkTheme;", StringComparison.Ordinal), "CompositeFrag declares uDarkTheme");
 
         Console.WriteLine($"  abyssal theme: maxLights={Renderer.MaxBackdropLights} offset=({offset.X:0.00},{offset.Y:0.00}) r={offset.Z:0.00} shaders=3/3");
+    }
+
+    /// <summary>TASK-010: Harmonic Overclock attunement synergy evolutions (Seeker Salvo, Prism Lance, Rail Cadence, Void Phantom).</summary>
+    private static void TestAttunementSynergies()
+    {
+        // 1. Evaluation, WouldUnlock, CountActive, zero-alloc GetActive
+        var p = new World.Player();
+        Check(SynergyCatalog.Evaluate(p) == SynergyFlags.None && SynergyCatalog.CountActive(p.ActiveSynergies) == 0, "fresh player has zero synergies");
+        AttunementCatalog.Apply(p, "split");
+        AttunementCatalog.Apply(p, "split");
+        AttunementCatalog.Apply(p, "homing");
+        Check(p.ActiveSynergies == SynergyFlags.None, "2 split + 1 homing does not unlock Seeker Salvo yet");
+        Check(SynergyCatalog.WouldUnlock(p, "homing")?.Flag == SynergyFlags.SeekerSalvo, "WouldUnlock previews Seeker Salvo on 2nd homing");
+        Check(SynergyCatalog.WouldUnlock(p, "split") == null, "WouldUnlock returns null when partner is still below 2");
+        AttunementCatalog.Apply(p, "homing");
+        Check(p.ActiveSynergies == SynergyFlags.SeekerSalvo && SynergyCatalog.CountActive(p.ActiveSynergies) == 1, "Seeker Salvo activates at split>=2 && homing>=2");
+        Check(SynergyCatalog.WouldUnlock(p, "homing") == null, "already-active synergy is not re-previewed");
+
+        foreach (var id in new[] { "pierce", "pierce", "ricochet", "ricochet", "heavy", "heavy", "rapid", "rapid", "phase", "phase", "grazer", "grazer" })
+            AttunementCatalog.Apply(p, id);
+        Check(SynergyCatalog.CountActive(p.ActiveSynergies) == 4, "all 4 synergies active at stack 2+");
+        Span<int> idx = stackalloc int[4];
+        Check(SynergyCatalog.GetActive(p, idx) == 4, "GetActive fills 4 catalog indices without allocating");
+
+        // 2. Seeker Salvo firing
+        var audio = new AudioState { Bpm = 120f };
+        var wSeeker = new GameWorld(new RunConfig { Seed = 0x1010UL });
+        wSeeker.Player.InvincibleDemo = true;
+        AttunementCatalog.Apply(wSeeker.Player, "split");
+        AttunementCatalog.Apply(wSeeker.Player, "split");
+        AttunementCatalog.Apply(wSeeker.Player, "homing");
+        AttunementCatalog.Apply(wSeeker.Player, "homing");
+        wSeeker.Player.FireTimer = 0f;
+        wSeeker.Step(1f / 60f, audio, new InputFrame(Vector2.Zero, new Vector2(1, 0), true, false, false, false));
+        int seekerCount = 0;
+        float maxSeekerHoming = 0f, baseHoming = 0f;
+        foreach (var b in wSeeker.PlayerBullets)
+        {
+            if (b.SynergyKind == 1) { seekerCount++; maxSeekerHoming = MathF.Max(maxSeekerHoming, b.Homing); }
+            else baseHoming = MathF.Max(baseHoming, b.Homing);
+        }
+        Check(seekerCount == 2 && maxSeekerHoming > baseHoming, "Seeker Salvo spawns 2 flanking micro-seekers with stronger homing");
+
+        // 3. Rail Cadence 4th shot
+        var wRail = new GameWorld(new RunConfig { Seed = 0x1011UL });
+        wRail.Player.InvincibleDemo = true;
+        foreach (var id in new[] { "heavy", "heavy", "rapid", "rapid" }) AttunementCatalog.Apply(wRail.Player, id);
+        int railCountBefore4 = 0, railCountOn4 = 0;
+        float railSpeed = 0f, railDamage = 0f;
+        for (int shot = 1; shot <= 4; shot++)
+        {
+            wRail.PlayerBullets.Clear();
+            wRail.Player.FireTimer = 0f;
+            wRail.Step(1f / 60f, audio, new InputFrame(Vector2.Zero, new Vector2(1, 0), true, false, false, false));
+            foreach (var b in wRail.PlayerBullets)
+            {
+                if (b.SynergyKind != 3) continue;
+                if (shot < 4) railCountBefore4++;
+                else { railCountOn4++; railSpeed = b.Vel.Length(); railDamage = b.Damage; }
+            }
+        }
+        Check(railCountBefore4 == 0 && railCountOn4 == 1, "Rail Cadence fires hyper-rail bolt exclusively on every 4th shot");
+        Check(railSpeed >= 2200f && railDamage > wRail.Player.Damage * 1.9f, "Rail Cadence bolt has hyper velocity and 2.1x damage");
+
+        // 4. Prism Lance wall ricochet supercharge
+        var wPrism = new GameWorld(new RunConfig { Seed = 0x1012UL });
+        wPrism.Player.InvincibleDemo = true;
+        foreach (var id in new[] { "pierce", "pierce", "ricochet", "ricochet" }) AttunementCatalog.Apply(wPrism.Player, id);
+        wPrism.PlayerBullets.Clear();
+        float startDmg = wPrism.Player.Damage;
+        int startPierce = wPrism.Player.PierceLevel;
+        wPrism.SpawnPlayerBullet(new Vector2(wPrism.ArenaW * 0.5f - 12f, 0f), new Vector2(1500f, 0f), 4f, startDmg, 1.0f, startPierce, 0f, 2);
+        wPrism.Step(1f / 60f, audio, InputFrame.Empty);
+        Check(wPrism.PlayerBullets.Count == 1, "ricocheted Prism Lance bolt survives wall impact");
+        var lance = wPrism.PlayerBullets[0];
+        Check(lance.SynergyKind == 2 && lance.Damage > startDmg * 1.25f && lance.Pierce == startPierce + 1, "Prism Lance ricochet supercharges damage, pierce, and visual kind");
+
+        // 5. Void Phantom dash shockwave (bullet cancel + Resonance + enemy damage)
+        var wVoid = new GameWorld(new RunConfig { Seed = 0x1013UL });
+        wVoid.Player.InvincibleDemo = true;
+        foreach (var id in new[] { "phase", "phase", "grazer", "grazer" }) AttunementCatalog.Apply(wVoid.Player, id);
+        wVoid.ClearSpawnQueueForCapture();
+        wVoid.Enemies.Clear();
+        wVoid.EnemyBullets.Clear();
+        wVoid.SpawnForCapture(EnemyRole.Drifter, wVoid.Player.Pos + new Vector2(110f, 0f));
+        var target = wVoid.Enemies[0];
+        target.Spawning = false;
+        float hpBefore = target.Hp;
+        wVoid.SpawnEnemyBullet(wVoid.Player.Pos + new Vector2(85f, 0f), new Vector2(-10f, 0f), 5f, 0.5f, BulletKind.Orb);
+        wVoid.SpawnEnemyBullet(wVoid.Player.Pos + new Vector2(-95f, 0f), new Vector2(10f, 0f), 5f, 0.5f, BulletKind.Orb);
+        wVoid.Player.Resonance = 0f;
+        wVoid.Step(1f / 60f, audio, new InputFrame(new Vector2(0, -1), new Vector2(1, 0), false, true, false, false));
+        Check(wVoid.EnemyBullets.Count == 0, "Void Phantom dash cancels enemy bullets inside 135u");
+        Check(wVoid.Player.Resonance > 0f, "Void Phantom bullet cancellation grants Resonance");
+        Check(target.Hp < hpBefore, "Void Phantom dash shockwave damages enemies inside 180u");
+
+        Console.WriteLine($"  synergies: active=4/4 seekers={seekerCount} railSpeed={railSpeed:0} prismDmg={startDmg:0.0}->{lance.Damage:0.0} voidRes=+{wVoid.Player.Resonance:0.0}");
     }
 }

@@ -178,6 +178,7 @@ internal static class Program
                 "boss" => 240,
                 "laser" => 26,
                 "combat" => 420,
+                "synergy" => 260,
                 "roster" => 40,
                 "songlasers" => 150,
                 "attune" => 1,

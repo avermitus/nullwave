@@ -4,7 +4,7 @@ All notable gameplay, rendering, audio-intelligence, and UI updates to **NULLWAV
 
 ---
 
-## Latest Updates — Abyssal Dark Theme, Generative Multi-Layer Backdrops, HDR Lasers & Spotify Integration
+## Latest Updates — Harmonic Overclock Synergies, Abyssal Dark Theme, Generative Backdrops, HDR Lasers & Spotify Integration
 
 ### Rendering, Visual Themes & Visual Effects
 - **Abyssal / Void Noir Dark Theme & Dynamic Combat Illumination:** Added a selectable **VISUAL THEME** (`STANDARD` / `ABYSSAL`) in **SETTINGS** (and `--theme <standard|abyssal>` CLI override) while keeping `STANDARD` untouched. In **ABYSSAL** mode, the arena drops to near-OLED obsidian (`#010104`) between beats, audio transients (`kick`, `snare`, `drop`) ignite razor-thin bioluminescent contours, and up to **12 live combat light pools** (player interceptor + Phase Sync flare, **THE CHOIR** core, active shockwaves, and laser beams) dynamically illuminate the underlying generative shader geometry right around the fight, paired with matte-obsidian 3D hulls, heightened Fresnel rims, tighter bloom threshold, brighter beat sonar ripples, and smoked-glass HUD panels.
@@ -15,12 +15,17 @@ All notable gameplay, rendering, audio-intelligence, and UI updates to **NULLWAV
 - **Composite & UI Alpha Hygiene:** Clean OpenGL blend-state and texture-unit restoration after post-processing, plus alpha-preserving UI blending so screenshots and captured video frames remain fully opaque.
 
 ### Gameplay, Audio & Choreography
+- **Harmonic Overclock (Attunement Synergy Evolutions):** Stacking complementary Attunement pairs to **Stack 2+** automatically awakens 4 signature combat evolutions, accompanied by an `"OVERCLOCK // <NAME>"` celebration shockwave, unlock chime, draft-card preview banners (`OVERCLOCK // <NAME>`), a solar-gold HUD pill row (`*SLV`, `*LNC`, `*RAL`, `*VPH`), and a centered Pause header badge:
+  - **`SEEKER SALVO` (`SPL 2+` & `HOM 2+`):** Launches twin flanking micro-seekers (`±38°` arcs, high homing turn rate, `640`-unit lock range) with vivid magenta-cyan plasma ribbons.
+  - **`PRISM LANCE` (`PRC 2+` & `RIC 2+`):** Wall and monolith ricochets supercharge bolts (`1.35x` damage, `+1` bonus pierce, `+12%` speed up to `2400`, `+0.35s` lifetime) into refractive solar-gold lances with prism spark bursts.
+  - **`RAIL CADENCE` (`HVY 2+` & `RPD 2+`):** Every 4th volley fires a centerline hyper-velocity rail bolt (`2350` speed, `2.1x` damage, `1.45x` radius, `+2` pierce) with thick solar-amber plasma rails.
+  - **`VOID PHANTOM` (`PHS 2+` & `GRZ 2+`):** Expands dash absorption and graze radii while releasing a `180`-unit damaging dash shockwave (`35` dmg) and a `135`-unit bullet-cancel ring that converts cleared enemy bullets into Resonance (`+2` base each), surrounded by a violet-cyan phantom halo and Abyssal light flare.
 - **Expanded Song-Laser & Enemy Laser Choreography:** Expanded Drop `STARBURST` to **8 beams**, Build `SCAN` to **dual opposing sweeps**, and high-energy patterns (2-bar cadence from Wave 3+) to **4-beam `LASER GATE`**, **3-beam `LASER CROSS`**, and **4-beam rotating `PRISM CAGE`** while keeping breakdowns quiet and 2-beat warnings intact. **THE CHOIR** fires multi-beam sweeps across Phases II–IV, and Wave 3+ / Elite **Prism** units project twin opposing laser blades.
 - **Zero-Config Local Spotify Now-Playing Integration:** Automatically detects live `Artist - Title` playback from Spotify desktop or browser Web Player tabs (zero API keys required), enriching audio source readouts and displaying `SPOTIFY // <TRACK>` on the Title screen, HUD, and Pause overlay while logging played tracks in run history.
 - **Phase Sync (On-Beat Dash Synergy):** Initiating a dash within `±65 ms` of the beat boundary triggers **Phase Sync**, granting `+5%` Flow, `+5` base Resonance, an `18%` faster dash cooldown recharge, `+120` bonus score, `0.30s` invulnerability, a cyan/gold expanding harmonic shockwave ring, ship afterimages, and a `PHASE SYNC +RES` readout above the Flow meter. Off-beat emergency dodges remain completely unpenalized.
 - **Choir Boss Phase-Transition Choreography:** Crossing phase thresholds on **THE CHOIR** (across 3 standard phases or 4 phases with **BLIND CHOIR**) triggers a `580`-unit fair bullet-clear shockwave ring that converts nearby enemy bullets into sparks, dual concentric phase-break shockwaves, beat-synced attack telegraph rings around the boss, and a 3rd counter-tilted halo + accelerated shard ring in Phase IV.
 - **Interactive Archive Seed Replay & Custom Entry:** In **ARCHIVE OF THE SIGNAL**, cycle through recorded run seeds (`R`), enter any custom 8-character base-34 seed code (`C`, automatically normalizing `I → 1` and `O → 0`), inspect historical best wave/score/run counts in the Signal Decoder console, and launch directly into a run (`L`) with active modifiers.
-- **Preset & Showcase CLI Options:** Added `--mods <hard|all|csv>`, `--attune <showcase|csv>`, and `--seed <code>` options for smoke runs and video recording alongside Phase-Sync-aware autopilot dash timing.
+- **Preset & Showcase CLI Options:** Added `--mods <hard|all|csv>`, `--attune <showcase|synergy|csv>`, and `--seed <code>` options for smoke runs and video recording alongside Phase-Sync-aware autopilot dash timing.
 
 ### HUD, UI & Progression
 - **Personal-Best Callouts & Flight Recorder (`SIGNAL LOST` & `ARCHIVE`):** Persisted `BestCombo` (`BEST CHAIN`) and a rolling 8-run `RECENT SIGNALS //` history strip in the Archive. Game Over compares your run before updating career records, highlighting broken records with pulsing `NEW BEST` stat tags and delta banners (`NEW RECORD // SCORE +... // WAVE +... // CHAIN +...`).
@@ -29,19 +34,19 @@ All notable gameplay, rendering, audio-intelligence, and UI updates to **NULLWAV
 
 ![Generative Animated Backdrops Contact Sheet](docs/screenshots/generative_backdrops.png)
 
-| Abyssal Theme — Dynamic Combat Illumination | Abyssal Theme — Choir Boss Chiaroscuro |
+| Harmonic Overclock — Synergy Evolutions | Abyssal Theme — Dynamic Combat Illumination |
 |---|---|
-| ![Abyssal Combat](docs/screenshots/abyssal_combat.png) | ![Abyssal Boss](docs/screenshots/abyssal_boss.png) |
-| **Abyssal Theme — Starburst Lasers** | **Title Screen** |
-| ![Abyssal Song Lasers](docs/screenshots/abyssal_songlasers.png) | ![Latest Title](docs/screenshots/latest_title.png) |
-| **Combat HUD & Generative Backdrop** | **HDR Song Lasers & Starburst** |
-| ![Latest Combat](docs/screenshots/latest_combat.png) | ![Latest Song Lasers](docs/screenshots/latest_songlasers.png) |
-| **The Choir Phase Choreography** | **Phase Sync & Flow State** |
-| ![Latest Boss](docs/screenshots/latest_boss.png) | ![Latest Speed](docs/screenshots/latest_speed.png) |
-| **Signal Held Pause Overlay** | **Archive Seed Decoder & Flight Recorder** |
-| ![Latest Pause](docs/screenshots/latest_pause.png) | ![Latest Archive](docs/screenshots/latest_archive.png) |
-| **Signal Lost Personal-Best Callouts** | |
-| ![Latest Game Over](docs/screenshots/latest_gameover.png) | |
+| ![Harmonic Overclock](docs/screenshots/synergy_overclock.png) | ![Abyssal Combat](docs/screenshots/abyssal_combat.png) |
+| **Abyssal Theme — Choir Boss Chiaroscuro** | **Abyssal Theme — Starburst Lasers** |
+| ![Abyssal Boss](docs/screenshots/abyssal_boss.png) | ![Abyssal Song Lasers](docs/screenshots/abyssal_songlasers.png) |
+| **Title Screen** | **Combat HUD & Generative Backdrop** |
+| ![Latest Title](docs/screenshots/latest_title.png) | ![Latest Combat](docs/screenshots/latest_combat.png) |
+| **HDR Song Lasers & Starburst** | **The Choir Phase Choreography** |
+| ![Latest Song Lasers](docs/screenshots/latest_songlasers.png) | ![Latest Boss](docs/screenshots/latest_boss.png) |
+| **Phase Sync & Flow State** | **Signal Held Pause Overlay** |
+| ![Latest Speed](docs/screenshots/latest_speed.png) | ![Latest Pause](docs/screenshots/latest_pause.png) |
+| **Archive Seed Decoder & Flight Recorder** | **Signal Lost Personal-Best Callouts** |
+| ![Latest Archive](docs/screenshots/latest_archive.png) | ![Latest Game Over](docs/screenshots/latest_gameover.png) |
 
 ---
 

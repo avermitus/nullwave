@@ -35,11 +35,13 @@ public static class WorldRenderer
     {
         static Vector3 Rgb(Vector4 c) => new(c.X, c.Y, c.Z);
 
-        // 1. Player interceptor light (+ Phase Sync / dash surge)
+        // 1. Player interceptor light (+ Phase Sync / Void Phantom / dash surge)
         var pl = w.Player;
         Vector3 playerCol = Vector3.Lerp(Rgb(p.Player), new Vector3(0.55f, 0.96f, 1f), pl.PhaseSyncFlash);
-        float playerRad = 290f + pl.PhaseSyncFlash * 150f + (pl.IsDashing ? 90f : 0f);
-        float playerInt = 0.95f + pl.PhaseSyncFlash * 0.65f + (pl.IsDashing ? 0.25f : 0f);
+        if (pl.VoidPhantomFlash > 0.02f)
+            playerCol = Vector3.Lerp(playerCol, new Vector3(0.75f, 0.45f, 1f), pl.VoidPhantomFlash * 0.85f);
+        float playerRad = 290f + pl.PhaseSyncFlash * 150f + pl.VoidPhantomFlash * 170f + (pl.IsDashing ? 90f : 0f);
+        float playerInt = 0.95f + pl.PhaseSyncFlash * 0.65f + pl.VoidPhantomFlash * 0.75f + (pl.IsDashing ? 0.25f : 0f);
         r.AddBackdropLight(pl.Pos, playerRad, playerCol, playerInt);
 
         // 2. Choir Boss core light (if alive)
@@ -651,14 +653,58 @@ public static class WorldRenderer
         {
             if (!r.InView(b.Pos, 80)) continue;
             Vector2 dir = M.SafeNorm(b.Vel);
-            float tailLen = Math.Clamp(b.Vel.Length() * 0.032f, 22f, 56f);
-            Vector2 tailStart = b.Pos - dir * tailLen;
-            var col = new Vector4(0.52f, 0.98f, 1f, 1f);
-            r.GradientLine(tailStart, b.Pos, b.Radius * 3.8f, M.WithAlpha(col, 0f), new Vector4(0.35f, 0.95f, 1f, 0.22f), true);
-            r.GradientLine(b.Pos - dir * (tailLen * 0.65f), b.Pos, b.Radius * 1.45f, M.WithAlpha(col, 0f), M.WithAlpha(col, 0.88f), true);
-            r.Line(b.PrevPos, b.Pos, b.Radius * 1.15f, new Vector4(0.85f, 1f, 1f, 0.92f), true);
-            r.FillCircle(b.Pos, b.Radius * 0.95f, new Vector4(1f, 1f, 1f, 0.98f), 8, true);
-            r.FillCircle(b.Pos - dir * (tailLen * 0.55f), b.Radius * 0.45f, new Vector4(0.6f, 1f, 1f, 0.55f), 6, true);
+            float baseTail = Math.Clamp(b.Vel.Length() * 0.032f, 22f, 56f);
+            if (b.SynergyKind == 1)
+            {
+                // SEEKER SALVO: hyper-magenta/cyan flanking micro-seekers with elongated plasma ribbons
+                float tailLen = baseTail * 1.45f;
+                Vector2 tailStart = b.Pos - dir * tailLen;
+                var mag = new Vector4(1f, 0.34f, 0.92f, 1f);
+                var cya = new Vector4(0.42f, 0.98f, 1f, 1f);
+                r.GradientLine(tailStart, b.Pos, b.Radius * 4.4f, M.WithAlpha(mag, 0f), M.WithAlpha(mag, 0.34f), true);
+                r.GradientLine(b.Pos - dir * (tailLen * 0.72f), b.Pos, b.Radius * 1.65f, M.WithAlpha(cya, 0f), M.WithAlpha(cya, 0.92f), true);
+                r.Line(b.PrevPos, b.Pos, b.Radius * 1.25f, new Vector4(1f, 0.85f, 1f, 0.95f), true);
+                r.FillCircle(b.Pos, b.Radius * 1.05f, new Vector4(1f, 1f, 1f, 0.98f), 8, true);
+                r.FillCircle(b.Pos - dir * (tailLen * 0.45f), b.Radius * 0.52f, M.WithAlpha(mag, 0.65f), 6, true);
+            }
+            else if (b.SynergyKind == 2)
+            {
+                // PRISM LANCE: refractive solar-gold + white-hot core streak + twin parallel refraction hairlines
+                float tailLen = baseTail * 1.6f;
+                Vector2 tailStart = b.Pos - dir * tailLen;
+                Vector2 perp = M.Perp(dir) * (b.Radius * 1.15f);
+                var gold = new Vector4(1f, 0.86f, 0.32f, 1f);
+                r.GradientLine(tailStart, b.Pos, b.Radius * 4.6f, M.WithAlpha(gold, 0f), M.WithAlpha(gold, 0.36f), true);
+                r.GradientLine(b.Pos - dir * (tailLen * 0.8f) + perp, b.Pos + perp, 1.35f, M.WithAlpha(gold, 0f), new Vector4(0.65f, 1f, 1f, 0.85f), true);
+                r.GradientLine(b.Pos - dir * (tailLen * 0.8f) - perp, b.Pos - perp, 1.35f, M.WithAlpha(gold, 0f), new Vector4(1f, 0.55f, 0.95f, 0.85f), true);
+                r.GradientLine(b.Pos - dir * (tailLen * 0.7f), b.Pos, b.Radius * 1.75f, new Vector4(1f, 0.96f, 0.8f, 0f), new Vector4(1f, 0.98f, 0.86f, 0.96f), true);
+                r.FillCircle(b.Pos, b.Radius * 1.15f, new Vector4(1f, 1f, 1f, 1f), 8, true);
+            }
+            else if (b.SynergyKind == 3)
+            {
+                // RAIL CADENCE: thick hyper-rail solar-amber/white core + outer plasma rails + large nose flare
+                float tailLen = Math.Clamp(b.Vel.Length() * 0.056f, 52f, 118f);
+                Vector2 tailStart = b.Pos - dir * tailLen;
+                Vector2 perp = M.Perp(dir) * (b.Radius * 1.25f);
+                var amber = new Vector4(1f, 0.68f, 0.18f, 1f);
+                var gold = new Vector4(1f, 0.92f, 0.48f, 1f);
+                r.GradientLine(tailStart, b.Pos, b.Radius * 5.2f, M.WithAlpha(amber, 0f), M.WithAlpha(amber, 0.38f), true);
+                r.GradientLine(b.Pos - dir * (tailLen * 0.85f) + perp, b.Pos + perp, 1.6f, M.WithAlpha(gold, 0f), M.WithAlpha(gold, 0.82f), true);
+                r.GradientLine(b.Pos - dir * (tailLen * 0.85f) - perp, b.Pos - perp, 1.6f, M.WithAlpha(gold, 0f), M.WithAlpha(gold, 0.82f), true);
+                r.GradientLine(b.Pos - dir * (tailLen * 0.75f), b.Pos, b.Radius * 1.95f, M.WithAlpha(gold, 0f), new Vector4(1f, 0.98f, 0.90f, 0.98f), true);
+                r.FillCircle(b.Pos, b.Radius * 2.1f, M.WithAlpha(amber, 0.34f), 10, true);
+                r.FillCircle(b.Pos, b.Radius * 1.25f, new Vector4(1f, 1f, 1f, 1f), 10, true);
+            }
+            else
+            {
+                Vector2 tailStart = b.Pos - dir * baseTail;
+                var col = new Vector4(0.52f, 0.98f, 1f, 1f);
+                r.GradientLine(tailStart, b.Pos, b.Radius * 3.8f, M.WithAlpha(col, 0f), new Vector4(0.35f, 0.95f, 1f, 0.22f), true);
+                r.GradientLine(b.Pos - dir * (baseTail * 0.65f), b.Pos, b.Radius * 1.45f, M.WithAlpha(col, 0f), M.WithAlpha(col, 0.88f), true);
+                r.Line(b.PrevPos, b.Pos, b.Radius * 1.15f, new Vector4(0.85f, 1f, 1f, 0.92f), true);
+                r.FillCircle(b.Pos, b.Radius * 0.95f, new Vector4(1f, 1f, 1f, 0.98f), 8, true);
+                r.FillCircle(b.Pos - dir * (baseTail * 0.55f), b.Radius * 0.45f, new Vector4(0.6f, 1f, 1f, 0.55f), 6, true);
+            }
         }
 
         // Enemy shots flash and swell on the beat as they surge; a stronger dark halo + comet ribbon keeps them readable.
@@ -823,6 +869,14 @@ public static class WorldRenderer
             float ringR = 28f + (1f - sf) * 18f;
             r.Circle(pos, ringR, 2f * sf, new Vector4(0.45f, 1f, 0.95f, 0.75f * sf), 28, true);
             r.Circle(pos, ringR * 0.72f, 1.2f * sf, new Vector4(1f, 0.86f, 0.42f, 0.5f * sf), 24, true);
+        }
+        if (player.VoidPhantomFlash > 0.02f || ((player.ActiveSynergies & SynergyFlags.VoidPhantom) != 0 && player.IsDashing))
+        {
+            float vf = MathF.Max(player.VoidPhantomFlash, player.IsDashing ? 0.85f : 0f);
+            float haloR = 34f + (1f - vf) * 26f;
+            r.Circle(pos, haloR, 2.2f * vf, new Vector4(0.75f, 0.45f, 1f, 0.72f * vf), 32, true);
+            r.Arc(pos, haloR * 0.82f, time * 4.5f, 1.9f, 1.8f * vf, new Vector4(0.48f, 0.98f, 1f, 0.82f * vf), 14, true);
+            r.Arc(pos, haloR * 0.82f, time * 4.5f + MathF.PI, 1.9f, 1.8f * vf, new Vector4(0.85f, 0.48f, 1f, 0.82f * vf), 14, true);
         }
         r.Circle(pos, 22f, 4.5f, M.WithAlpha(col, 0.08f * flicker), 30, true);
         r.Arc(pos, 25f, time * 1.6f, 2.2f, 1.2f, M.WithAlpha(p.Secondary, 0.35f * flicker), 12, true);

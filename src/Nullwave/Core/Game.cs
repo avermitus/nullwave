@@ -101,24 +101,32 @@ public sealed class Game : IDisposable
         if (_world != null)
         {
             _world.Player.InvincibleDemo = true;
-            if (!string.IsNullOrWhiteSpace(AttuneOverride))
+            ApplyAttuneOverride(_world.Player, AttuneOverride);
+            Console.WriteLine($"SMOKECONFIG | seed={SeedCode.ToCode(_world.Seed)} mods={_world.Mods.Active.Count} mult=x{_world.Mods.ScoreMultiplier:0.00} bossPhases={_world.Mods.BossPhases} attunes={_world.Player.AttunementCount} synergies={SynergyCatalog.CountActive(_world.Player.ActiveSynergies)}");
+        }
+    }
+
+    private static void ApplyAttuneOverride(World.Player player, string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return;
+        string spec = raw.Trim();
+        if (spec.Equals("showcase", StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (var id in new[] { "split", "split", "fan", "pierce", "rapid", "rapid", "homing" })
+                AttunementCatalog.Apply(player, id);
+        }
+        else if (spec.Equals("synergy", StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (var id in new[] { "split", "split", "homing", "homing", "heavy", "heavy", "rapid", "rapid", "phase", "phase", "grazer", "grazer" })
+                AttunementCatalog.Apply(player, id);
+        }
+        else
+        {
+            foreach (var part in spec.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             {
-                string spec = AttuneOverride.Trim();
-                if (spec.Equals("showcase", StringComparison.OrdinalIgnoreCase))
-                {
-                    foreach (var id in new[] { "split", "split", "fan", "pierce", "rapid", "rapid", "homing" })
-                        AttunementCatalog.Apply(_world.Player, id);
-                }
-                else
-                {
-                    foreach (var part in spec.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-                    {
-                        var def = AttunementCatalog.Get(part.ToLowerInvariant());
-                        if (def != null) AttunementCatalog.Apply(_world.Player, def.Id);
-                    }
-                }
+                var def = AttunementCatalog.Get(part.ToLowerInvariant());
+                if (def != null) AttunementCatalog.Apply(player, def.Id);
             }
-            Console.WriteLine($"SMOKECONFIG | seed={SeedCode.ToCode(_world.Seed)} mods={_world.Mods.Active.Count} mult=x{_world.Mods.ScoreMultiplier:0.00} bossPhases={_world.Mods.BossPhases} attunes={_world.Player.AttunementCount}");
         }
     }
 
@@ -270,16 +278,34 @@ public sealed class Game : IDisposable
             return;
         }
 
+        if (scenario == "synergy")
+        {
+            StartRun(0x5EEDC0DEUL, false);
+            _autoPilot = true;
+            _world!.Player.InvincibleDemo = true;
+            ApplyAttuneOverride(_world.Player, "synergy");
+            _world.BeginWave(4);
+            _world.Player.VoidPhantomFlash = 0.85f;
+            _world.Player.ShotCounter = 3; // next shot fires Rail Cadence bolt alongside Seeker Salvo
+            return;
+        }
         if (scenario is "combat" or "boss" or "laser" or "hurt")
         {
             StartRun(0x5EEDC0DEUL, false);
             _autoPilot = true;
             _world!.Player.InvincibleDemo = true;
-            AttunementCatalog.Apply(_world.Player, "split");
-            AttunementCatalog.Apply(_world.Player, "split");
-            AttunementCatalog.Apply(_world.Player, "fan");
-            AttunementCatalog.Apply(_world.Player, "pierce");
-            AttunementCatalog.Apply(_world.Player, "rapid");
+            if (!string.IsNullOrWhiteSpace(AttuneOverride))
+            {
+                ApplyAttuneOverride(_world.Player, AttuneOverride);
+            }
+            else
+            {
+                AttunementCatalog.Apply(_world.Player, "split");
+                AttunementCatalog.Apply(_world.Player, "split");
+                AttunementCatalog.Apply(_world.Player, "fan");
+                AttunementCatalog.Apply(_world.Player, "pierce");
+                AttunementCatalog.Apply(_world.Player, "rapid");
+            }
             _world.BeginWave(scenario is "combat" or "hurt" ? 4 : 5);
             if (scenario == "hurt")
             {
@@ -313,13 +339,20 @@ public sealed class Game : IDisposable
             _world.Score = 12_500;
             _world.Kills = 41;
             _world.Player.Resonance = 62f;
-            AttunementCatalog.Apply(_world.Player, "split");
-            AttunementCatalog.Apply(_world.Player, "split");
-            AttunementCatalog.Apply(_world.Player, "fan");
-            AttunementCatalog.Apply(_world.Player, "pierce");
-            AttunementCatalog.Apply(_world.Player, "rapid");
-            AttunementCatalog.Apply(_world.Player, "rapid");
-            AttunementCatalog.Apply(_world.Player, "homing");
+            if (!string.IsNullOrWhiteSpace(AttuneOverride))
+            {
+                ApplyAttuneOverride(_world.Player, AttuneOverride);
+            }
+            else
+            {
+                AttunementCatalog.Apply(_world.Player, "split");
+                AttunementCatalog.Apply(_world.Player, "split");
+                AttunementCatalog.Apply(_world.Player, "fan");
+                AttunementCatalog.Apply(_world.Player, "pierce");
+                AttunementCatalog.Apply(_world.Player, "rapid");
+                AttunementCatalog.Apply(_world.Player, "rapid");
+                AttunementCatalog.Apply(_world.Player, "homing");
+            }
             _state = AppState.Paused;
             _pauseIndex = 0;
         }

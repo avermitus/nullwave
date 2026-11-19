@@ -936,7 +936,9 @@ public sealed partial class World
     {
         if (Phase != GamePhase.Attuning || index < 0 || index >= Offers.Count) return;
         var offer = Offers[index];
+        SynergyFlags before = Player.ActiveSynergies;
         AttunementCatalog.Apply(Player, offer.Id);
+        SynergyFlags unlocked = Player.ActiveSynergies & ~before;
         AttunementsTaken++;
         Player.FireTimer = MathF.Min(Player.FireTimer, 0.04f);
         Offers.Clear();
@@ -944,9 +946,19 @@ public sealed partial class World
         Phase = GamePhase.Intermission;
         IntermissionTimer = 1.15f;
         NextWaveAfterAttunement();
-        Sfx?.Trigger(SfxType.Unlock, 0.6f);
-        EmitEvent("ATTUNED // " + offer.Name, 2.0f);
-        AddShockwave(Player.Pos, 220, 0.6f, 3f, new Vector4(0.6f, 1f, 1f, 1f));
+        if (SynergyCatalog.FirstMatch(unlocked) is { } syn)
+        {
+            Sfx?.Trigger(SfxType.Unlock, 0.85f);
+            EmitEvent("OVERCLOCK // " + syn.Name, 2.6f);
+            AddShockwave(Player.Pos, 380f, 0.75f, 6f, new Vector4(1f, 0.85f, 0.35f, 1f));
+            BurstParticles(Player.Pos, new Vector4(1f, 0.88f, 0.42f, 0.92f), 28, 460f, 3.2f, 0.75f, ParticleKind.Spark);
+        }
+        else
+        {
+            Sfx?.Trigger(SfxType.Unlock, 0.6f);
+            EmitEvent("ATTUNED // " + offer.Name, 2.0f);
+            AddShockwave(Player.Pos, 220, 0.6f, 3f, new Vector4(0.6f, 1f, 1f, 1f));
+        }
     }
 
     public float GetDifficultyHealthScale()

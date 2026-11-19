@@ -1,6 +1,131 @@
+using System.Numerics;
 using Nullwave.Core;
 
 namespace Nullwave.World;
+
+[Flags]
+public enum SynergyFlags
+{
+    None = 0,
+    SeekerSalvo = 1 << 0, // split >= 2 && homing >= 2
+    PrismLance = 1 << 1,  // pierce >= 2 && ricochet >= 2
+    RailCadence = 1 << 2, // heavy >= 2 && rapid >= 2
+    VoidPhantom = 1 << 3, // phase >= 2 && grazer >= 2
+}
+
+public sealed class SynergyDef
+{
+    public SynergyFlags Flag;
+    public string Id = "";
+    public string Tag = "";
+    public string Name = "";
+    public string FirstId = "";
+    public string SecondId = "";
+    public int MinStacks = 2;
+    public string Desc = "";
+    public float Hue;
+}
+
+public static class SynergyCatalog
+{
+    public static readonly SynergyDef[] All =
+    [
+        new()
+        {
+            Flag = SynergyFlags.SeekerSalvo,
+            Id = "seeker-salvo",
+            Tag = "SLV",
+            Name = "SEEKER SALVO",
+            FirstId = "split",
+            SecondId = "homing",
+            MinStacks = 2,
+            Desc = "Fires twin flanking micro-seekers with amplified lock range and turn rate.",
+            Hue = 0.84f,
+        },
+        new()
+        {
+            Flag = SynergyFlags.PrismLance,
+            Id = "prism-lance",
+            Tag = "LNC",
+            Name = "PRISM LANCE",
+            FirstId = "pierce",
+            SecondId = "ricochet",
+            MinStacks = 2,
+            Desc = "Ricochets supercharge bolts with bonus damage, pierce, velocity, and life.",
+            Hue = 0.13f,
+        },
+        new()
+        {
+            Flag = SynergyFlags.RailCadence,
+            Id = "rail-cadence",
+            Tag = "RAL",
+            Name = "RAIL CADENCE",
+            FirstId = "heavy",
+            SecondId = "rapid",
+            MinStacks = 2,
+            Desc = "Every 4th shot launches a hyper-velocity piercing centerline rail bolt.",
+            Hue = 0.09f,
+        },
+        new()
+        {
+            Flag = SynergyFlags.VoidPhantom,
+            Id = "void-phantom",
+            Tag = "VPH",
+            Name = "VOID PHANTOM",
+            FirstId = "phase",
+            SecondId = "grazer",
+            MinStacks = 2,
+            Desc = "Expands dash/graze radii and unleashes a bullet-cancelling shockwave on dash.",
+            Hue = 0.78f,
+        },
+    ];
+
+    public static SynergyFlags Evaluate(Player player)
+    {
+        SynergyFlags flags = SynergyFlags.None;
+        if (player.SplitLevel >= 2 && player.HomingLevel >= 2) flags |= SynergyFlags.SeekerSalvo;
+        if (player.PierceLevel >= 2 && player.RicochetLevel >= 2) flags |= SynergyFlags.PrismLance;
+        if (player.HeavyLevel >= 2 && player.RapidLevel >= 2) flags |= SynergyFlags.RailCadence;
+        if (player.PhaseLevel >= 2 && player.GrazerLevel >= 2) flags |= SynergyFlags.VoidPhantom;
+        return flags;
+    }
+
+    public static int CountActive(SynergyFlags flags) => BitOperations.PopCount((uint)flags);
+
+    public static SynergyDef? FirstMatch(SynergyFlags flags)
+    {
+        if (flags == SynergyFlags.None) return null;
+        for (int i = 0; i < All.Length; i++)
+            if ((flags & All[i].Flag) != 0) return All[i];
+        return null;
+    }
+
+    public static SynergyDef? WouldUnlock(Player player, string attunementId)
+    {
+        SynergyFlags current = Evaluate(player);
+        for (int i = 0; i < All.Length; i++)
+        {
+            var def = All[i];
+            if ((current & def.Flag) != 0) continue;
+            int first = AttunementCatalog.GetLevel(player, def.FirstId) + (attunementId == def.FirstId ? 1 : 0);
+            int second = AttunementCatalog.GetLevel(player, def.SecondId) + (attunementId == def.SecondId ? 1 : 0);
+            if (first >= def.MinStacks && second >= def.MinStacks) return def;
+        }
+        return null;
+    }
+
+    public static int GetActive(Player player, Span<int> catalogIndices)
+    {
+        SynergyFlags flags = Evaluate(player);
+        int count = 0;
+        for (int i = 0; i < All.Length && count < catalogIndices.Length; i++)
+        {
+            if ((flags & All[i].Flag) != 0)
+                catalogIndices[count++] = i;
+        }
+        return count;
+    }
+}
 
 public sealed class AttunementDef
 {
@@ -137,5 +262,6 @@ public static class AttunementCatalog
             case "phase": player.PhaseLevel++; break;
             case "grazer": player.GrazerLevel++; break;
         }
+        player.ActiveSynergies = SynergyCatalog.Evaluate(player);
     }
 }

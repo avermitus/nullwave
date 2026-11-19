@@ -49,6 +49,7 @@ public sealed partial class World
                     if (n.LengthSquared() < 0.01f) n = new Vector2(0, 1);
                     b.Vel -= 2f * Vector2.Dot(b.Vel, n) * n;
                     b.Pos = o.Pos + n * (rr + 4f);
+                    SuperchargePrismLance(b);
                 }
                 else
                 {
@@ -94,7 +95,8 @@ public sealed partial class World
         }
 
         // Bullet contact, dash absorption and grazes.
-        float absorbRadius = p.Radius + 26f;
+        bool voidPhantom = (p.ActiveSynergies & SynergyFlags.VoidPhantom) != 0;
+        float absorbRadius = p.Radius + (voidPhantom ? 40f : 26f);
         for (int i = EnemyBullets.Count - 1; i >= 0; i--)
         {
             var b = EnemyBullets[i];
@@ -123,7 +125,7 @@ public sealed partial class World
                 continue;
             }
 
-            float grazeRadius = hitRadius + 27f;
+            float grazeRadius = hitRadius + (voidPhantom ? 34f : 27f);
             if (!b.Grazed && distSq < grazeRadius * grazeRadius)
             {
                 b.Grazed = true;
