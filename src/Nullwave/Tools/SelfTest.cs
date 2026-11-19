@@ -48,6 +48,7 @@ public static class SelfTest
             TestHardModifierRecordPreset();
             TestAimCameraAndLaserVisuals();
             TestBackdropAudioReactivity();
+            TestAbyssalThemeAndLighting();
             Console.WriteLine($"RESULT: PASS ({_checks} assertions, {sw.Elapsed.TotalSeconds:0.0}s)");
             return 0;
         }
@@ -1311,5 +1312,71 @@ public static class SelfTest
         }
 
         Console.WriteLine($"  backdrop audio: kick={d.Kick:0.00} snare={d.Snare:0.00} hat={d.Hat:0.00} drop={d.Drop:0.00} deadV7Uniforms=0");
+    }
+
+    /// <summary>TASK-009: Abyssal dark theme setting persistence, CLI parsing, dynamic combat light projection, and shader contracts.</summary>
+    private static void TestAbyssalThemeAndLighting()
+    {
+        var def = new GameSettings();
+        Check(def.Theme == VisualTheme.Standard && !def.IsAbyssal, "Theme defaults to Standard");
+
+        Check(GameSettings.TryParseTheme("abyssal", out var t1) && t1 == VisualTheme.Abyssal, "TryParseTheme accepts abyssal");
+        Check(GameSettings.TryParseTheme("NOIR", out var t2) && t2 == VisualTheme.Abyssal, "TryParseTheme accepts noir");
+        Check(GameSettings.TryParseTheme("dark", out var t3) && t3 == VisualTheme.Abyssal, "TryParseTheme accepts dark");
+        Check(GameSettings.TryParseTheme("void", out var t4) && t4 == VisualTheme.Abyssal, "TryParseTheme accepts void");
+        Check(GameSettings.TryParseTheme("standard", out var t5) && t5 == VisualTheme.Standard, "TryParseTheme accepts standard");
+        Check(!GameSettings.TryParseTheme("neon-banana", out _), "TryParseTheme rejects unknown theme");
+        Check(!GameSettings.TryParseTheme("", out _), "TryParseTheme rejects empty theme");
+
+        def.Theme = (VisualTheme)99;
+        def.Sanitize();
+        Check(def.Theme == VisualTheme.Standard, "Sanitize resets invalid enum value to Standard");
+
+        // Persistence round-trip + legacy save compatibility
+        string dir = Path.Combine(Path.GetTempPath(), "nullwave-abyssal-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            string path = Path.Combine(dir, "save.json");
+            var meta = MetaProgress.Load(path);
+            Check(meta.Settings.Theme == VisualTheme.Standard, "fresh save defaults to Standard");
+            meta.Settings.Theme = VisualTheme.Abyssal;
+            meta.Save();
+            var reloaded = MetaProgress.Load(path);
+            Check(reloaded.Settings.Theme == VisualTheme.Abyssal && reloaded.Settings.IsAbyssal, "Abyssal theme persists across save/load");
+
+            string legacyPath = Path.Combine(dir, "legacy.json");
+            File.WriteAllText(legacyPath, "{\"Settings\":{\"Bloom\":90}}");
+            var legacy = MetaProgress.Load(legacyPath);
+            Check(legacy.Settings.Theme == VisualTheme.Standard && legacy.Settings.Bloom == 90, "legacy save without Theme defaults to Standard");
+        }
+        finally
+        {
+            try { Directory.Delete(dir, true); } catch { /* best-effort temp cleanup */ }
+        }
+
+        // ProjectBackdropLight math: camera center -> (0,0), +Y world -> -Y screen, radius proportional to view.Y, finite/clamp safety
+        Vector2 cam = new(240f, -120f);
+        Vector2 view = new(800f, 450f);
+        var center = Renderer.ProjectBackdropLight(cam, 450f, 1.25f, cam, view);
+        Check(MathF.Abs(center.X) < 1e-6f && MathF.Abs(center.Y) < 1e-6f, "camera center projects to (0,0)");
+        Check(MathF.Abs(center.Z - 0.5f) < 1e-5f && MathF.Abs(center.W - 1.25f) < 1e-5f, "radius scales by 2*view.Y and intensity preserved");
+
+        var offset = Renderer.ProjectBackdropLight(cam + new Vector2(450f, 225f), 225f, 5.0f, cam, view);
+        Check(MathF.Abs(offset.X - 0.5f) < 1e-5f && MathF.Abs(offset.Y + 0.25f) < 1e-5f, "world +X -> +X, world +Y -> -Y in backdrop UV space");
+        Check(MathF.Abs(offset.Z - 0.25f) < 1e-5f && offset.W == 3f, "radius scales linearly and extreme intensity clamps to 3");
+
+        var bad = Renderer.ProjectBackdropLight(new Vector2(float.NaN, float.PositiveInfinity), -50f, float.NaN, cam, view);
+        Check(bad.X == 0f && bad.Y == 0f && bad.Z >= 0.02f && bad.W == 0f, "non-finite/negative light parameters sanitized safely");
+
+        // Shader contract checks across BackgroundFrag, MeshFrag, and CompositeFrag
+        Check(Shaders.BackgroundFrag.Contains("uniform float uDarkTheme;", StringComparison.Ordinal), "BackgroundFrag declares uDarkTheme");
+        Check(Shaders.BackgroundFrag.Contains("uniform int uLightCount;", StringComparison.Ordinal), "BackgroundFrag declares uLightCount");
+        Check(Shaders.BackgroundFrag.Contains("uniform vec4 uLights[12];", StringComparison.Ordinal), "BackgroundFrag declares uLights[12]");
+        Check(Shaders.BackgroundFrag.Contains("uniform vec3 uLightCols[12];", StringComparison.Ordinal), "BackgroundFrag declares uLightCols[12]");
+        Check(Shaders.MeshFrag.Contains("uniform float uDarkTheme;", StringComparison.Ordinal), "MeshFrag declares uDarkTheme");
+        Check(Shaders.CompositeFrag.Contains("uniform float uDarkTheme;", StringComparison.Ordinal), "CompositeFrag declares uDarkTheme");
+
+        Console.WriteLine($"  abyssal theme: maxLights={Renderer.MaxBackdropLights} offset=({offset.X:0.00},{offset.Y:0.00}) r={offset.Z:0.00} shaders=3/3");
     }
 }

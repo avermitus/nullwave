@@ -83,6 +83,11 @@ uniform vec2 uAim;
 uniform float uTravel;
 // transition blend factor between genome A and genome B
 uniform float uMix;
+// abyssal theme switch (0 = Standard, 1 = Abyssal) + live combat light pools
+uniform float uDarkTheme;
+uniform int uLightCount;
+uniform vec4 uLights[12];
+uniform vec3 uLightCols[12];
 
 vec4 P;      // current style params
 vec4 MUT;    // current mutators: x mirror, y swirl, z zoom pulse, w roll speed
@@ -583,17 +588,18 @@ vec3 renderGenomeB(vec2 uv) {
 
 void main() {
     float aspect = uResolution.x / max(uResolution.y, 1.0);
-    vec2 uv = (vUv - 0.5) * vec2(aspect, 1.0);
-    uv += uCam * 0.00004 + uAim * 0.038;
-    vec3 col = renderGenomeA(uv);
+    vec2 screenPos = (vUv - 0.5) * vec2(aspect, 1.0);
+    vec2 uv = screenPos + uCam * 0.00004 + uAim * 0.038;
+    vec3 rawCol = renderGenomeA(uv);
     if (uMix > 0.001) {
         // transition: the new backdrop blooms out from the centre over the old one
         vec3 next = renderGenomeB(uv);
         float wipe = smoothstep(uMix * 1.6 - 0.25, uMix * 1.6, length(uv) * 0.9);
-        col = mix(next, col, wipe);
-        col += pal(uMix) * exp(-abs(length(uv) * 0.9 - uMix * 1.6 + 0.12) * 30.0) * 0.6 * (1.0 - uMix);
+        rawCol = mix(next, rawCol, wipe);
+        rawCol += pal(uMix) * exp(-abs(length(uv) * 0.9 - uMix * 1.6 + 0.12) * 30.0) * 0.6 * (1.0 - uMix);
         PO = uLA[0].po; PF = uLA[0].pf;
     }
+    vec3 col = rawCol;
     float r = length(uv);
     // ambient colour wash: dark generators never collapse to black, while dense stacks stay moody
     // drifting coloured fog under everything: sparse line generators float in atmosphere
@@ -609,6 +615,26 @@ void main() {
     col += 0.003 * hash21(vUv * uResolution + uTime);
     // soft-clip the highlights: busy backdrops stay a backdrop
     col = col * 1.04 / (1.0 + col * 1.85);
+    if (uDarkTheme > 0.001) {
+        vec3 localLight = vec3(0.0);
+        for (int i = 0; i < 12; i++) {
+            if (i >= uLightCount) break;
+            vec4 lt = uLights[i];
+            float d = length(screenPos - lt.xy) / max(lt.z, 0.02);
+            float falloff = exp(-d * d * 2.1) * lt.w;
+            localLight += uLightCols[i] * falloff;
+        }
+        float pulseGate = clamp(0.10 + uKick * 0.42 + uSnare * 0.36 + uDrop * 0.85, 0.0, 1.35);
+        vec3 voidBase = vec3(0.004, 0.005, 0.012) + ambient * (0.014 + fog * 0.016);
+        vec3 sharpPat = pow(clamp(rawCol, 0.0, 2.0), vec3(1.55)) * pulseGate * 0.62;
+        vec3 litPat = rawCol * localLight * 1.15 + localLight * 0.11;
+        vec3 abyssal = voidBase + sharpPat + litPat;
+        abyssal += mix(uColB, uPrim * 0.25, 0.35) * length(uAim) * aimWash * 0.025 * (0.4 + uEnergy * 0.6);
+        abyssal *= 0.58 + 0.42 * vig;
+        abyssal += 0.002 * hash21(vUv * uResolution + uTime);
+        abyssal = abyssal * 1.08 / (1.0 + abyssal * 1.55);
+        col = mix(col, abyssal, uDarkTheme);
+    }
     fragColor = vec4(col * 0.85 * uIntensity, 1.0);
 }
 """;
@@ -688,6 +714,7 @@ uniform float uVignette;
 uniform vec3 uTint;
 uniform float uSpeedLines;
 uniform vec2 uSpeedDir;
+uniform float uDarkTheme;
 
 vec3 aces(vec3 x) {
     return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
@@ -750,17 +777,20 @@ void main() {
     col = hueRotate(col, uHue);
     float luma = dot(col, vec3(0.299, 0.587, 0.114));
     col = mix(vec3(luma), col, uSat);
-    col = clamp((col - 0.5) * uContrast + 0.5, 0.0, 1.0);
+    float themeContrast = mix(1.0, 1.07, uDarkTheme);
+    col = clamp((col - 0.5) * (uContrast * themeContrast) + 0.5, 0.0, 1.0);
     col *= uTint;
     if (uDamage == 1) {
         col = mix(col, vec3(1.0, 0.10, 0.18), 0.16);
     }
     col = mix(col, vec3(1.0), clamp(uFlash, 0.0, 0.45));
     float vig = smoothstep(1.12, 0.35, length(dir * vec2(1.0, 1.1)));
-    col *= mix(1.0, 0.36 + 0.64 * vig, uVignette);
+    float vigFloor = mix(0.36, 0.24, uDarkTheme);
+    col *= mix(1.0, vigFloor + (1.0 - vigFloor) * vig, uVignette);
     float grain = hash21(uv * uResolution + fract(uTime) * 113.0) - 0.5;
-    col += grain * 0.018;
+    col += grain * mix(0.018, 0.012, uDarkTheme);
     col *= 0.985 + 0.015 * sin(uv.y * uResolution.y * 3.14159);
+    col = clamp(col, 0.0, 1.0);
     fragColor = vec4(col, 1.0);
 }
 """;
@@ -803,6 +833,7 @@ uniform float uGlowScale;
 uniform vec3 uFogColor;
 uniform float uFogNear;
 uniform float uFogFar;
+uniform float uDarkTheme;
 void main() {
     vec3 n = normalize(vNormal);
     vec3 V = uPerspective == 1 ? normalize(uEye - vWorld) : normalize(uViewDir);
@@ -814,11 +845,16 @@ void main() {
     float spec = pow(max(dot(n, h), 0.0), 36.0);
     float fres = pow(1.0 - clamp(dot(n, V), 0.0, 1.0), 3.0);
     vec3 base = vColor.rgb;
-    vec3 col = base * (hemi + diff * 0.95) + uFill * back * 0.35 * base;
+    float darkHemi = mix(hemi, hemi * 0.32, uDarkTheme);
+    float darkDiff = mix(diff, diff * 0.55, uDarkTheme);
+    float fillScale = mix(0.35, 0.14, uDarkTheme);
+    float rimBoost = mix(1.0, 2.15, uDarkTheme);
+    float glowBoost = mix(1.0, 1.25, uDarkTheme);
+    vec3 col = base * (darkHemi + darkDiff * 0.95) + uFill * back * fillScale * base;
     col += vec3(spec) * 0.55 * (0.3 + diff);
-    col += uRimColor * fres * uRim;
+    col += uRimColor * fres * uRim * rimBoost;
     col *= uBrightness;
-    col += base * vGlow * uGlowScale;
+    col += base * vGlow * uGlowScale * glowBoost;
     float alpha = vColor.a;
     if (uPerspective == 1) {
         float d = length(uEye - vWorld);

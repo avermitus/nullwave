@@ -73,6 +73,7 @@ internal static class Program
             else if (a == "--mods" && i + 1 < args.Length) Game.ModsOverride = args[++i];
             else if (a == "--attune" && i + 1 < args.Length) Game.AttuneOverride = args[++i];
             else if (a == "--seed" && i + 1 < args.Length) Game.SeedOverride = args[++i];
+            else if (a == "--theme" && i + 1 < args.Length && GameSettings.TryParseTheme(args[i + 1], out var th)) { Game.ThemeOverride = th; i++; }
             else if (a == "--list-apps") { _mode = "listapps"; }
             else if (a == "--beatbench") { _mode = "beatbench"; }
             else if (a == "--style" && i + 1 < args.Length && int.TryParse(args[i + 1], out int st)) { _forceStyle = st; i++; }

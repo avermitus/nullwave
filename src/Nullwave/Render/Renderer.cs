@@ -63,6 +63,52 @@ public sealed class Renderer : IDisposable
     public Vector2 AimTilt { get; set; }
     public Vector2 ObliqueVec => ComputeObliqueVec(AimTilt);
 
+    public const int MaxBackdropLights = 12;
+
+    private static readonly string[] LightPosNames =
+    [
+        "uLights[0]", "uLights[1]", "uLights[2]", "uLights[3]",
+        "uLights[4]", "uLights[5]", "uLights[6]", "uLights[7]",
+        "uLights[8]", "uLights[9]", "uLights[10]", "uLights[11]",
+    ];
+
+    private static readonly string[] LightColNames =
+    [
+        "uLightCols[0]", "uLightCols[1]", "uLightCols[2]", "uLightCols[3]",
+        "uLightCols[4]", "uLightCols[5]", "uLightCols[6]", "uLightCols[7]",
+        "uLightCols[8]", "uLightCols[9]", "uLightCols[10]", "uLightCols[11]",
+    ];
+
+    private readonly Vector4[] _lightData = new Vector4[MaxBackdropLights];
+    private readonly Vector3[] _lightCols = new Vector3[MaxBackdropLights];
+    private int _lightCount;
+
+    public int BackdropLightCount => _lightCount;
+
+    public static Vector4 ProjectBackdropLight(
+        Vector2 worldPos, float worldRadius, float intensity,
+        Vector2 camera, Vector2 view)
+    {
+        float denom = 2f * MathF.Max(1f, float.IsFinite(view.Y) ? view.Y : 450f);
+        float dx = float.IsFinite(worldPos.X) && float.IsFinite(camera.X) ? worldPos.X - camera.X : 0f;
+        float dy = float.IsFinite(worldPos.Y) && float.IsFinite(camera.Y) ? worldPos.Y - camera.Y : 0f;
+        float r = float.IsFinite(worldRadius) ? MathF.Max(0f, worldRadius) : 0f;
+        float w = float.IsFinite(intensity) ? Math.Clamp(intensity, 0f, 3f) : 0f;
+        return new Vector4(
+            dx / denom,
+            -dy / denom,
+            MathF.Max(0.02f, r / denom),
+            w);
+    }
+
+    public void AddBackdropLight(Vector2 worldPos, float worldRadius, Vector3 color, float intensity)
+    {
+        if (_lightCount >= MaxBackdropLights || !float.IsFinite(intensity) || intensity <= 0.01f) return;
+        _lightData[_lightCount] = ProjectBackdropLight(worldPos, worldRadius, intensity, _camera, _view);
+        _lightCols[_lightCount] = color;
+        _lightCount++;
+    }
+
     public readonly record struct BackdropAudioDrives(
         float Kick, float Snare, float Hat, float Drop, float Build, float Breakdown);
 
@@ -214,6 +260,7 @@ public sealed class Renderer : IDisposable
         _worldGlow.Clear();
         _worldMeshes.Clear();
         _backdropMeshes.Clear();
+        _lightCount = 0;
     }
 
     /// <summary>Perspective camera for the background 3D layer (its own space, z up).</summary>
@@ -303,6 +350,14 @@ public sealed class Renderer : IDisposable
         _background.SetFloat("uSpeed", PlayerSpeed);
         _background.SetVec2("uVel", PlayerDirection.X, -PlayerDirection.Y);
         _background.SetVec2("uAim", ClampAimTilt(AimTilt));
+        float darkTheme = settings.IsAbyssal ? 1f : 0f;
+        _background.SetFloat("uDarkTheme", darkTheme);
+        _background.SetInt("uLightCount", _lightCount);
+        for (int i = 0; i < _lightCount; i++)
+        {
+            _background.SetVec4(LightPosNames[i], _lightData[i]);
+            _background.SetVec3(LightColNames[i], _lightCols[i]);
+        }
         if (_genB != null)
         {
             _mix += frameDt / 1.8f;
@@ -337,6 +392,7 @@ public sealed class Renderer : IDisposable
             _meshShader.SetVec3("uFogColor", _fogColor);
             _meshShader.SetFloat("uFogNear", 1800f);
             _meshShader.SetFloat("uFogFar", 6200f);
+            _meshShader.SetFloat("uDarkTheme", darkTheme);
             _backdropMeshes.Draw();
             _gl.Disable(EnableCap.DepthTest);
         }
@@ -362,6 +418,7 @@ public sealed class Renderer : IDisposable
             _meshShader.SetFloat("uRim", 0.42f + audio.BeatPulse * 0.25f);
             _meshShader.SetFloat("uBrightness", 1f);
             _meshShader.SetFloat("uGlowScale", 1f);
+            _meshShader.SetFloat("uDarkTheme", darkTheme);
             _worldMeshes.Draw();
             _gl.Disable(EnableCap.DepthTest);
             _worldShader.Use();
@@ -370,9 +427,11 @@ public sealed class Renderer : IDisposable
         _gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.One);
         _worldGlow.Draw();
 
+        var postMood = WithSpeed(BuildPostMood(mood, fx, settings.ReduceFlashing));
+        postMood.DarkTheme = darkTheme;
         Post.Process(scene.Texture, Width, Height, time, (1.18f + audio.Energy * 0.32f + drives.Drop * 0.8f) * settings.Bloom / 100f,
             (aberration + drives.Build * 0.5f + drives.Drop * 0.6f) * settings.Aberration / 100f,
-            settings.ReduceFlashing ? MathF.Min(flash, 0.15f) : flash, audio.BeatPulse, damage, WithSpeed(BuildPostMood(mood, fx, settings.ReduceFlashing)));
+            settings.ReduceFlashing ? MathF.Min(flash, 0.15f) : flash, audio.BeatPulse, damage, postMood);
 
         // Post.Process leaves RenderBaseline.Default bound to the default framebuffer. The composite is
         // opaque (alpha 1); the UI blends colour normally but must not pull destination alpha below 1,

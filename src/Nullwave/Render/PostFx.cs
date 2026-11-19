@@ -5,7 +5,7 @@ namespace Nullwave.Render;
 /// <summary>Music-driven grading parameters for the composite pass.</summary>
 public struct PostMood
 {
-    public float Hue, Saturation, Contrast, Thump, Glitch, Vignette, SpeedLines;
+    public float Hue, Saturation, Contrast, Thump, Glitch, Vignette, SpeedLines, DarkTheme;
     public System.Numerics.Vector2 SpeedDir;
     public System.Numerics.Vector3 Tint;
     public static PostMood Neutral => new() { Saturation = 1f, Contrast = 1f, Vignette = 1f, Tint = System.Numerics.Vector3.One };
@@ -63,11 +63,12 @@ public sealed class PostFx : IDisposable
         _gl.Disable(EnableCap.DepthTest);
         _gl.BindVertexArray(_vao);
 
+        bool abyssal = mood.DarkTheme > 0.5f;
         _downs[0].Bind();
         _bright.Use();
         _bright.SetInt("uScene", 0);
-        _bright.SetFloat("uThreshold", 0.62f);
-        _bright.SetFloat("uKnee", 0.42f);
+        _bright.SetFloat("uThreshold", abyssal ? 0.72f : 0.62f);
+        _bright.SetFloat("uKnee", abyssal ? 0.32f : 0.42f);
         _gl.ActiveTexture(TextureUnit.Texture0);
         _gl.BindTexture(TextureTarget.Texture2D, sceneTexture);
         DrawFullscreen();
@@ -128,6 +129,7 @@ public sealed class PostFx : IDisposable
         _composite.SetVec3("uTint", mood.Tint);
         _composite.SetFloat("uSpeedLines", mood.SpeedLines);
         _composite.SetVec2("uSpeedDir", mood.SpeedDir.X, -mood.SpeedDir.Y);
+        _composite.SetFloat("uDarkTheme", mood.DarkTheme);
         _gl.ActiveTexture(TextureUnit.Texture0);
         _gl.BindTexture(TextureTarget.Texture2D, sceneTexture);
         _gl.ActiveTexture(TextureUnit.Texture1);

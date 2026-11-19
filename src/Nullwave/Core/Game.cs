@@ -84,6 +84,7 @@ public sealed class Game : IDisposable
     public static string? ModsOverride;
     public static string? AttuneOverride;
     public static string? SeedOverride;
+    public static VisualTheme? ThemeOverride;
 
     public void StartSmokeRun(ulong seed)
     {
@@ -138,6 +139,11 @@ public sealed class Game : IDisposable
         _meta.Settings ??= new GameSettings();
         _meta.Settings.Sanitize();
         GameSettings.Current = capture ? new GameSettings() : _meta.Settings;
+        if (ThemeOverride is { } forcedTheme)
+        {
+            GameSettings.Current = GameSettings.Current.Clone();
+            GameSettings.Current.Theme = forcedTheme;
+        }
         ApplyAudioSettings();
         if (!capture && GameSettings.Current.Fullscreen) SetFullscreen(true);
         _settingsMenu.AudioChanged = ApplyAudioSettings;

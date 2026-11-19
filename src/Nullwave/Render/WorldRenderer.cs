@@ -13,6 +13,7 @@ public static class WorldRenderer
     public static void Draw(Renderer r, GameWorld world, Palette palette, AudioState audio, float time)
     {
         r.Palette = palette;
+        PopulateCombatLights(r, world, palette);
         DrawArena(r, world, palette, audio, time);
         DrawMotes(r, world, palette, audio, time);
         DrawObstacles(r, world, palette, time);
@@ -24,6 +25,80 @@ public static class WorldRenderer
         DrawPlayer(r, world, palette, time);
         DrawParticles(r, world, palette);
         DrawShockwaves(r, world);
+    }
+
+    /// <summary>
+    /// Collects up to 12 live combat light sources (zero allocations) so Abyssal mode illuminates
+    /// the dark generative backdrop dynamically around the ship, Choir boss, shockwaves, and lasers.
+    /// </summary>
+    private static void PopulateCombatLights(Renderer r, GameWorld w, Palette p)
+    {
+        static Vector3 Rgb(Vector4 c) => new(c.X, c.Y, c.Z);
+
+        // 1. Player interceptor light (+ Phase Sync / dash surge)
+        var pl = w.Player;
+        Vector3 playerCol = Vector3.Lerp(Rgb(p.Player), new Vector3(0.55f, 0.96f, 1f), pl.PhaseSyncFlash);
+        float playerRad = 290f + pl.PhaseSyncFlash * 150f + (pl.IsDashing ? 90f : 0f);
+        float playerInt = 0.95f + pl.PhaseSyncFlash * 0.65f + (pl.IsDashing ? 0.25f : 0f);
+        r.AddBackdropLight(pl.Pos, playerRad, playerCol, playerInt);
+
+        // 2. Choir Boss core light (if alive)
+        if (w.BossEnemy is { Dead: false } boss)
+        {
+            Vector3 bossCol = Rgb(M.Hsv(boss.Hue, 0.8f, 1f));
+            r.AddBackdropLight(
+                boss.Pos,
+                440f + boss.PhaseBreakTimer * 260f,
+                bossCol,
+                1.25f + w.BeatPulse * 0.4f + boss.PhaseBreakTimer * 0.6f);
+        }
+
+        // 3. Up to 4 newest active shockwaves
+        int shockAdded = 0;
+        for (int i = w.Shockwaves.Count - 1; i >= 0 && shockAdded < 4 && r.BackdropLightCount < Renderer.MaxBackdropLights; i--)
+        {
+            var s = w.Shockwaves[i];
+            if (s.Life <= 0f || !r.InView(s.Pos, 350f)) continue;
+            float frac = M.Clamp01(s.Life / MathF.Max(0.01f, s.MaxLife));
+            r.AddBackdropLight(s.Pos, MathF.Max(140f, s.Radius * 1.15f), Rgb(s.Color), 0.9f * frac);
+            shockAdded++;
+        }
+
+        // 4. Up to 4 active / warming lasers sampled nearest the player
+        int laserAdded = 0;
+        for (int i = 0; i < w.Lasers.Count && laserAdded < 4 && r.BackdropLightCount < Renderer.MaxBackdropLights; i++)
+        {
+            var l = w.Lasers[i];
+            if (l.Done) continue;
+            float alpha = l.Alpha;
+            if (alpha <= 0.05f) continue;
+            Vector2 dir = l.Direction;
+            float t = Math.Clamp(Vector2.Dot(pl.Pos - l.Origin, dir), 0f, l.Length);
+            Vector2 pt = l.Origin + dir * t;
+            r.AddBackdropLight(pt, 240f + l.Width * 3f, Rgb(M.Hsv(l.Hue, 0.75f, 1f)), (l.Active ? 0.95f : 0.45f) * alpha);
+            laserAdded++;
+        }
+
+        // 5. Remaining slots: active in-view elites / firing enemies
+        for (int i = 0; i < w.Enemies.Count && r.BackdropLightCount < Renderer.MaxBackdropLights; i++)
+        {
+            var e = w.Enemies[i];
+            if (e.Dead || e.Boss || !r.InView(e.Pos, 180f)) continue;
+            if (!e.Elite && e.Muzzle < 0.25f) continue;
+            r.AddBackdropLight(
+                e.Pos,
+                210f + (e.Elite ? 70f : 0f) + e.Muzzle * 90f,
+                Rgb(M.Hsv(e.Hue, 0.75f, 1f)),
+                0.58f + (e.Elite ? 0.25f : 0f) + e.Muzzle * 0.45f);
+        }
+
+        // Fill any leftover light slots with nearby active enemies so dark combat clusters breathe
+        for (int i = 0; i < w.Enemies.Count && r.BackdropLightCount < Renderer.MaxBackdropLights; i++)
+        {
+            var e = w.Enemies[i];
+            if (e.Dead || e.Boss || e.Elite || e.Muzzle >= 0.25f || !r.InView(e.Pos, 120f)) continue;
+            r.AddBackdropLight(e.Pos, 175f, Rgb(M.Hsv(e.Hue, 0.7f, 1f)), 0.46f);
+        }
     }
 
     private static Matrix4x4 Xf(Vector2 pos, float z, float yaw, float scale, float roll = 0f, float pitch = 0f)
@@ -46,7 +121,11 @@ public static class WorldRenderer
         float hh = w.ArenaH * 0.5f;
 
         // Floor plate: darkens the backdrop inside the arena so the fight always reads first.
-        r.Quad(new Vector2(-hw, -hh), new Vector2(hw, -hh), new Vector2(hw, hh), new Vector2(-hw, hh), new Vector4(0.006f, 0.008f, 0.02f, 0.28f));
+        bool abyssal = GameSettings.Current.IsAbyssal;
+        var floorCol = abyssal
+            ? new Vector4(0.002f, 0.003f, 0.008f, 0.52f)
+            : new Vector4(0.006f, 0.008f, 0.02f, 0.28f);
+        r.Quad(new Vector2(-hw, -hh), new Vector2(hw, -hh), new Vector2(hw, hh), new Vector2(-hw, hh), floorCol);
 
         // Floor grid, only the part in view; lines near the player brighten on the beat.
         const float cell = 200f;
@@ -58,13 +137,13 @@ public static class WorldRenderer
         float y1 = MathF.Min(hh, cam.Y + view.Y);
         float ya = MathF.Max(-hh, cam.Y - view.Y - 40), yb = MathF.Min(hh, cam.Y + view.Y + 40);
         float xa = MathF.Max(-hw, cam.X - view.X - 40), xb = MathF.Min(hw, cam.X + view.X + 40);
-        var line = M.WithAlpha(p.Primary, 0.045f + audio.BeatPulse * 0.03f);
+        var line = M.WithAlpha(p.Primary, abyssal ? 0.032f + audio.BeatPulse * 0.038f : 0.045f + audio.BeatPulse * 0.03f);
         for (float x = x0; x <= x1; x += cell) r.Line(new Vector2(x, ya), new Vector2(x, yb), 1f, line);
         for (float y = y0; y <= y1; y += cell) r.Line(new Vector2(xa, y), new Vector2(xb, y), 1f, line);
         // a beat ripple across the floor, centred on the player
         float ripple = w.BeatPhase;
         float rippleR = 80f + ripple * 900f;
-        r.Circle(w.Player.Pos, rippleR, 2f, M.WithAlpha(p.Primary, 0.05f * (1f - ripple)), 64, true);
+        r.Circle(w.Player.Pos, rippleR, abyssal ? 2.4f : 2f, M.WithAlpha(p.Primary, (abyssal ? 0.11f : 0.05f) * (1f - ripple)), 64, true);
 
         var edge = new Vector4(p.Primary.X, p.Primary.Y, p.Primary.Z, 0.35f);
         var edgeGlow = new Vector4(p.Primary.X, p.Primary.Y, p.Primary.Z, 0.07f + audio.Bass * 0.06f);

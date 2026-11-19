@@ -12,6 +12,10 @@ Candidates are scored on a 1–5 scale for **Player Impact** (higher is better),
 | **6** | `TASK-006` | **Local Spotify Integration & Hardcore Riddim Drop-Trailer Recorder Hooks** | **5 / 5** | **2 / 5** | **2 / 5** | `TASK-002`, `TASK-004`, `TASK-005` | **Done** |
 | **7** | `TASK-007` | **Aim-Reactive 3D Backdrop Parallax & Camera Tilt, Richer Laser/Bullet Trails, and Expanded Laser Choreography** | **5 / 5** | **2 / 5** | **3 / 5** | `TASK-005` | **Done** |
 | **8** | `TASK-008` | **Fully Generative Animated Backdrops + Per-Generator Audio Reactivity & Visual Harmony (TASK-008 + TASK-009)** | **5 / 5** | **2 / 5** | **3 / 5** | `TASK-007` | **Done** |
+| **9** | `TASK-009` | **Abyssal / Void Noir Dark Theme + Dynamic Combat Illumination (`uLights[]`)** | **5 / 5** | **2 / 5** | **2 / 5** | `TASK-008` | **Done** |
+| **10** | `TASK-010` | **Attunement Synergy Evolutions ("Harmonic Overclock")** | **5 / 5** | **2 / 5** | **3 / 5** | `TASK-002` | Proposed |
+| **11** | `TASK-011` | **Drop Overdrive, Micro-Hitstop, Radial Shockwave Distortion & 3× Phase-Sync Overdrive** | **4 / 5** | **2 / 5** | **3 / 5** | `TASK-004` | Proposed |
+| **12** | `TASK-012` | **Frame-Pacing Telemetry (`P95/P99` + Alloc Guard) & Seed PB Pace Splits** | **4 / 5** | **1 / 5** | **2 / 5** | `TASK-003` | Proposed |
 
 ---
 

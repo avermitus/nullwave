@@ -18,7 +18,7 @@ public sealed class SettingsMenu
         Func<GameSettings, int> Get, Action<GameSettings, int> Set,
         int Min, int Max, int Step, string Unit, string Hint);
 
-    private const float PanelX = 330, PanelW = 940, Top = 114, RowH = 25, HeaderH = 30;
+    private const float PanelX = 330, PanelW = 940, Top = 104, RowH = 24, HeaderH = 28;
     private const float BarX = 800, BarW = 300;
 
     private readonly List<Row> _rows = new();
@@ -46,6 +46,7 @@ public sealed class SettingsMenu
         Slider("AUDIO", "BEAT OFFSET", s => s.BeatOffsetMs, (s, v) => s.BeatOffsetMs = v, -200, 200, 10, "MS", "Enemies fire early or late versus what you hear? Shift them later (+) or earlier (-).");
         Slider("AUDIO", "BEAT MOTION", s => s.BeatMotion, (s, v) => s.BeatMotion = v, 0, 150, 10, "%", "How hard bullets and enemies surge forward on each beat. 0 = steady speed, same difficulty.");
         Toggle("VIDEO", "FULLSCREEN", s => s.Fullscreen, (s, v) => s.Fullscreen = v, "Also F2.");
+        Toggle("VIDEO", "VISUAL THEME", s => s.IsAbyssal, (s, v) => s.Theme = v ? VisualTheme.Abyssal : VisualTheme.Standard, "STANDARD NEON OR ABYSSAL OLED-BLACK VOID WITH DYNAMIC COMBAT LIGHTING.");
         Slider("VIDEO", "BACKGROUND INTENSITY", s => s.BackgroundIntensity, (s, v) => s.BackgroundIntensity = v, 0, 150, 10, "%", "Brightness of the liquid backdrop. Lower it if the fight is hard to read.");
         Slider("VIDEO", "BACKGROUND MOTION", s => s.BackgroundMotion, (s, v) => s.BackgroundMotion = v, 0, 200, 10, "%", "How fast the backdrop flows with the music. 0 freezes it.");
         Slider("VIDEO", "BLOOM", s => s.Bloom, (s, v) => s.Bloom = v, 0, 150, 10, "%", "Glow around bright shots and lights.");
@@ -71,7 +72,7 @@ public sealed class SettingsMenu
             if (_rows[i].Section != section)
             {
                 section = _rows[i].Section;
-                y += section.Length > 0 ? HeaderH : 16;
+                y += section.Length > 0 ? HeaderH : 14;
             }
             _rowY[i] = y;
             y += RowH;
@@ -199,9 +200,10 @@ public sealed class SettingsMenu
     {
         var s = GameSettings.Current;
         if (_sourceToastTime > 0) _sourceToastTime -= dt;
-        r.UiRect(0, 0, 1600, 900, new Vector4(0.002f, 0.004f, 0.012f, 0.8f));
-        r.UiRect(PanelX - 30, 40, PanelW + 60, 830, new Vector4(0.006f, 0.009f, 0.021f, 0.9f));
-        r.UiFrame(PanelX - 30, 40, PanelW + 60, 830, 1f, M.WithAlpha(p.Primary, 0.4f));
+        bool abyssal = s.IsAbyssal;
+        r.UiRect(0, 0, 1600, 900, abyssal ? new Vector4(0.001f, 0.001f, 0.004f, 0.88f) : new Vector4(0.002f, 0.004f, 0.012f, 0.8f));
+        r.UiRect(PanelX - 30, 40, PanelW + 60, 830, abyssal ? new Vector4(0.002f, 0.003f, 0.007f, 0.95f) : new Vector4(0.006f, 0.009f, 0.021f, 0.9f));
+        r.UiFrame(PanelX - 30, 40, PanelW + 60, 830, 1f, M.WithAlpha(p.Primary, abyssal ? 0.34f : 0.4f));
         r.UiRect(PanelX - 30, 40, PanelW + 60, 2, M.WithAlpha(p.Primary, 0.55f), true);
         r.UiTextCentered("SETTINGS", 800, 60, 4.0f, p.Text, true);
 
@@ -259,10 +261,14 @@ public sealed class SettingsMenu
                 case Kind.Toggle:
                 {
                     bool on = row.Get(s) != 0;
-                    float px = right - 88;
-                    r.UiRect(px, y - 3, 88, 22, on ? M.WithAlpha(p.Primary, 0.25f) : new Vector4(0.03f, 0.035f, 0.07f, 1f));
-                    r.UiFrame(px, y - 3, 88, 22, 1f, on ? M.WithAlpha(p.Primary, 0.8f) : M.WithAlpha(p.Dim, 0.35f), on && sel);
-                    r.UiTextCentered(on ? "ON" : "OFF", px + 44, y + 1, 1.7f, on ? p.Text : M.WithAlpha(p.Dim, 0.8f), on);
+                    bool isTheme = row.Label == "VISUAL THEME";
+                    float pillW = isTheme ? 136f : 88f;
+                    float px = right - pillW;
+                    string pillText = isTheme ? (on ? "ABYSSAL" : "STANDARD") : (on ? "ON" : "OFF");
+                    var offFill = abyssal ? new Vector4(0.012f, 0.014f, 0.028f, 1f) : new Vector4(0.03f, 0.035f, 0.07f, 1f);
+                    r.UiRect(px, y - 3, pillW, 21, on ? M.WithAlpha(p.Primary, 0.25f) : offFill);
+                    r.UiFrame(px, y - 3, pillW, 21, 1f, on ? M.WithAlpha(p.Primary, 0.8f) : M.WithAlpha(p.Dim, 0.35f), on && sel);
+                    r.UiTextCentered(pillText, px + pillW * 0.5f, y + 1, 1.65f, on ? p.Text : M.WithAlpha(p.Dim, 0.85f), on);
                     break;
                 }
                 default:

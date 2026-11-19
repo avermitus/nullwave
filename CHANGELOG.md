@@ -4,9 +4,10 @@ All notable gameplay, rendering, audio-intelligence, and UI updates to **NULLWAV
 
 ---
 
-## Latest Updates — Generative Multi-Layer Backdrops, Audio-Reactive Polish, HDR Lasers & Spotify Integration
+## Latest Updates — Abyssal Dark Theme, Generative Multi-Layer Backdrops, HDR Lasers & Spotify Integration
 
-### Rendering, Generative Backdrops & Visual Effects
+### Rendering, Visual Themes & Visual Effects
+- **Abyssal / Void Noir Dark Theme & Dynamic Combat Illumination:** Added a selectable **VISUAL THEME** (`STANDARD` / `ABYSSAL`) in **SETTINGS** (and `--theme <standard|abyssal>` CLI override) while keeping `STANDARD` untouched. In **ABYSSAL** mode, the arena drops to near-OLED obsidian (`#010104`) between beats, audio transients (`kick`, `snare`, `drop`) ignite razor-thin bioluminescent contours, and up to **12 live combat light pools** (player interceptor + Phase Sync flare, **THE CHOIR** core, active shockwaves, and laser beams) dynamically illuminate the underlying generative shader geometry right around the fight, paired with matte-obsidian 3D hulls, heightened Fresnel rims, tighter bloom threshold, brighter beat sonar ripples, and smoked-glass HUD panels.
 - **Fully Generative Multi-Layer Animated Backdrops:** Replaced the fixed 6-style backdrop roster with a combinatorial real-time GPU backdrop synthesizer (`BackdropGenome` + `BackgroundFrag`). Every run, act shift, and musical drop assembles a brand-new backdrop from scratch out of **1–3 layers**, each chaining **0–4 motion/space transforms** (`SPIN`, `TUNNEL`, `FOLD`, `WARP`, `SWIRL`, `MIRROR`, `SPIRAL`, `STREAM`, `RIPPLE`, `TILES`, `BREATHE`) into **13 animated pattern generators** (`INK`, `CELLS`, `FRACTAL`, `CIRCUIT`, `MOIRE`, `STREAMS`, `GRID`, `LIQUID`, `FIELD`, `PLASMA`, `AURORA`, `HEX`, `HYPERSPACE`) with randomized blend modes, per-backdrop cosine palette families, and seamless `1.8s` radial bloom transitions.
 - **Per-Generator Drum, Snare & Hi-Hat Reactivity:** Connected real-time kick, snare, hi-hat, bass, high, and drop drives directly into all 13 generators and space transforms (`WARP`, `SWIRL`, `RIPPLE`, `BREATHE`), upgrading `PLASMA` into crisp multi-band harmonic contour ridges and tuning the drifting ambient fog floor and highlight soft-clipping so foreground combat stays razor-sharp against every generated world.
 - **Aim-Reactive Parallax & Subtle Camera Tilt:** Added smoothed aim-driven oblique camera lean across 3D world meshes and lifted overlays (keeping `z = 0` collision footprints and mouse aiming exact) paired with subtle aim parallax in the generative backdrop shader.
@@ -28,15 +29,19 @@ All notable gameplay, rendering, audio-intelligence, and UI updates to **NULLWAV
 
 ![Generative Animated Backdrops Contact Sheet](docs/screenshots/generative_backdrops.png)
 
-| Title Screen | Combat HUD & Generative Backdrop |
+| Abyssal Theme — Dynamic Combat Illumination | Abyssal Theme — Choir Boss Chiaroscuro |
 |---|---|
-| ![Latest Title](docs/screenshots/latest_title.png) | ![Latest Combat](docs/screenshots/latest_combat.png) |
-| **HDR Song Lasers & Starburst** | **The Choir Phase Choreography** |
-| ![Latest Song Lasers](docs/screenshots/latest_songlasers.png) | ![Latest Boss](docs/screenshots/latest_boss.png) |
-| **Phase Sync & Flow State** | **Signal Held Pause Overlay** |
-| ![Latest Speed](docs/screenshots/latest_speed.png) | ![Latest Pause](docs/screenshots/latest_pause.png) |
-| **Archive Seed Decoder & Flight Recorder** | **Signal Lost Personal-Best Callouts** |
-| ![Latest Archive](docs/screenshots/latest_archive.png) | ![Latest Game Over](docs/screenshots/latest_gameover.png) |
+| ![Abyssal Combat](docs/screenshots/abyssal_combat.png) | ![Abyssal Boss](docs/screenshots/abyssal_boss.png) |
+| **Abyssal Theme — Starburst Lasers** | **Title Screen** |
+| ![Abyssal Song Lasers](docs/screenshots/abyssal_songlasers.png) | ![Latest Title](docs/screenshots/latest_title.png) |
+| **Combat HUD & Generative Backdrop** | **HDR Song Lasers & Starburst** |
+| ![Latest Combat](docs/screenshots/latest_combat.png) | ![Latest Song Lasers](docs/screenshots/latest_songlasers.png) |
+| **The Choir Phase Choreography** | **Phase Sync & Flow State** |
+| ![Latest Boss](docs/screenshots/latest_boss.png) | ![Latest Speed](docs/screenshots/latest_speed.png) |
+| **Signal Held Pause Overlay** | **Archive Seed Decoder & Flight Recorder** |
+| ![Latest Pause](docs/screenshots/latest_pause.png) | ![Latest Archive](docs/screenshots/latest_archive.png) |
+| **Signal Lost Personal-Best Callouts** | |
+| ![Latest Game Over](docs/screenshots/latest_gameover.png) | |
 
 ---
 

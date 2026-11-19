@@ -1,5 +1,11 @@
 namespace Nullwave.Core;
 
+public enum VisualTheme
+{
+    Standard = 0,
+    Abyssal = 1,
+}
+
 /// <summary>
 /// Player-tunable settings, saved inside save.json. Percent values are stored as 0..N ints so
 /// the menu can step them exactly. <see cref="Current"/> is read by the renderer, HUD and sim.
@@ -19,6 +25,8 @@ public sealed class GameSettings
 
     // video
     public bool Fullscreen { get; set; }
+    /// <summary>Visual aesthetic: Standard neon synthwave or Abyssal OLED-black void noir.</summary>
+    public VisualTheme Theme { get; set; } = VisualTheme.Standard;
     public int BackgroundIntensity { get; set; } = 100;
     public int BackgroundMotion { get; set; } = 100;
     public int Bloom { get; set; } = 100;
@@ -38,15 +46,40 @@ public sealed class GameSettings
     public bool ShowAttunements { get; set; } = true;
     public int CrosshairSize { get; set; } = 100;
 
+    [System.Text.Json.Serialization.JsonIgnore] public bool IsAbyssal => Theme == VisualTheme.Abyssal;
     [System.Text.Json.Serialization.JsonIgnore] public float Master => MasterVolume / 100f;
     [System.Text.Json.Serialization.JsonIgnore] public float Music => MusicVolume / 100f * Master;
     [System.Text.Json.Serialization.JsonIgnore] public float Sfx => SfxVolume / 100f * Master;
+
+    public static bool TryParseTheme(string? raw, out VisualTheme theme)
+    {
+        theme = VisualTheme.Standard;
+        if (string.IsNullOrWhiteSpace(raw)) return false;
+        switch (raw.Trim().ToLowerInvariant())
+        {
+            case "standard":
+            case "default":
+            case "0":
+                theme = VisualTheme.Standard;
+                return true;
+            case "abyssal":
+            case "dark":
+            case "noir":
+            case "void":
+            case "1":
+                theme = VisualTheme.Abyssal;
+                return true;
+            default:
+                return false;
+        }
+    }
 
     public GameSettings Clone() => (GameSettings)MemberwiseClone();
 
     /// <summary>Clamps values loaded from disk into their menu ranges.</summary>
     public void Sanitize()
     {
+        if (!Enum.IsDefined(Theme)) Theme = VisualTheme.Standard;
         MasterVolume = Math.Clamp(MasterVolume, 0, 100);
         MusicVolume = Math.Clamp(MusicVolume, 0, 100);
         SfxVolume = Math.Clamp(SfxVolume, 0, 100);

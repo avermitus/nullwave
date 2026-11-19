@@ -11,10 +11,13 @@ public static class Screens
 {
     private static readonly string[] TitleItems = ["NEW SIGNAL", "DAILY SIGNAL", "ARCHIVE", "SETTINGS", "QUIT"];
     private static readonly string[] PauseItems = ["RESUME", "ARCHIVE", "SETTINGS", "ABANDON SIGNAL"];
+    private static bool Abyssal => GameSettings.Current.IsAbyssal;
+    private static Vector4 PanelFill(Vector4 standard, float abyssalAlpha = 0.94f) =>
+        Abyssal ? new Vector4(0.002f, 0.003f, 0.007f, abyssalAlpha) : standard;
 
     public static void DrawTitle(Renderer r, Palette p, MetaProgress meta, ulong seed, bool dailySeed, int menuIndex, float time, AudioState audio)
     {
-        r.UiRect(0, 0, 1600, 900, new Vector4(0.002f, 0.004f, 0.016f, 0.86f));
+        r.UiRect(0, 0, 1600, 900, PanelFill(new Vector4(0.002f, 0.004f, 0.016f, 0.86f), 0.90f));
         DrawFrameDecor(r, p, 38, 38, 1524, 824);
 
         r.UiText("SIGNAL // " + SeedCode.ToCode(seed), 64, 62, 1.8f, M.WithAlpha(p.Accent, 0.9f));
@@ -59,7 +62,7 @@ public static class Screens
 
     public static void DrawArchive(Renderer r, Palette p, MetaProgress meta, int selected, float time, bool fromPause, bool fromGameOver, string selectedSeed = "", bool editingSeed = false, string editBuffer = "")
     {
-        r.UiRect(0, 0, 1600, 900, new Vector4(0.003f, 0.005f, 0.014f, 0.84f));
+        r.UiRect(0, 0, 1600, 900, PanelFill(new Vector4(0.003f, 0.005f, 0.014f, 0.84f), 0.92f));
         DrawFrameDecor(r, p, 34, 34, 1532, 832);
         r.UiText("ARCHIVE OF THE SIGNAL", 64, 54, 4.4f, p.Text, true);
         DrawArchiveSeedDecoder(r, p, meta, time, fromPause, selectedSeed, editingSeed, editBuffer);
@@ -115,7 +118,7 @@ public static class Screens
         const float bx = 646f, by = 46f, bw = 588f, bh = 52f;
         bool active = editingSeed || !string.IsNullOrEmpty(selectedSeed);
         var border = editingSeed ? p.Accent : active ? M.WithAlpha(p.Accent, 0.72f) : M.WithAlpha(p.Primary, 0.42f);
-        r.UiRect(bx, by, bw, bh, new Vector4(0.006f, 0.010f, 0.024f, 0.92f));
+        r.UiRect(bx, by, bw, bh, PanelFill(new Vector4(0.006f, 0.010f, 0.024f, 0.92f), 0.95f));
         r.UiFrame(bx, by, bw, bh, 1f, border, active);
         r.UiRect(bx, by, bw, 1.5f, M.WithAlpha(active ? p.Accent : p.Primary, 0.65f), active);
 
@@ -308,8 +311,8 @@ public static class Screens
 
         r.UiText("INTEGRITY", 56, 770, 1.4f, critical ? M.WithAlpha(danger, 0.7f + pulse * 0.3f) : M.WithAlpha(p.Dim, 0.9f), critical);
         r.UiTextRight(player.Health + " / " + max, x + w, 770, 1.4f, M.WithAlpha(fill, 0.9f), true);
-        r.UiRect(x - 2, y - 2, w + 4, h + 4, new Vector4(0.01f, 0.012f, 0.03f, 0.88f));
-        r.UiFrame(x - 2, y - 2, w + 4, h + 4, 1f, critical ? M.WithAlpha(danger, 0.35f + pulse * 0.6f) : M.WithAlpha(p.Primary, 0.35f), critical);
+        r.UiRect(x - 2, y - 2, w + 4, h + 4, PanelFill(new Vector4(0.01f, 0.012f, 0.03f, 0.88f), 0.94f));
+        r.UiFrame(x - 2, y - 2, w + 4, h + 4, 1f, critical ? M.WithAlpha(danger, 0.35f + pulse * 0.6f) : M.WithAlpha(p.Primary, Abyssal ? 0.30f : 0.35f), critical);
 
         float gap = 4f;
         float segW = (w - gap * (max - 1)) / max;
@@ -338,8 +341,8 @@ public static class Screens
         const float mw = 220f;
         float mh = mw * w.ArenaH / MathF.Max(1f, w.ArenaW);
         float x = 1542f - mw, y = 212f;
-        r.UiRect(x, y, mw, mh, new Vector4(0.004f, 0.006f, 0.016f, 0.72f));
-        r.UiFrame(x, y, mw, mh, 1f, M.WithAlpha(p.Primary, 0.3f));
+        r.UiRect(x, y, mw, mh, PanelFill(new Vector4(0.004f, 0.006f, 0.016f, 0.72f), 0.86f));
+        r.UiFrame(x, y, mw, mh, 1f, M.WithAlpha(p.Primary, Abyssal ? 0.28f : 0.3f));
         r.UiText(w.LayoutName, x, y + mh + 6, 1.2f, M.WithAlpha(p.Dim, 0.6f));
         Vector2 Map(Vector2 wp) => new(x + (wp.X / w.ArenaW + 0.5f) * mw, y + (wp.Y / w.ArenaH + 0.5f) * mh);
 
@@ -435,7 +438,7 @@ public static class Screens
 
     public static void DrawPause(Renderer r, Palette p, GameWorld w, int menuIndex, AudioState audio)
     {
-        r.UiRect(0, 0, 1600, 900, new Vector4(0.002f, 0.004f, 0.012f, 0.72f));
+        r.UiRect(0, 0, 1600, 900, PanelFill(new Vector4(0.002f, 0.004f, 0.012f, 0.72f), 0.84f));
         DrawCard(r, p, 500, 214, 600, 524, M.WithAlpha(p.Primary, 0.75f));
         r.UiTextCentered("SIGNAL HELD", 800, 254, 5.2f, p.Text, true);
         r.UiTextCentered("WAVE " + w.Wave.ToString("00") + "  //  " + SeedCode.ToCode(w.Seed), 800, 320, 1.7f, M.WithAlpha(p.Dim, 0.9f));
@@ -508,7 +511,7 @@ public static class Screens
     {
         var accent = M.Hsv((p.BaseHue + entry.CatalogIndex * 0.055f) % 1f, 0.62f, 1f);
         bool maxed = entry.Level >= entry.MaxStacks;
-        r.UiRect(bx, by, bw, bh, new Vector4(0.008f, 0.012f, 0.028f, 0.88f));
+        r.UiRect(bx, by, bw, bh, PanelFill(new Vector4(0.008f, 0.012f, 0.028f, 0.88f), 0.94f));
         r.UiFrame(bx, by, bw, bh, 1f, M.WithAlpha(accent, maxed ? 0.78f : 0.44f), maxed);
         r.UiRect(bx, by, bw, 1.5f, M.WithAlpha(accent, 0.72f), true);
         r.UiText(entry.Tag, bx + 5f, by + 5.5f, 1.3f, maxed ? p.Accent : M.WithAlpha(p.Text, 0.95f), true);
@@ -558,7 +561,7 @@ public static class Screens
 
     public static void DrawGameOver(Renderer r, Palette p, GameWorld w, MetaProgress meta, List<string> unlocks, RecordBreak records, float time)
     {
-        r.UiRect(0, 0, 1600, 900, new Vector4(0.002f, 0.003f, 0.010f, 0.80f));
+        r.UiRect(0, 0, 1600, 900, PanelFill(new Vector4(0.002f, 0.003f, 0.010f, 0.80f), 0.88f));
         DrawCard(r, p, 280, 94, 1040, 728, M.WithAlpha(p.Danger, 0.7f));
         var s = w.Summary;
         r.UiTextCentered("SIGNAL LOST", 800, 132, 6.5f, p.Text, true);
@@ -665,9 +668,9 @@ public static class Screens
 
     private static void DrawCard(Renderer r, Palette p, float x, float y, float w, float h, Vector4 accent)
     {
-        r.UiRect(x, y, w, h, new Vector4(0.006f, 0.009f, 0.021f, 0.9f));
-        r.UiFrame(x, y, w, h, 1f, M.WithAlpha(accent, 0.5f));
-        r.UiRect(x, y, w, 2, M.WithAlpha(accent, 0.55f), true);
+        r.UiRect(x, y, w, h, PanelFill(new Vector4(0.006f, 0.009f, 0.021f, 0.9f), 0.94f));
+        r.UiFrame(x, y, w, h, 1f, M.WithAlpha(accent, Abyssal ? 0.38f : 0.5f));
+        r.UiRect(x, y, w, 2, M.WithAlpha(accent, Abyssal ? 0.62f : 0.55f), true);
         r.UiRect(x, y + h - 2, w, 2, M.WithAlpha(accent, 0.18f));
     }
 

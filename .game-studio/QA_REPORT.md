@@ -1,8 +1,8 @@
 # NULLWAVE — QA & Performance Review Report (`.game-studio/QA_REPORT.md`)
 
 - **Reviewer:** `@qa` (Independent QA / Performance Reviewer)
-- **Date:** `2026-11-18`
-- **Task Reviewed:** `TASK-001` through `TASK-008 / TASK-009`
+- **Date:** `2026-11-19`
+- **Task Reviewed:** `TASK-001` through `TASK-009` (Abyssal Dark Theme + `uLights[12]`)
 - **Overall Verdict:** **PASS (`APPROVED — 0 DEFECTS`)**
 
 ---
@@ -530,3 +530,61 @@ All `TASK-007` acceptance criteria are satisfied with **0 defects**. `TASK-007` 
 
 ### 13.4 Final QA Sign-Off (`TASK-008 / TASK-009`)
 All combined `TASK-008` + `TASK-009` acceptance criteria are satisfied with **0 defects**. `TASK-008` is **APPROVED** and marked **`done`**.
+
+---
+
+## 14. Independent QA Verification (`TASK-009` — Abyssal / Void Noir Dark Theme + Dynamic Combat Illumination)
+
+### 14.1 Code, Performance & Standard-Invariance Review
+- **Theme Persistence & Transient CLI Override (`GameSettings.cs`, `Program.cs`, `Game.cs`, `SettingsMenu.cs`):**
+  - `VisualTheme { Standard = 0, Abyssal = 1 }` defaults to `Standard`, validates in `Sanitize()`, and parses `standard|default|0` and `abyssal|dark|noir|void|1` via `TryParseTheme`.
+  - `Game.cs` clones `GameSettings.Current` before applying `ThemeOverride`, guaranteeing `--theme <standard|abyssal>` never mutates `save.json`.
+  - `SettingsMenu.cs` adds `VISUAL THEME` (`STANDARD` / `ABYSSAL` in a `136px` pill) under `VIDEO` and compacts vertical spacing (`Top = 104, RowH = 24, HeaderH = 28`, footer gap `14`) so all 24 rows clear the `y = 818` hint text cleanly.
+- **Zero-Allocation Combat Light Pipeline (`Renderer.cs`, `WorldRenderer.cs`):**
+  - `Renderer.cs` uses pre-allocated `LightPosNames[12]`, `LightColNames[12]`, `_lightData[12]`, and `_lightCols[12]` with `_lightCount` reset in `BeginWorld(...)`; `WorldRenderer.PopulateCombatLights` uses plain indexed loops and value types (player + Phase Sync/dash flare, Choir boss core, up to 4 newest shockwaves, up to 4 lasers sampled nearest the player, remaining slots for in-view elites/firing/nearby enemies) with **zero per-frame heap allocations**.
+- **Shader & PostFx Standard-Theme Invariance (`Shaders.cs`, `PostFx.cs`, `Screens.cs`):**
+  - When `uDarkTheme == 0f` (`STANDARD`), `BackgroundFrag` skips the `uLights[12]` branch entirely, `MeshFrag` and `CompositeFrag` reduce to exact standard coefficients, and `PostFx` keeps `uThreshold = 0.62f / uKnee = 0.42f`.
+  - In `ABYSSAL` (`uDarkTheme == 1f`), `BackgroundFrag` drops ambient to near-OLED obsidian (`#010104`), gates sharp ridges by `uKick`/`uSnare`/`uDrop`, and reveals underlying generative geometry locally through `uLights[12]`; `MeshFrag` shifts hulls to matte obsidian with boosted Fresnel rims; `PostFx` tightens bright-pass (`0.72 / 0.32`) and `CompositeFrag` clamps output with `alpha = 1.0`; `Screens.cs` applies smoked-glass obsidian fills across HUD and menus.
+
+### 14.2 Independent Build, SelfTest & Dual-Theme Smoke Verification (`TASK-009`)
+- **Release Build:**
+  ```text
+  ./.dotnet/dotnet.exe build src/Nullwave/Nullwave.csproj -c Release --nologo
+  Build succeeded.
+      0 Warning(s)
+      0 Error(s)
+  Time Elapsed 00:00:00.55
+  ```
+- **Headless Self-Test Suite (`--selftest`):**
+  ```text
+  ./run.cmd --selftest
+  ...
+    backdrop audio: kick=0.84 snare=0.96 hat=0.78 drop=1.08 deadV7Uniforms=0
+    abyssal theme: maxLights=12 offset=(0.50,-0.25) r=0.25 shaders=3/3
+  RESULT: PASS (76425 assertions, 2.4s)
+  ```
+- **Live OpenGL Smoke Runs (`--smoke 5` Standard & Abyssal):**
+  ```text
+  ./run.cmd --smoke 5
+  NULLWAVE | GL 4.1.0 NVIDIA 617.42 | NVIDIA GeForce RTX 5060 Laptop GPU/PCIe/SSE2
+  SMOKECONFIG | seed=00Z9DUE9 mods=5 mult=x2.29 bossPhases=3 attunes=0
+  SMOKE | 5.0s fps=114 wave=1 score=4181 enemies=2 bullets=4 bpm=126.0 audio=GENERATIVE SCORE capture=True
+  RENDERSTATE | after1=baseline after2=baseline alphaMin=255 rerenderDiff=0.000 % -> PASS
+
+  ./run.cmd --smoke 5 --theme abyssal
+  NULLWAVE | GL 4.1.0 NVIDIA 617.42 | NVIDIA GeForce RTX 5060 Laptop GPU/PCIe/SSE2
+  SMOKECONFIG | seed=00Z9DUE9 mods=5 mult=x2.29 bossPhases=3 attunes=0
+  SMOKE | 5.0s fps=114 wave=1 score=4166 enemies=2 bullets=4 bpm=126.0 audio=GENERATIVE SCORE capture=True
+  RENDERSTATE | after1=baseline after2=baseline alphaMin=255 rerenderDiff=0.000 % -> PASS
+  ```
+
+### 14.3 Visual Capture & Documentation Hygiene Verification (`TASK-009`)
+- Visually inspected all 4 captures via `read_file`:
+  - `docs/screenshots/abyssal_combat.png` — Pitch OLED-black void with clear radial `uLights[12]` combat illumination pool revealing concentric generative backdrop patterns around the ship/lasers, crisp matte-obsidian monolith rim, blazing 4-layer HDR yellow lasers, and readable HUD.
+  - `docs/screenshots/abyssal_boss.png` — Dramatic chiaroscuro void with Choir boss core and Phase Sync/Phase Shift rings lighting the dark backdrop, crisp `THE CHOIR // PHASE II OF III // HARMONIC CONVERGENCE` bar, and smoked-glass HUD chrome.
+  - `docs/screenshots/abyssal_songlasers.png` — 8-beam `// STARBURST //` crimson HDR lasers locally illuminating Voronoi cells out of the dark void.
+  - `screenshots/settings_abyssal.png` — `VISUAL THEME: ABYSSAL` under `VIDEO`, all 24 rows clear the `y = 818` hint text with zero overlap.
+- Verified `README.md` (14 image links) and `CHANGELOG.md` (25 image links): every image path resolves (`Test-Path == True`), including `abyssal_combat.png`, `abyssal_boss.png`, and `abyssal_songlasers.png`, with strictly game-focused copy and zero non-game/internal references.
+
+### 14.4 Final QA Sign-Off (`TASK-009`)
+All `TASK-009` acceptance criteria are satisfied with **0 defects**. `TASK-009` is **APPROVED** and marked **`done`**.
