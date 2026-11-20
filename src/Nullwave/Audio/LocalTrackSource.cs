@@ -18,6 +18,8 @@ public sealed class LocalTrackSource : ISampleProvider, IDisposable
 
     public string FilePath { get; }
     public string TrackName { get; }
+    /// <summary>How many times the track has wrapped around (each loop is a new "track" for setlists).</summary>
+    public volatile int LoopCount;
     public WaveFormat WaveFormat => _format;
 
     public LocalTrackSource(string path)
@@ -64,6 +66,7 @@ public sealed class LocalTrackSource : ISampleProvider, IDisposable
             if (_reader.Length <= 0) break;
             _reader.Position = 0;
             loops++;
+            LoopCount++;
         }
 
         if (filled < count)

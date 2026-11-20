@@ -9,7 +9,7 @@ namespace Nullwave.UI;
 
 public static class Screens
 {
-    private static readonly string[] TitleItems = ["NEW SIGNAL", "DAILY SIGNAL", "ARCHIVE", "SETTINGS", "QUIT"];
+    private static readonly string[] TitleItems = ["NEW SIGNAL", "SETLIST", "DAILY SIGNAL", "ARCHIVE", "SETTINGS", "QUIT"];
     private static readonly string[] PauseItems = ["RESUME", "ARCHIVE", "SETTINGS", "ABANDON SIGNAL"];
     private static bool Abyssal => GameSettings.Current.IsAbyssal;
     private static Vector4 PanelFill(Vector4 standard, float abyssalAlpha = 0.94f) =>
@@ -31,7 +31,7 @@ public static class Screens
         r.UiLine(540, y + 165, 1060, y + 165, 1f, M.WithAlpha(p.Primary, 0.34f), true);
         r.UiTextCentered("AN ENDLESS AUDIO-DRIVEN BULLET HELL", 800, y + 184, 1.65f, p.Dim);
 
-        float menuY = 452;
+        float menuY = 436;
         for (int i = 0; i < TitleItems.Length; i++)
         {
             bool selected = i == menuIndex;
@@ -45,7 +45,7 @@ public static class Screens
                 r.UiText("<", x + w - 42, menuY + 2, 3f, p.Accent, true);
             }
             r.UiTextCentered(TitleItems[i], 800, menuY + 2, selected ? 3.2f : 2.9f, selected ? p.Text : M.WithAlpha(p.Dim, 0.9f), selected);
-            menuY += 56;
+            menuY += 48;
         }
 
         r.UiText("BEST WAVE " + meta.BestWave.ToString("00") + "   //   BEST SCORE " + FormatScore(meta.BestScore), 64, 760, 1.75f, M.WithAlpha(p.Dim, 0.85f));
@@ -170,9 +170,20 @@ public static class Screens
         r.UiText(sub, bx + 12f, by + 32f, 1.22f, subCol);
     }
 
-    public static void DrawHud(Renderer r, GameWorld w, Palette p, AudioState audio, float time, float fps, bool debug, bool showEvent = true)
+    /// <summary>Title: the instrument ship (left / right) and what SETLIST means.</summary>
+    public static void DrawShipSelect(Renderer r, Palette p, ShipKind ship, int setlistTracks, int menuIndex)
+    {
+        float y = 726;
+        r.UiTextCentered("<   SHIP // " + Ships.Name(ship) + "   >", 800, y, 2.2f, M.WithAlpha(p.Accent, 0.95f), true);
+        r.UiTextCentered(Ships.Blurb(ship), 800, y + 26, 1.35f, M.WithAlpha(p.Dim, 0.85f));
+        if (menuIndex == 1)
+            r.UiTextCentered("A RUN THROUGH YOUR NEXT " + Math.Clamp(setlistTracks, 2, 8) + " TRACKS // EACH TRACK IS A STAGE // THE LAST ONE ENDS WITH THE DROP", 800, 408, 1.4f, M.WithAlpha(p.Accent, 0.85f));
+    }
+
+    public static void DrawHud(Renderer r, GameWorld w, Palette p, AudioState audio, MetaProgress meta, float time, float fps, bool debug, bool showEvent = true)
     {
         var player = w.Player;
+        DrawStageAndSong(r, w, p, meta, time);
         r.UiText("WAVE " + w.Wave.ToString("00"), 56, 38, 3.1f, p.Text, true);
         r.UiText("MOVEMENT " + Roman(w.Movement + 1) + " // " + w.Rules.Name, 58, 78, 1.65f, M.WithAlpha(p.Accent, 0.9f));
         r.UiText(FormatScore(w.Score), 56, 108, 4.2f, p.Text, true);
@@ -251,11 +262,46 @@ public static class Screens
         }
     }
 
+    /// <summary>HUD: setlist stage and how this song is going against your record.</summary>
+    private static void DrawStageAndSong(Renderer r, GameWorld w, Palette p, MetaProgress meta, float time)
+    {
+        float y = 214;
+        if (w.IsSetlist)
+        {
+            r.UiText((w.FinalStage ? "FINAL TRACK" : "STAGE " + w.Stage + " / " + w.SetlistLength) + "  //  SHIP " + Ships.Name(w.Ship), 58, y, 1.55f, M.WithAlpha(p.Accent, 0.9f), true);
+            y += 22;
+        }
+        else if (w.Ship != ShipKind.Classic)
+        {
+            r.UiText("SHIP " + Ships.Name(w.Ship), 58, y, 1.4f, M.WithAlpha(p.Accent, 0.8f));
+            y += 22;
+        }
+        var t = w.CurrentTrack;
+        if (t == null || !t.IsSong) return;
+        var rec = meta.GetSong(t.Title);
+        string line;
+        Vector4 col;
+        if (rec == null || rec.BestScore <= 0)
+        {
+            line = "NEW SONG  //  " + FormatScore(t.Score) + "  //  RANK " + t.Rank;
+            col = M.WithAlpha(p.Dim, 0.85f);
+        }
+        else
+        {
+            float pct = t.Score / (float)Math.Max(1, rec.BestScore);
+            bool ahead = t.Score > rec.BestScore;
+            line = (ahead ? "NEW BEST +" + ((pct - 1f) * 100f).ToString("0") + "%" : (pct * 100f).ToString("0") + "% OF BEST " + FormatScore(rec.BestScore))
+                   + "  //  RANK " + t.Rank + (rec.BestRank.Length > 0 ? " (BEST " + rec.BestRank + ")" : "");
+            col = ahead ? M.WithAlpha(p.Accent, 0.75f + 0.25f * MathF.Sin(time * 6f)) : M.WithAlpha(p.Dim, 0.9f);
+        }
+        r.UiText(line, 58, y, 1.4f, col, true);
+    }
+
     private static void DrawBossBar(Renderer r, GameWorld w, Palette p, Enemy boss, float time)
     {
         const float bx = 380f, by = 34f, bw = 840f, bh = 18f;
         int phases = Math.Max(3, w.Mods.BossPhases);
-        string title = "THE CHOIR // PHASE " + Roman(boss.BossPhase + 1) + " OF " + Roman(phases) + " // " + GameWorld.BossPhaseSubtitle(boss.BossPhase, phases);
+        string title = w.BossTitle(boss, phases);
         r.UiTextCentered(title, 800f, 10f, 1.6f, M.WithAlpha(p.Text, 0.94f), true);
 
         float borderPulse = Math.Clamp(0.45f + w.BeatPulse * 0.35f + boss.Telegraph * 0.25f, 0.35f, 1f);
@@ -645,40 +691,95 @@ public static class Screens
         r.UiRect(0, 0, 1600, 900, PanelFill(new Vector4(0.002f, 0.003f, 0.010f, 0.80f), 0.88f));
         DrawCard(r, p, 280, 94, 1040, 728, M.WithAlpha(p.Danger, 0.7f));
         var s = w.Summary;
-        r.UiTextCentered("SIGNAL LOST", 800, 132, 6.5f, p.Text, true);
+        bool victory = s?.SetComplete == true;
+        r.UiTextCentered(victory ? "SET COMPLETE" : "SIGNAL LOST", 800, 132, 6.5f, victory ? p.Accent : p.Text, true);
         if (s != null)
-            r.UiTextCentered("SEED " + SeedCode.ToCode(s.Seed) + "  //  " + (s.Daily ? "DAILY SIGNAL" : "ENDLESS SIGNAL") + "  //  " + (int)s.Duration + "S", 800, 214, 1.7f, M.WithAlpha(p.Dim, 0.9f));
-        r.UiLine(340, 250, 1260, 250, 1f, M.WithAlpha(p.Danger, 0.3f));
+        {
+            string mode = s.Daily ? "DAILY SIGNAL" : s.SetlistLength > 0 ? "SETLIST " + Math.Min(s.Stages, s.SetlistLength) + " / " + s.SetlistLength : "ENDLESS SIGNAL";
+            r.UiTextCentered("SEED " + SeedCode.ToCode(s.Seed) + "  //  " + mode + "  //  SHIP " + Ships.Name(s.Ship) + "  //  " + (int)s.Duration + "S", 800, 214, 1.7f, M.WithAlpha(p.Dim, 0.9f));
+        }
+        r.UiLine(340, 250, 1260, 250, 1f, M.WithAlpha(victory ? p.Accent : p.Danger, 0.3f));
         float pulse = 0.72f + 0.28f * MathF.Sin(time * 5.5f);
         if (s != null)
         {
-            DrawStat(r, "WAVE", s.Wave.ToString("00"), 380, 292, p, records.Wave, pulse);
-            DrawStat(r, "SCORE", FormatScore(s.Score), 800, 292, p, records.Score, pulse);
-            DrawStat(r, "CHAIN", s.MaxCombo.ToString(), 1180, 292, p, records.Combo, pulse);
-            DrawStat(r, "GRAZES", s.Grazes.ToString(), 380, 380, p);
-            DrawStat(r, "KILLS", s.Kills.ToString(), 800, 380, p);
-            DrawStat(r, "BOSSES", s.BossKills.ToString(), 1180, 380, p);
-            DrawStat(r, "SHATTERS", s.Shatters.ToString(), 380, 468, p);
-            DrawStat(r, "BURSTS", s.Bursts.ToString(), 800, 468, p);
-            DrawStat(r, "MOVEMENT", s.MovementName, 1180, 468, p);
-            r.UiTextCentered("BEST WAVE " + meta.BestWave.ToString("00") + "  //  BEST SCORE " + FormatScore(meta.BestScore) + "  //  BEST CHAIN " + meta.BestCombo, 800, 540, 1.65f, M.WithAlpha(p.Accent, 0.9f));
+            DrawStat(r, "WAVE", s.Wave.ToString("00"), 380, 286, p, records.Wave, pulse);
+            DrawStat(r, "SCORE", FormatScore(s.Score), 800, 286, p, records.Score, pulse);
+            DrawStat(r, "CHAIN", s.MaxCombo.ToString(), 1180, 286, p, records.Combo, pulse);
+            DrawStat(r, "KILLS", s.Kills.ToString(), 380, 362, p);
+            DrawStat(r, "BOSSES", s.BossKills.ToString(), 800, 362, p);
+            DrawStat(r, "MOVEMENT", s.MovementName, 1180, 362, p);
+            r.UiTextCentered("GRAZES " + s.Grazes + "  //  SHATTERS " + s.Shatters + "  //  BURSTS " + s.Bursts + "  //  BEST WAVE " + meta.BestWave.ToString("00") + "  //  BEST " + FormatScore(meta.BestScore), 800, 432, 1.5f, M.WithAlpha(p.Accent, 0.85f));
             if (records.Any)
-                r.UiTextCentered(RecordBanner(records, s), 800, 566, 1.75f, M.WithAlpha(p.Accent, pulse), true);
+                r.UiTextCentered(RecordBanner(records, s), 800, 456, 1.7f, M.WithAlpha(p.Accent, pulse), true);
+            DrawRunTracks(r, p, s, meta, 486);
+            if (s.Timeline != null) DrawRecap(r, p, s, 588, time);
         }
         if (unlocks.Count > 0)
-        {
-            r.UiTextCentered("NEW SIGNALS UNLOCKED", 800, 600, 1.6f, M.WithAlpha(p.Accent, 0.9f));
-            for (int i = 0; i < Math.Min(3, unlocks.Count); i++)
-                r.UiTextCentered(unlocks[i], 800, 624 + i * 22, 1.5f, p.Text, true);
-        }
-        else
-        {
-            r.UiTextCentered("NO NEW SIGNAL UNLOCKED", 800, 610, 1.4f, M.WithAlpha(p.Dim, 0.6f));
-        }
-        r.UiLine(340, 698, 1260, 698, 1f, M.WithAlpha(p.Primary, 0.24f));
-        r.UiTextCentered("R  RETRY SEED        N  NEW SIGNAL        TAB  ARCHIVE        ESC  TITLE", 800, 730, 1.75f, M.WithAlpha(p.Dim, 0.95f));
+            r.UiTextCentered("NEW SIGNALS UNLOCKED // " + string.Join("  //  ", unlocks.Take(2)), 800, 690, 1.45f, M.WithAlpha(p.Accent, 0.95f), true);
+        r.UiLine(340, 708, 1260, 708, 1f, M.WithAlpha(p.Primary, 0.24f));
+        r.UiTextCentered("R  RETRY        N  NEW        C  SAVE CLIP        TAB  ARCHIVE        ESC  TITLE", 800, 732, 1.7f, M.WithAlpha(p.Dim, 0.95f));
         if (s?.Daily == true)
             r.UiTextCentered("DAILY BEST " + FormatScore(meta.DailyBest) + "  //  WAVE " + meta.DailyBestWave.ToString("00"), 800, 766, 1.4f, M.WithAlpha(p.Accent, 0.7f));
+    }
+
+    /// <summary>Game over: the tracks this run played, with score, rank and how each compares with your record.</summary>
+    private static void DrawRunTracks(Renderer r, Palette p, RunSummary s, MetaProgress meta, float y)
+    {
+        var tracks = s.Tracks.Where(t => t.Duration >= 5f).TakeLast(4).ToList();
+        if (tracks.Count == 0) return;
+        foreach (var t in tracks)
+        {
+            string title = FormatTrack(t.Title, 34);
+            var rec = t.IsSong ? meta.GetSong(t.Title) : null;
+            bool best = rec != null && rec.BestScore == t.Score && t.Score > 0;
+            string right = FormatScore(t.Score) + "   RANK " + t.Rank + (best ? "   SONG BEST" : "");
+            r.UiText((s.SetlistLength > 0 ? "STAGE " + t.Stage + "  " : "") + title, 360, y, 1.45f, M.WithAlpha(p.Text, 0.9f));
+            r.UiTextRight(right, 1240, y, 1.45f, best ? p.Accent : M.WithAlpha(p.Dim, 0.95f), best);
+            y += 22;
+        }
+    }
+
+    /// <summary>Recap strip: the run along the song — sections, score climb, hits, drops and your best moment.</summary>
+    public static void DrawRecap(Renderer r, Palette p, RunSummary s, float y, float time)
+    {
+        var tl = s.Timeline!;
+        const float x0 = 340f, x1 = 1260f, h = 78f;
+        float dur = MathF.Max(1f, tl.Duration);
+        float X(float t) => x0 + (x1 - x0) * M.Clamp01(t / dur);
+        r.UiRect(x0, y, x1 - x0, h, new Vector4(0.01f, 0.012f, 0.03f, 0.8f));
+        // song sections as coloured bands, brightness from the music's energy
+        var smp = tl.Samples;
+        for (int i = 1; i < smp.Count; i++)
+        {
+            float a = X(smp[i - 1].Time), b = X(smp[i].Time);
+            var c = M.Hsv((0.55f + smp[i].Section * 0.17f) % 1f, 0.55f, 0.9f, 0.10f + smp[i].Energy * 0.25f);
+            r.UiRect(a, y, MathF.Max(1f, b - a), h, c);
+        }
+        // track starts
+        foreach (var (t, title) in tl.TrackStarts)
+        {
+            if (t <= 0.5f) continue;
+            r.UiRect(X(t), y - 4, 1.5f, h + 8, M.WithAlpha(p.Text, 0.55f));
+        }
+        // the score climbing
+        long top = Math.Max(1, smp.Count > 0 ? smp[^1].Score : 1);
+        for (int i = 1; i < smp.Count; i++)
+        {
+            float ya = y + h - 6 - (h - 12) * (smp[i - 1].Score / (float)top);
+            float yb = y + h - 6 - (h - 12) * (smp[i].Score / (float)top);
+            r.UiLine(X(smp[i - 1].Time), ya, X(smp[i].Time), yb, 2f, M.WithAlpha(p.Accent, 0.9f), true);
+        }
+        foreach (float d in tl.Drops) r.UiText("v", X(d) - 4, y - 16, 1.3f, M.WithAlpha(p.Accent, 0.9f));
+        foreach (float hit in tl.Hits) r.UiRect(X(hit) - 1.5f, y + h - 14, 3f, 14, new Vector4(1f, 0.3f, 0.35f, 0.95f), true);
+        if (tl.BestMomentTime >= 0f)
+        {
+            float bx = X(tl.BestMomentTime);
+            float pulse = 0.7f + 0.3f * MathF.Sin(time * 6f);
+            r.UiFrame(bx - 18, y - 2, 36, h + 4, 1.5f, M.WithAlpha(p.Accent, pulse), true);
+            r.UiTextCentered("BEST MOMENT +" + FormatScore(tl.BestMomentGain), bx, y + h + 6, 1.25f, M.WithAlpha(p.Accent, 0.95f), true);
+        }
+        r.UiText("0S", x0, y + h + 6, 1.15f, M.WithAlpha(p.Dim, 0.7f));
+        r.UiTextRight((int)dur + "S", x1, y + h + 6, 1.15f, M.WithAlpha(p.Dim, 0.7f));
     }
 
     public static void DrawToasts(Renderer r, Palette p, List<string> toasts, float time)

@@ -39,13 +39,53 @@ public sealed class Game : IDisposable
     private bool _speedDemo;
     private bool _rosterHold;
     private bool _captureCue;
+    private float _edmScript = -1f;
+
+    /// <summary>Capture "edm": six seconds of build-up, then the drop, with kicks on the beat clock.</summary>
+    private void RunEdmScript(float dt)
+    {
+        const float dropAt = 6f;
+        if (_renderer.RenderedFrames == 0) return;   // the capture warms up before it records
+        float before = _edmScript;
+        _edmScript += dt;
+        float t = _edmScript;
+        double bp = _audio.State.BeatPosition;
+        float kick = MathF.Exp(-(float)(bp - Math.Floor(bp)) * 7f);
+        float build = t < dropAt ? M.Clamp01(t / (dropAt - 0.5f)) : 0f;
+        float drop = t >= dropAt ? MathF.Exp(-(t - dropAt) * 0.7f) : 0f;
+        _director.ForceForCapture(t < dropAt ? 0.5f + build * 0.3f : 0.95f, build, 0f, drop, 0.3f,
+            t < dropAt ? kick * (1f - build * 0.6f) : kick);
+        if (before < dropAt && t >= dropAt) _world?.SetMusicCue(0.95f, 0f, 0f, true);
+        if ((int)(before * 2f) != (int)(t * 2f))
+            Console.WriteLine($"EDM | t={t:0.0} build={_director.Build:0.00} drop={_director.DropPulse:0.00} hype={_renderer.HypeScale:0.00} {_renderer.LastEdmFx}");
+    }
     private int _cueFrames;
     private float _titleReroll = 22f;
+    private float _sinceWorldChange = 99f;
     public MusicDirector Director => _director;
     private Palette _palette = Palette.FromSeed(0xC0FFEE);
     private int _paletteMovement;
     private ulong _paletteSeed;
     private int _menuIndex;
+    private readonly Coach _coach = new();
+    private readonly ClipRecorder _clip = new();
+    private int _clipMomentVersion;
+    private float _clipDue = -1f;
+    private Task<string>? _clipSave;
+    private bool _rumbling;
+
+    /// <summary>Gamepad rumble for this frame: the kick thumps the heavy motor, bass notes hum it, snares and hats tick the light one.</summary>
+    public static (float Low, float High) RumbleFor(AudioState a, bool playing, float hurt, bool dashing, int percent)
+    {
+        if (!playing || percent <= 0) return (0f, 0f);
+        float s = percent / 100f;
+        float low = (MathF.Max(a.KickPulse, a.PercLow * 0.8f) * 0.55f + a.HarmLow * 0.12f + hurt * 0.9f + (dashing ? 0.25f : 0f)) * s;
+        float high = (a.SnarePulse * 0.35f + a.HatPulse * 0.12f + hurt * 0.5f) * s;
+        return (Math.Clamp(low, 0f, 1f), Math.Clamp(high, 0f, 1f));
+    }
+    private int _setlist;
+    private int _recordedTracks;
+    public const int TitleItemCount = 6;
     private int _pauseIndex;
     private int _archiveIndex;
     private int _attuneHover;
@@ -78,6 +118,10 @@ public sealed class Game : IDisposable
     public GameWorld? ActiveWorld => _world;
     public GameWorld? DemoWorld => _demo;
     public float Fps => _fps;
+#if DEBUG
+    /// <summary>NULLWAVE_PLAYTEST=1: automated playtest (no Spotify rerouting, score muted, save copy).</summary>
+    public static bool Playtest => Environment.GetEnvironmentVariable("NULLWAVE_PLAYTEST") == "1";
+#endif
     /// <summary>Set from --app before the game is constructed.</summary>
     public static string? AppOverride;
     /// <summary>Transient smoke/record CLI overrides (never saved to save.json).</summary>
@@ -143,7 +187,17 @@ public sealed class Game : IDisposable
         {
             try { File.Delete(captureMeta); } catch { /* best-effort disposable capture save */ }
         }
-        _meta = MetaProgress.Load(capture ? captureMeta : null);
+        string? metaPath = capture ? captureMeta : null;
+#if DEBUG
+        if (!capture && Playtest)
+        {
+            // work on a copy of the owner's save so playtests never touch their records
+            string playtestMeta = Path.Combine(Path.GetTempPath(), "nullwave-playtest-meta.json");
+            try { if (File.Exists(MetaProgress.DefaultSavePath)) File.Copy(MetaProgress.DefaultSavePath, playtestMeta, true); } catch { }
+            metaPath = playtestMeta;
+        }
+#endif
+        _meta = MetaProgress.Load(metaPath);
         if (capture) PrepareCaptureMeta();
         _meta.Settings ??= new GameSettings();
         _meta.Settings.Sanitize();
@@ -154,7 +208,11 @@ public sealed class Game : IDisposable
             GameSettings.Current.Theme = forcedTheme;
         }
         ApplyAudioSettings();
-        if (!capture && GameSettings.Current.Fullscreen) SetFullscreen(true);
+        bool startFullscreen = !capture && GameSettings.Current.Fullscreen;
+#if DEBUG
+        if (Playtest) startFullscreen = false;   // playtests run in a window, never over the owner's screen
+#endif
+        if (startFullscreen) SetFullscreen(true);
         _settingsMenu.AudioChanged = ApplyAudioSettings;
         _settingsMenu.FullscreenChanged = SetFullscreen;
         _settingsMenu.CycleAudioSource = () =>
@@ -215,10 +273,11 @@ public sealed class Game : IDisposable
 
     public void ConfigureCapture(string scenario)
     {
-        if (scenario == "backdrop")
+        if (scenario is "backdrop" or "edmbackdrop")
         {
             BackdropOnly = true;
             _state = AppState.Title;
+            if (scenario == "edmbackdrop") _edmScript = 0f;
             return;
         }
         CaptureScenario = scenario;
@@ -257,6 +316,17 @@ public sealed class Game : IDisposable
             _world.PhaseSyncs = 4;
             _world.Player.PhaseSyncs = 4;
             _world.Player.PhaseSyncFlash = 0.85f;
+            return;
+        }
+        if (scenario == "edm")
+        {
+            // a scripted build-up into a drop, for reels of the EDM show
+            StartRun(0x5EEDC0DEUL, false);
+            _autoPilot = true;
+            _world!.Player.InvincibleDemo = true;
+            AttunementCatalog.Apply(_world.Player, "split");
+            _world.BeginWave(4);
+            _edmScript = 0f;
             return;
         }
         if (scenario is "drop" or "breakdown")
@@ -447,10 +517,12 @@ public sealed class Game : IDisposable
         StartDemo();
     }
 
-    public void StartRun(ulong seed, bool daily, HashSet<string>? modifierOverride = null)
+    public void StartRun(ulong seed, bool daily, HashSet<string>? modifierOverride = null, int setlist = 0)
     {
         _seed = seed;
         _daily = daily;
+        _setlist = setlist;
+        _recordedTracks = 0;
         _world = new GameWorld(new RunConfig
         {
             Seed = seed,
@@ -458,6 +530,8 @@ public sealed class Game : IDisposable
             Sfx = _audio.Sfx,
             SelectedModifiers = new HashSet<string>(modifierOverride ?? _meta.SelectedModifiers),
             UnlockedAttunements = new HashSet<string>(_meta.UnlockedAttunements),
+            Setlist = setlist,
+            Ship = Ships.Parse(_meta.SelectedShip),
         });
         _state = AppState.Playing;
         _runRecorded = false;
@@ -477,6 +551,10 @@ public sealed class Game : IDisposable
         _audio.Sfx.Trigger(SfxType.Wave, 0.6f);
         _toast = "";
         _toastTimer = 0f;
+        _coach.Begin(_world, !_capture && GameSettings.Current.TutorialTips && !_meta.TutorialDone);
+        _clip.Reset();
+        _clipMomentVersion = 0;
+        _clipDue = -1f;
     }
 
     public void Update(float dt)
@@ -488,19 +566,57 @@ public sealed class Game : IDisposable
         _fps = _fps <= 1f ? 1f / dt : M.ExpSmooth(_fps, 1f / dt, 3.5f, dt);
         _audio.Update(dt);
         _director.Update(_audio.State, dt);
+        if (_edmScript >= 0f) RunEdmScript(dt);
         _renderer.Mood = _director;
-        if (_state == AppState.Title && !BackdropOnly && (_titleReroll -= dt) <= 0f)
+        var music = _audio.State;
+        bool structured = music.SectionCount >= 2;
+        _sinceWorldChange += dt;
+        if (!BackdropOnly && GameSettings.Current.MusicFx > 0)
+        {
+            // each song section gets its own world; a returning chorus brings its world back
+            if (music.SectionChanged)
+            {
+                _renderer.ShowSection(music.SectionLabel, music.SectionRepeat, music.SongEpoch);
+                _sinceWorldChange = 0f;
+                _titleReroll = 22f;
+            }
+            // a key change is a big musical turn: new world, unless a section just changed it
+            else if (music.KeyChanged && _sinceWorldChange > 8f)
+            {
+                _renderer.RerollBackdrop();
+                _sinceWorldChange = 0f;
+            }
+            // the texture changed (new instrument, riser, vocal): a shockwave through the world
+            if (music.TextureChanged)
+                _renderer.PulseBackdrop(_renderer.Camera, 1.0f);
+        }
+        if (_state == AppState.Title && !BackdropOnly && !structured && (_titleReroll -= dt) <= 0f)
         {
             _titleReroll = 22f;
             _renderer.RerollBackdrop();
         }
         if (_director.DropTriggered && GameSettings.Current.MusicFx > 0)
         {
-            _renderer.RerollBackdrop();   // every drop opens onto a brand new world
+            // before the song's structure is known, every drop opens onto a new world;
+            // after that the section memory decides (so a returning drop gets its world back)
+            if (!structured && _sinceWorldChange > 4f) { _renderer.RerollBackdrop(); _sinceWorldChange = 0f; }
             var w = _state == AppState.Playing ? _world : _state == AppState.Title ? _demo : null;
             w?.OnMusicDrop(GameSettings.Current.MusicFx / 100f, GameSettings.Current.ReduceFlashing);
         }
         if (_toastTimer > 0f) _toastTimer -= dt;
+        if (_clipSave is { IsCompleted: true })
+        {
+            _toast = _clipSave.Result;
+            _toastTimer = 6f;
+            _clipSave = null;
+        }
+        if (_input != null && !_capture)
+        {
+            bool playing = _state == AppState.Playing && _world != null;
+            var (low, high) = RumbleFor(_audio.State, playing, playing ? _world!.Player.HitFlash : 0f, playing && _world!.Player.IsDashing, GameSettings.Current.Rumble);
+            if (playing || _rumbling) _input.SetRumble(low, high);
+            _rumbling = playing;
+        }
 
         if (_input != null)
         {
@@ -583,6 +699,15 @@ public sealed class Game : IDisposable
     {
         var s = GameSettings.Current;
         _audio.SetVolumes(s.Music, s.Sfx);
+        _audio.SetAppBuffering(s.BufferSpotify);
+#if DEBUG
+        if (Playtest)
+        {
+            // never reroute the owner's Spotify or play the score over their music during a playtest
+            _audio.SetAppBuffering(false);
+            _audio.SetQuiet(true);
+        }
+#endif
     }
 
     private void UpdateDemo(float dt)
@@ -621,8 +746,18 @@ public sealed class Game : IDisposable
     private void UpdateTitle()
     {
         if (_input == null) return;
-        if (_input.UpPressed) { _menuIndex = (_menuIndex + 4) % 5; _audio.Sfx.Trigger(SfxType.Menu, 0.22f); }
-        if (_input.DownPressed) { _menuIndex = (_menuIndex + 1) % 5; _audio.Sfx.Trigger(SfxType.Menu, 0.22f); }
+        if (_input.UpPressed) { _menuIndex = (_menuIndex + TitleItemCount - 1) % TitleItemCount; _audio.Sfx.Trigger(SfxType.Menu, 0.22f); }
+        if (_input.DownPressed) { _menuIndex = (_menuIndex + 1) % TitleItemCount; _audio.Sfx.Trigger(SfxType.Menu, 0.22f); }
+        // left / right picks the instrument ship
+        if (_input.LeftPressed || _input.RightPressed)
+        {
+            var ships = Ships.All;
+            int i = Array.IndexOf(ships, Ships.Parse(_meta.SelectedShip));
+            i = (i + (_input.RightPressed ? 1 : ships.Length - 1)) % ships.Length;
+            _meta.SelectedShip = ships[i].ToString();
+            _meta.Save();
+            _audio.Sfx.Trigger(SfxType.Menu, 0.3f);
+        }
         if (_input.ConfirmPressed)
         {
             _audio.Sfx.Trigger(SfxType.Menu, 0.35f);
@@ -632,17 +767,20 @@ public sealed class Game : IDisposable
                     StartRun(SeedCode.NewSeed(), false);
                     break;
                 case 1:
-                    StartRun(SeedCode.DailySeed(DateTime.Now), true);
+                    StartRun(SeedCode.NewSeed(), false, null, Math.Clamp(GameSettings.Current.SetlistTracks, 2, 8));
                     break;
                 case 2:
+                    StartRun(SeedCode.DailySeed(DateTime.Now), true);
+                    break;
+                case 3:
                     _archiveReturn = AppState.Title;
                     _archiveIndex = 0;
                     _state = AppState.Archive;
                     break;
-                case 3:
+                case 4:
                     OpenSettings(AppState.Title);
                     break;
-                case 4:
+                case 5:
                     _window.Close();
                     break;
             }
@@ -759,7 +897,7 @@ public sealed class Game : IDisposable
         if (_input.BackPressed || _input.TabPressed)
         {
             _state = _archiveReturn;
-            if (_state == AppState.Title) _menuIndex = 2;
+            if (_state == AppState.Title) _menuIndex = 3;
             _audio.Sfx.Trigger(SfxType.Menu, 0.25f);
             return;
         }
@@ -870,6 +1008,8 @@ public sealed class Game : IDisposable
             _attuneHover = 0;
             return;
         }
+        RecordFinishedTracks();
+        UpdateCoachAndClips(dt);
         if (_world.Phase == GamePhase.Dead)
         {
             EnterGameOver();
@@ -979,12 +1119,76 @@ public sealed class Game : IDisposable
         }
     }
 
+    private void UpdateCoachAndClips(float dt)
+    {
+        if (_world == null || _capture) return;
+        if (_input != null && _input.TabPressed && _coach.Active)
+        {
+            _coach.Skip();
+            _meta.TutorialDone = true;
+            _meta.Save();
+        }
+        int tipsBefore = _meta.SeenTips.Count;
+        if (_coach.Update(_world, dt, _meta.SeenTips, GameSettings.Current.TutorialTips))
+        {
+            _meta.TutorialDone = true;
+            _toast = "TUTORIAL COMPLETE // GOOD LUCK OUT THERE";
+            _toastTimer = 3f;
+            _audio.Sfx.Trigger(SfxType.Unlock, 0.5f);
+            _meta.Save();
+        }
+        else if (_meta.SeenTips.Count != tipsBefore) _meta.Save();
+
+        // highlight clip: once a new best moment is 4 s old, keep the buffered seconds around it
+        var tl = _world.Timeline;
+        if (tl.BestMomentVersion != _clipMomentVersion)
+        {
+            _clipMomentVersion = tl.BestMomentVersion;
+            _clipDue = tl.BestMomentTime + ClipRecorder.Seconds * 0.5f;
+        }
+        if (_clipDue >= 0f && _world.SessionTime >= _clipDue)
+        {
+            _clipDue = -1f;
+            if (GameSettings.Current.HighlightClips) _clip.Snapshot();
+        }
+    }
+
+    /// <summary>Writes song records for every track the run has finished, with a toast for a new best.</summary>
+    private void RecordFinishedTracks()
+    {
+        if (_world == null || _world.Demo) return;
+        bool changed = false;
+        for (int i = _recordedTracks; i < _world.Tracks.Count; i++)
+        {
+            var t = _world.Tracks[i];
+            if (!t.Complete) break;
+            _recordedTracks = i + 1;
+            var before = _meta.GetSong(t.Title);
+            bool hadRecord = before != null && before.Plays > 0;
+            if (_meta.RecordSong(t))
+            {
+                changed = true;
+                if (hadRecord)
+                {
+                    _toast = "NEW SONG RECORD // " + t.Title.ToUpperInvariant() + " // RANK " + t.Rank;
+                    _toastTimer = 4f;
+                    _audio.Sfx.Trigger(SfxType.Unlock, 0.5f);
+                }
+            }
+            else if (t.IsSong && t.Duration >= 30f) changed = true;
+        }
+        if (changed) _meta.Save();
+    }
+
     private void EnterGameOver()
     {
         if (_world == null) return;
         _state = AppState.GameOver;
         if (_runRecorded) return;
         _runRecorded = true;
+        _world.FinishTrack();
+        RecordFinishedTracks();
+        if (_clipDue >= 0f && GameSettings.Current.HighlightClips) { _clipDue = -1f; _clip.Snapshot(); }
         if (_world.Summary != null)
         {
             if (string.IsNullOrEmpty(_world.Summary.Track) && !string.IsNullOrEmpty(_audio.State.SpotifyTrack))
@@ -1011,13 +1215,20 @@ public sealed class Game : IDisposable
         if (_input == null) return;
         if (_input.RPressed)
         {
-            StartRun(_seed, _daily);
+            StartRun(_seed, _daily, null, _setlist);
             return;
         }
         if (_input.NPressed)
         {
-            StartRun(SeedCode.NewSeed(), false);
+            StartRun(SeedCode.NewSeed(), false, null, _setlist);
             return;
+        }
+        if (_input.CPressed && _clipSave == null)
+        {
+            string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "NULLWAVE");
+            _clipSave = _clip.SaveAsync(dir);
+            _toast = "SAVING CLIP...";
+            _toastTimer = 10f;
         }
         if (_input.TabPressed)
         {
@@ -1120,7 +1331,9 @@ public sealed class Game : IDisposable
         }
         float fx = GameSettings.Current.MusicFx / 100f;
         fx *= _renderer.HypeScale;
-        float punch = 1f + fx * (_director.Kick * 0.014f + _director.Build * 0.05f - _director.DropPulse * 0.07f);
+        // EDM camera: a bounce on every kick, a slow pull back through a build, a slam in on the drop
+        float edmCam = GameSettings.Current.CameraFx / 100f;
+        float punch = 1f + fx * edmCam * (_director.Kick * 0.035f - _director.Build * 0.05f + _director.DropPulse * 0.06f);
         _renderer.AimTilt = _aimTilt;
         _renderer.BeginWorld(world.Cam.Position + world.Cam.ShakeOffset, world.Cam.Zoom * punch);
         if (BackdropOnly)
@@ -1137,20 +1350,22 @@ public sealed class Game : IDisposable
         {
             case AppState.Title:
                 Screens.DrawTitle(_renderer, _palette, _meta, world.Seed, false, _menuIndex, _elapsed, _audio.State);
+                Screens.DrawShipSelect(_renderer, _palette, Ships.Parse(_meta.SelectedShip), GameSettings.Current.SetlistTracks, _menuIndex);
                 break;
             case AppState.Archive:
                 Screens.DrawArchive(_renderer, _palette, _meta, _archiveIndex, _elapsed, _archiveReturn == AppState.Paused, _archiveReturn == AppState.GameOver, SelectedSeedCode, IsEditingSeed, SeedEditBuffer);
                 break;
             case AppState.Playing:
-                Screens.DrawHud(_renderer, world, _palette, _audio.State, _runClock, _fps, _debug);
+                _coach.Draw(_renderer, _palette, _elapsed);
+                Screens.DrawHud(_renderer, world, _palette, _audio.State, _meta, _runClock, _fps, _debug);
                 Screens.DrawCrosshair(_renderer, _palette, _mouseUi, _input?.Focus ?? false);
                 break;
             case AppState.Paused:
-                Screens.DrawHud(_renderer, world, _palette, _audio.State, _runClock, _fps, _debug, false);
+                Screens.DrawHud(_renderer, world, _palette, _audio.State, _meta, _runClock, _fps, _debug, false);
                 Screens.DrawPause(_renderer, _palette, world, _pauseIndex, _audio.State);
                 break;
             case AppState.Attuning:
-                Screens.DrawHud(_renderer, world, _palette, _audio.State, _runClock, _fps, _debug, false);
+                Screens.DrawHud(_renderer, world, _palette, _audio.State, _meta, _runClock, _fps, _debug, false);
                 Screens.DrawAttunement(_renderer, _palette, world, _elapsed, _attuneHover);
                 break;
             case AppState.GameOver:
@@ -1165,6 +1380,8 @@ public sealed class Game : IDisposable
             _renderer.UiTextRight(_toast, 1540, 760, 1.4f, M.WithAlpha(_palette.Accent, 0.8f), true);
 
         _renderer.Render(_audio.State, _elapsed, world.Flash, 0.16f + Audio.State.BeatPulse * 0.4f, world.DamageFlash > 0.4f ? 1 : 0);
+        if (_state == AppState.Playing && !_capture && GameSettings.Current.HighlightClips)
+            _clip.Tick(_frameDt, _renderer);
     }
 
     public void Dispose()

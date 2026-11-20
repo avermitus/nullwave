@@ -42,6 +42,8 @@ public sealed class LookaheadAudioBuffer : ISampleProvider
     public int LookaheadFrames => _lookaheadFrames;
     public float LookaheadSeconds => _lookaheadFrames / (float)SampleRate;
     public long PlayedFrames => Volatile.Read(ref _totalPlayedFrames);
+    /// <summary>Total frames written into the buffer (the newest buffered frame's index).</summary>
+    public long WrittenFrames => Volatile.Read(ref _totalWrittenFrames);
 
     /// <summary>Atomically swaps the upstream stereo 48 kHz source and clears stale buffered audio.</summary>
     public void SetSource(ISampleProvider source)
@@ -135,6 +137,27 @@ public sealed class LookaheadAudioBuffer : ISampleProvider
         int start = end - monoOut.Length;
         if (start < 0) start += ring;
 
+        var mono = _monoRing;
+        for (int i = 0; i < monoOut.Length; i++)
+        {
+            int idx = start + i;
+            if (idx >= ring) idx -= ring;
+            monoOut[i] = Volatile.Read(ref mono[idx]);
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Copies the newest buffered mono samples (ending at the write cursor), i.e. the audio the
+    /// speakers will play <see cref="LookaheadSeconds"/> from now.
+    /// </summary>
+    public bool CopyAheadWindow(Span<float> monoOut)
+    {
+        if (monoOut.IsEmpty || monoOut.Length > _ringFrames - 512) return false;
+        if (Volatile.Read(ref _totalWrittenFrames) < monoOut.Length) return false;
+        int ring = _ringFrames;
+        int start = Volatile.Read(ref _writeCursor) - monoOut.Length;
+        if (start < 0) start += ring;
         var mono = _monoRing;
         for (int i = 0; i < monoOut.Length; i++)
         {

@@ -157,6 +157,7 @@ public sealed partial class World
         if (Rules.DoubleTime) e.Rhythm |= 0xAA;
         e.Facing = Rng.Range(0, M.Tau);
         e.FireBeats = MathF.Min(e.FireBeats, e.FireIntervalBeats);
+        e.MovePhase = Rng.NextFloat();
 
         Enemies.Add(e);
         if (boss)
@@ -199,7 +200,8 @@ public sealed partial class World
             e.Rot += e.RotVel * dt;
             if (e.Boss)
             {
-                UpdateBoss(e, dt, audio);
+                if (e.SongBoss) UpdateSongBoss(e, dt, audio);
+                else UpdateBoss(e, dt, audio);
                 continue;
             }
 
@@ -238,39 +240,52 @@ public sealed partial class World
         return M.Clamp01(1f - beatsUntil);
     }
 
+    /// <summary>
+    /// Every enemy hunts you, each in its own style. The further away it is, the harder it
+    /// chases (up to ~3.5x its close-range speed), so nothing is ever left behind when you race off.
+    /// </summary>
     private void UpdateEnemyBrain(Enemy e, float dt, AudioState audio)
     {
         Vector2 toPlayer = Player.Pos - e.Pos;
         float dist = toPlayer.Length();
         Vector2 dir = dist > 0.01f ? toPlayer / dist : new Vector2(1, 0);
+        Vector2 perp = M.Perp(dir);
         e.Facing = M.MoveTowardsAngle(e.Facing, M.AngleOf(dir), dt * (e.Role == EnemyRole.Sniper ? 2.2f : 4f));
-        float speed = 100f * GetDifficultySpeedScale() * Mods.EnemySpeed;
+        // the first waves ease in (72 % speed on wave 1, full speed from wave 5)
+        float speed = EnemyBaseSpeed * GetDifficultySpeedScale() * Mods.EnemySpeed * EarlyWaveEase(Wave);
+        float pursuit = ChaseBoost(dist);
+        float spin = e.MovePhase < 0.5f ? 1f : -1f;
+        float t = e.Age + e.MovePhase * 10f;
         Vector2 desired = Vector2.Zero;
+        bool direct = false;
 
         switch (e.Role)
         {
             case EnemyRole.Drifter:
-                desired = dir * (speed * 1.25f);
-                break;
-            case EnemyRole.Orbiter:
             {
-                Vector2 radial = dist > 320f ? dir : -dir;
-                desired = radial * 85f + M.Perp(dir) * 115f;
-                if (dist < 240f) desired = dir * -150f;
+                // HUNTER: homes in on where you are about to be
+                Vector2 lead = Player.Pos + Player.Vel * MathF.Min(0.45f, dist / 1400f);
+                desired = M.SafeNorm(lead - e.Pos) * speed * 1.3f * pursuit;
                 break;
             }
+            case EnemyRole.Orbiter:
+                // SPIRALLER: corkscrews inward around you, then whips past and spirals in again
+                desired = (dir * (dist > 190f ? 0.6f : 0.15f) + perp * spin * 0.85f) * speed * 1.45f * pursuit;
+                break;
             case EnemyRole.Sniper:
-                desired = dir * (dist < 520f ? -110f : dist > 650f ? 100f : 0f) + M.Perp(dir) * 65f;
+                // STALKER: stays on your tail at rifle range, strafing, never falling behind
+                desired = dir * (dist > 430f ? speed * 1.35f * pursuit : dist < 300f ? -speed * 0.7f : 0f) + perp * spin * speed * 0.75f;
                 break;
             case EnemyRole.Dasher:
+                // POUNCER: chases with a side-to-side sway, braces, then lunges straight at you
                 e.StateTimer -= dt;
                 if (e.State == 0)
                 {
-                    desired = M.Perp(dir) * 80f;
-                    if (e.StateTimer <= 0 && dist < 760f)
+                    desired = (dir * pursuit + perp * MathF.Sin(t * 3f) * 0.6f) * speed * 1.15f;
+                    if (e.StateTimer <= 0 && dist < 640f)
                     {
                         e.State = 1;
-                        e.StateTimer = 0.52f;
+                        e.StateTimer = 0.42f;
                         e.Angle = M.AngleOf(dir);
                         e.AngleVel = 0;
                     }
@@ -282,57 +297,62 @@ public sealed partial class World
                     if (e.StateTimer <= 0 && EighthTick)
                     {
                         e.State = 2;
-                        e.StateTimer = 0.34f;
+                        e.StateTimer = 0.36f;
                         FireRing(e.Pos, 4, 190f, BulletKind.Shard, e.Hue, e.Radius + 8f);
                     }
                 }
                 else if (e.State == 2)
                 {
-                    desired = e.DashDir * 1100f;
+                    desired = e.DashDir * 1300f;
                     e.Vel = desired;
-                    if (e.StateTimer <= 0)
-                    {
-                        e.State = 3;
-                        e.StateTimer = 0.8f;
-                    }
+                    if (e.StateTimer <= 0) { e.State = 3; e.StateTimer = 0.5f; }
                 }
                 else
                 {
-                    desired = -dir * 70f;
-                    if (e.StateTimer <= 0) { e.State = 0; e.StateTimer = Rng.Range(0.8f, 1.7f); }
+                    desired = dir * speed * 0.8f;
+                    if (e.StateTimer <= 0) { e.State = 0; e.StateTimer = Rng.Range(0.7f, 1.4f); }
                 }
                 break;
             case EnemyRole.Turret:
-                desired = dir * (dist < 420f ? -65f : dist > 560f ? 55f : 0f) + M.Perp(dir) * 28f;
+                // HOPPER: leaps at you on every beat, skids to a stop in between
+                if (BeatTick) e.Vel = dir * (420f + MathF.Min(dist, 1500f) * 0.9f) * GetDifficultySpeedScale() * Mods.EnemySpeed;
+                else e.Vel *= MathF.Exp(-dt * 4.5f);
+                direct = true;
                 e.Angle += dt * 0.4f;
                 break;
             case EnemyRole.Splitter:
-                desired = dir * (speed * 0.55f);
+                // JUGGERNAUT: slow, relentless, surges forward on the downbeat
+                desired = dir * speed * (1.0f + (EighthInBar < 2 ? 0.6f : 0f)) * pursuit;
                 break;
             case EnemyRole.Swarm:
-                desired = dir * (speed * 1.7f);
+                // PACK: fast, each member closing in from its own side so the pack surrounds you
+                {
+                    Vector2 target = Player.Pos + M.FromAngle(e.MovePhase * M.Tau + Time * 0.6f * spin, MathF.Min(140f, dist * 0.4f));
+                    desired = M.SafeNorm(target - e.Pos) * speed * 1.9f * pursuit;
+                }
                 break;
             case EnemyRole.Weaver:
             {
-                // serpentine approach: forward plus a strong sideways sine
-                float wiggle = MathF.Sin(e.Age * 3.2f + e.Angle) * 1.4f;
-                desired = (dir + M.Perp(dir) * wiggle) * speed * 1.05f;
-                if (dist < 260f) desired = M.Perp(dir) * speed * 1.4f;
+                // SERPENT: weaves toward you in a wide S
+                // weaves hard up close, straightens out to run you down from far away
+                float wiggle = MathF.Sin(t * 3.2f) * 1.3f * M.Clamp(1f - (dist - 400f) / 700f, 0.15f, 1f);
+                desired = M.SafeNorm(dir + perp * wiggle) * speed * 1.25f * pursuit;
                 break;
             }
             case EnemyRole.Mortar:
-                // artillery keeps its distance
-                desired = dir * (dist < 600f ? -90f : dist > 760f ? 80f : 0f) + M.Perp(dir) * 40f;
+                // SIEGE: advances fast for half a bar, plants for half a bar to fire
+                desired = EighthInBar < 4 ? dir * speed * 1.7f * pursuit : Vector2.Zero;
                 break;
             case EnemyRole.Phantom:
             {
-                desired = M.Perp(dir) * 60f;
+                // BLINKER: drifts in, and every other beat blinks to a flank closer to you
+                desired = (dir * pursuit + perp * 0.4f) * speed * 0.9f;
                 if (BeatTick && (++e.State % 2 == 0))
                 {
-                    // blink to a flank, landing on the beat
                     Vector2 from = e.Pos;
                     float side = Rng.Chance(0.5f) ? 1f : -1f;
-                    Vector2 to = ClampToArena(Player.Pos + M.FromAngle(M.AngleOf(-dir) + side * Rng.Range(0.9f, 1.8f), Rng.Range(260f, 380f)), e.Radius + 30f);
+                    float r = MathF.Max(220f, MathF.Min(dist * 0.55f, 420f));
+                    Vector2 to = ClampToArena(Player.Pos + M.FromAngle(M.AngleOf(-dir) + side * Rng.Range(0.7f, 1.5f), r), e.Radius + 30f);
                     AddShockwave(from, e.Radius * 3f, 0.35f, 3f, M.Hsv(e.Hue, 0.6f, 1f, 0.8f));
                     BurstParticles(from, M.Hsv(e.Hue, 0.6f, 1f, 0.7f), 14, 260f, 2.4f, 0.35f, ParticleKind.Spark);
                     e.Pos = to;
@@ -344,16 +364,41 @@ public sealed partial class World
                 break;
             }
             case EnemyRole.Prism:
-                desired = dir * (dist < 380f ? -40f : dist > 520f ? 55f : 0f) + M.Perp(dir) * 30f;
+            {
+                // SENTINEL: circles you at range, sweeping round as you move
+                Vector2 target = Player.Pos + M.FromAngle(t * 0.35f * spin + e.MovePhase * M.Tau, 340f);
+                desired = M.SafeNorm(target - e.Pos) * speed * 1.2f * pursuit;
                 e.Angle += dt * 0.8f;
                 break;
+            }
         }
 
-        desired *= 1.35f;   // the whole field moves at racing pace
-        e.Vel = M.Lerp(e.Vel, desired, 1f - MathF.Exp(-dt * 3.5f));
+        if (!direct)
+        {
+            // personal space so the chase reads as a pack, not a blob
+            foreach (var o in Enemies)
+            {
+                if (o == e || o.Dead || o.Boss) continue;
+                Vector2 d = e.Pos - o.Pos;
+                float l = d.Length();
+                float room = e.Radius + o.Radius + 30f;
+                if (l < room && l > 0.01f) desired += d / l * (room - l) * 5f;
+            }
+            if (e.Role != EnemyRole.Dasher || e.State != 2)
+                e.Vel = M.Lerp(e.Vel, desired, 1f - MathF.Exp(-dt * 4f));
+        }
         // enemies stride with the music: a push on each beat, then coast
         e.Pos += e.Vel * dt * BeatSurge(1.5f);
     }
+
+    /// <summary>Speed scale for the opening waves: 0.72 on wave 1 rising to 1 by wave 5.</summary>
+    public static float EarlyWaveEase(int wave) => M.Lerp(0.72f, 1f, M.Clamp01((wave - 1) / 4f));
+
+    /// <summary>Close-range enemy speed (scaled by difficulty and mods).</summary>
+    public const float EnemyBaseSpeed = 175f;
+
+    /// <summary>Chase multiplier: 1 within 300 units, rising steeply to 4.4 by ~1300 units away.</summary>
+    public static float ChaseBoost(float dist) => 1f + M.Clamp((dist - 300f) / 300f, 0f, 3.4f);
 
     private void FireEnemy(Enemy e, AudioState audio)
     {
@@ -646,6 +691,7 @@ public sealed partial class World
         if (e.Dead || e.Spawning || e.BossInvuln > 0) return;
         e.Hp -= damage;
         e.HitFlash = 1f;
+        PlayHitNote();
         if (source.HasValue)
         {
             SpawnParticle(source.Value, FxRng.InCircle(60), 0.16f, 2.2f, M.Hsv(e.Hue, 0.7f, 1f, 0.75f), ParticleKind.Spark, 4f);
@@ -660,6 +706,8 @@ public sealed partial class World
         e.Dead = true;
         e.MarkedForRemoval = true;
         Kills++;
+        if (CurrentTrack != null) CurrentTrack.Kills++;
+        PlayKillNote(e);
         FlowGain(e.Boss ? 0.3f : 0.035f);
         AddCombo(e.Boss ? 16 : 2);
         AddScore(e.Boss ? 6000 + Wave * 400 : 80 + e.Tier * 20 + (e.Elite ? 120 : 0), e.Pos, null, M.Hsv(e.Hue, 0.7f, 1f, 1f));
@@ -695,7 +743,8 @@ public sealed partial class World
             for (int i = 0; i < 4; i++)
                 SpawnPickup(e.Pos + FxRng.InCircle(180), i == 0 ? PickupKind.Health : PickupKind.Core, 1f, e.Hue);
             AddShockwave(e.Pos, 1200, 1.8f, 30f, new Vector4(0.8f, 0.5f, 1f, 1f), filled: true, heavy: true);
-            EmitEvent("CHOIR SILENCED // MOVE ON", 3.2f);
+            if (e.SongBoss) OnSongBossKilled(e);
+            else EmitEvent("CHOIR SILENCED // MOVE ON", 3.2f);
             Flash = 0.9f;
         }
         else

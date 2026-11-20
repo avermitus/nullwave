@@ -6,6 +6,9 @@ namespace Nullwave.World;
 
 public sealed partial class World
 {
+    /// <summary>Test helper: run collision resolution once.</summary>
+    public void ResolveCollisionsForTest() => ResolveCollisions(new AudioState());
+
     private void ResolveCollisions(AudioState audio)
     {
         if (Phase != GamePhase.Playing) return;
@@ -63,12 +66,14 @@ public sealed partial class World
                 continue;
             }
 
+            bool burst = false;
             foreach (var e in Enemies)
             {
                 if (e.Dead || e.Spawning) continue;
                 float rr = e.Radius * 0.88f + b.Radius;
                 if (M.DistSq(b.Pos, e.Pos) >= rr * rr) continue;
                 DamageEnemy(e, b.Damage, b.Pos);
+                if (b.SynergyKind == 4) { burst = true; consumed = true; break; }   // bass orb bursts
                 if (b.Pierce > 0)
                 {
                     b.Pierce--;
@@ -80,6 +85,7 @@ public sealed partial class World
                 }
                 break;
             }
+            if (burst) BassBurst(b.Pos, b.Damage);
             if (consumed) ReturnBullet(PlayerBullets, i);
         }
 
@@ -115,6 +121,8 @@ public sealed partial class World
                 continue;
             }
 
+            // riding a melody rail, bullets tuned to it pass straight through
+            if (b.Tuned && p.RailRiding && distSq < hitRadius * hitRadius) continue;
             if (distSq < hitRadius * hitRadius)
             {
                 if (p.Invuln <= 0f && StartGrace <= 0f)

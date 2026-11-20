@@ -86,6 +86,11 @@ public sealed class Player
     public float Radius = 11f;
     public float HitFlash;
     public float Focus;
+    /// <summary>Gravity-well slingshot: charge while skimming a well, boost (0..1) after leaving it.</summary>
+    public float SlingCharge, SlingBoost;
+    /// <summary>Melody rail: riding right now, boost (0..1), total seconds ridden.</summary>
+    public bool RailRiding;
+    public float RailBoost, RailTime;
     public float TrailTimer;
     public float Time;
     public bool InvincibleDemo;
@@ -169,6 +174,10 @@ public sealed class Enemy
     public float Muzzle;
     /// <summary>Bitmask over the 8 eighth-notes of a bar on which this enemy is allowed to fire.</summary>
     public byte Rhythm = 0xFF;
+    /// <summary>THE DROP: a boss built from the song (otherwise the boss is THE CHOIR).</summary>
+    public bool SongBoss;
+    /// <summary>Per-enemy phase (0..1): handedness and offset of its movement style.</summary>
+    public float MovePhase;
     public bool IsBoss => Boss;
 
     public float HealthFrac => MaxHp <= 0 ? 0 : M.Clamp01(Hp / MaxHp);
@@ -202,6 +211,8 @@ public sealed class Bullet
     public float Surge;
     /// <summary>0 = normal, 1 = SeekerSalvo, 2 = PrismLance (supercharged), 3 = RailCadence.</summary>
     public byte SynergyKind;
+    /// <summary>Crossed a melody rail: wears the rail's colour and passes through a ship riding it.</summary>
+    public bool Tuned;
 
     public void Reset()
     {
@@ -229,6 +240,7 @@ public sealed class Bullet
         BaseSpeed = 0;
         Surge = 0;
         SynergyKind = 0;
+        Tuned = false;
     }
 }
 
@@ -316,6 +328,8 @@ public sealed class Shockwave
     public Vector4 Color;
     public bool Filled;
     public bool Heavy;
+    /// <summary>Set once the 3D backdrop has been sent a matching shockwave.</summary>
+    public bool BackdropPulsed;
 }
 
 public sealed class Pickup

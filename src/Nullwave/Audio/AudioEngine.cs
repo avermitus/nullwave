@@ -32,6 +32,26 @@ public sealed class AudioEngine : IDisposable
     private readonly bool _enableOutput;
     private readonly SynthVisual _synthVisual = new();
     private readonly SpectrumAnalyzer _analyzer = new();
+    private readonly MusicAnalyzer _music = new();
+    // song structure is read from the buffered audio 0.75 s before it plays, so a new section's
+    // world can land on the section's first beat
+    private readonly MusicAnalyzer _structure = new();
+    private readonly AudioState _structState = new();
+    private readonly float[] _aheadWindow = new float[MusicAnalyzer.WindowSize];
+    private bool _sectionPending;
+    private long _sectionDueFrame;
+    private const float OutputLatencySeconds = 0.11f;   // WaveOutEvent DesiredLatency
+    private double _sectionDueBeat;
+    private int _sectionDueLabel;
+    private bool _sectionDueRepeat;
+    private readonly float[] _musicWindow = new float[MusicAnalyzer.WindowSize];
+    private readonly float[] _scoreMags = new float[FftSize / 2];
+    private readonly Fft _scoreFft = new(FftSize);
+    private string _lastTrack = "";
+    private string _trackKey = "";
+    private float _chapterClock;
+    /// <summary>Length of a "chapter" when the source has no track titles (built-in score, system audio).</summary>
+    public const float ChapterSeconds = 180f;
     private BeatTracker _tracker = new(CaptureRate);
     private int _trackerRead = -1;
     private readonly float[] _trackerChunk = new float[4096];
@@ -41,6 +61,18 @@ public sealed class AudioEngine : IDisposable
     private readonly LookaheadAudioBuffer _lookahead;
     private LocalTrackSource? _localTrack;
     private long _lookaheadTrackerFrame = -1;
+    // Buffered app mode: the app is routed to a silent output, captured there and replayed
+    // through the lookahead buffer 0.75 s late, so the game sees the music before you hear it.
+    private bool _bufferWanted = true;
+    private LiveStreamSource? _live;
+    private bool _liveFeeding;
+    private float _liveStale;
+    private readonly List<int> _routedPids = new();
+    private string _routedApp = "";
+    private float _bufferRetry;
+    private float _bufferCheck;
+    private bool _exitHooked;
+    private readonly float[] _stereoScratch = new float[16384];
     private WaveOutEvent? _output;
     private IWaveIn? _capture;
     private AudioApp? _app;
@@ -81,8 +113,101 @@ public sealed class AudioEngine : IDisposable
         _lookahead = new LookaheadAudioBuffer(Synth);
         _provider = new AudioProvider(_lookahead, Sfx);
         State.LookaheadSeconds = _lookahead.LookaheadSeconds;
+        if (enableOutput && enableCapture)
+        {
+            try
+            {
+                _enumerator ??= new MMDeviceEnumerator();
+                AppAudioRouter.RecoverFromCrash(_enumerator);
+            }
+            catch { }
+        }
         if (enableOutput) StartOutput();
         if (enableCapture) StartCaptureDefault();
+    }
+
+    /// <summary>Whether a captured music app (Spotify) should be delayed 0.75 s through the game.</summary>
+    public void SetAppBuffering(bool on)
+    {
+        _bufferWanted = on;
+        if (!on) DisengageBuffer();
+        _bufferRetry = 0f;
+    }
+
+    public bool AppBuffered => _live != null;
+
+    private bool BufferCandidate =>
+        _bufferWanted && _enableOutput && _output != null && _localTrack == null && _app != null &&
+        _app.Name.Contains(BufferAppName, StringComparison.OrdinalIgnoreCase) && AudioApps.IsAlive(_app.ProcessId);
+
+    /// <summary>Which captured app gets buffered (Spotify; tests use a stand-in player).</summary>
+    public string BufferAppName { get; set; } = "spotify";
+    public int LiveUnderruns => _live?.Underruns ?? 0;
+    public long LiveFramesWritten => _live?.FramesWritten ?? 0;
+    public IReadOnlyList<int> RoutedPids => _routedPids;
+
+    private void EngageBuffer()
+    {
+        if (_live != null || _app == null) return;
+        try
+        {
+            _enumerator ??= new MMDeviceEnumerator();
+            if (!AppAudioRouter.IsSupported) { State.BufferNote = "SPOTIFY BUFFER NEEDS WINDOWS 11"; return; }
+            var silent = AppAudioRouter.FindSilentEndpoint(_enumerator);
+            if (silent == null) { State.BufferNote = "SPOTIFY BUFFER: NO SILENT OUTPUT (INSTALL STEAM OR VB-CABLE)"; return; }
+            AppAudioRouter.WriteMarker(_app.Name);
+            _routedPids.Clear();
+            foreach (var p in System.Diagnostics.Process.GetProcessesByName(_app.Name))
+            {
+                if (AppAudioRouter.SetAppEndpoint(p.Id, silent.ID)) _routedPids.Add(p.Id);
+                p.Dispose();
+            }
+            if (_routedPids.Count == 0)
+            {
+                AppAudioRouter.ClearMarker();
+                State.BufferNote = "SPOTIFY BUFFER: ROUTING FAILED";
+                return;
+            }
+            _routedApp = _app.Name;
+            if (!_exitHooked)
+            {
+                _exitHooked = true;
+                AppDomain.CurrentDomain.ProcessExit += (_, _) => DisengageBuffer();
+            }
+            _live = new LiveStreamSource();
+            _liveFeeding = false;
+            _liveStale = 0f;
+            _provider.LiveMode = true;
+            State.BufferNote = "";
+            ResetForNewSource();
+        }
+        catch (Exception ex)
+        {
+            LastError = "Buffer: " + ex.Message;
+            DisengageBuffer();
+        }
+    }
+
+    /// <summary>Sends the app back to the normal output and returns to the score / local track.</summary>
+    private void DisengageBuffer()
+    {
+        if (_live == null && _routedPids.Count == 0) return;
+        foreach (int pid in _routedPids) AppAudioRouter.SetAppEndpoint(pid, null);
+        // anything spawned since (Spotify restarts its audio process) is cleared by name
+        if (_routedApp.Length > 0)
+            foreach (var p in System.Diagnostics.Process.GetProcessesByName(_routedApp))
+            {
+                if (!_routedPids.Contains(p.Id)) AppAudioRouter.SetAppEndpoint(p.Id, null);
+                p.Dispose();
+            }
+        _routedPids.Clear();
+        _routedApp = "";
+        AppAudioRouter.ClearMarker();
+        _live = null;
+        _liveFeeding = false;
+        _provider.LiveMode = false;
+        _lookahead.SetSource(_localTrack != null ? _localTrack : Synth);
+        _lookaheadTrackerFrame = -1;
     }
 
     /// <summary>Loads a local audio file (.wav/.mp3/.m4a/.aiff/etc.) into the lookahead player.</summary>
@@ -96,10 +221,12 @@ public sealed class AudioEngine : IDisposable
         try
         {
             var next = new LocalTrackSource(path);
+            DisengageBuffer();
             var prev = _localTrack;
             _localTrack = next;
             _lookahead.SetSource(next);
             prev?.Dispose();
+            ResetMusic();
             _external = false;
             _externalOnTimer = 0f;
             _externalOffTimer = 0f;
@@ -132,6 +259,7 @@ public sealed class AudioEngine : IDisposable
         _lookahead.SetSource(Synth);
         prev.Dispose();
         _analyzer.Reset();
+        ResetMusic();
         ResetBeatTracking();
         _lookaheadTrackerFrame = -1;
         State.LocalTrackActive = false;
@@ -144,14 +272,64 @@ public sealed class AudioEngine : IDisposable
     public void Update(float dt)
     {
         if (_disposed) return;
+        UpdateCore(dt);
+        UpdateTrack(Math.Clamp(dt, 0.0005f, 0.1f));
+    }
+
+    /// <summary>Works out which track is playing and flags a new one (setlists, song records).</summary>
+    private void UpdateTrack(float dt)
+    {
+        string title, key;
+        bool song;
+        if (_localTrack != null)
+        {
+            title = _localTrack.TrackName;
+            song = true;
+            key = "local:" + title + "#" + _localTrack.LoopCount;
+        }
+        else if (State.External && !string.IsNullOrEmpty(State.SpotifyTrack))
+        {
+            title = State.SpotifyTrack;
+            song = true;
+            key = "spotify:" + title;
+        }
+        else
+        {
+            // no titles to go by: chapters of a few minutes
+            title = State.External ? (string.IsNullOrEmpty(State.DeviceName) ? "SYSTEM AUDIO" : State.DeviceName.ToUpperInvariant()) : "GENERATIVE SCORE";
+            song = false;
+            key = "chapter:" + (State.External ? "ext" : "score") + "#" + (int)(_chapterClock / ChapterSeconds);
+        }
+        _chapterClock += dt;
+        if (key != _trackKey)
+        {
+            bool first = _trackKey.Length == 0;
+            _trackKey = key;
+            State.TrackTime = 0f;
+            State.TrackIndex++;
+            if (!first) State.TrackChanged = true;
+        }
+        else State.TrackTime += dt;
+        State.TrackTitle = title;
+        State.TrackIsSong = song;
+    }
+
+    private void UpdateCore(float dt)
+    {
         DrainRecording();
         dt = Math.Clamp(dt, 0.0005f, 0.1f);
         _time += dt;
         State.Time = (float)_time;
         State.ClearBeatFlags();
+        State.AppBuffered = false;
         Spotify.Update(dt);
         State.SpotifyStatus = Spotify.Current.State;
         State.SpotifyTrack = Spotify.Current.DisplayTrack;
+        if (State.SpotifyTrack != _lastTrack)
+        {
+            if (_lastTrack.Length > 0 && State.SpotifyTrack.Length > 0) ResetMusic();
+            _lastTrack = State.SpotifyTrack;
+        }
 
         // Case 1: Local track loaded into the sample-accurate 0.75 s lookahead player.
         if (_localTrack != null)
@@ -172,6 +350,9 @@ public sealed class AudioEngine : IDisposable
                 ApplyTracker(dt);
                 float targetAnt = _lookahead.ComputeDropAnticipation(out _, out _);
                 State.DropAnticipation = M.ExpSmooth(State.DropAnticipation, targetAnt, 14f, dt);
+                if (_lookahead.CopyPlaybackWindow(_musicWindow))
+                    _music.Analyze(_musicWindow, _analyzer.Magnitudes, CaptureRate, dt, State);
+                AnalyzeStructureAhead(dt);
             }
             else
             {
@@ -179,6 +360,26 @@ public sealed class AudioEngine : IDisposable
                 State.DropAnticipation = M.ExpSmooth(State.DropAnticipation, 0f, 10f, dt);
                 DecayPulses(dt);
             }
+            return;
+        }
+
+        if (_preferredApp.Length > 0 && _live != null)
+        {
+            _appPoll -= dt;
+            if (_appPoll <= 0f) { _appPoll = 2f; MaintainAppCapture(); }
+        }
+        _bufferRetry -= dt;
+        _bufferCheck -= dt;
+        if (_bufferCheck <= 0f)
+        {
+            _bufferCheck = 0.5f;
+            bool candidate = BufferCandidate;
+            if (_live == null && candidate && _bufferRetry <= 0f) { _bufferRetry = 5f; EngageBuffer(); }
+            else if (_live != null && !candidate) DisengageBuffer();
+        }
+        if (_live != null)
+        {
+            UpdateBuffered(dt);
             return;
         }
 
@@ -254,6 +455,7 @@ public sealed class AudioEngine : IDisposable
                     : (string.IsNullOrWhiteSpace(State.DeviceName) ? "SYSTEM LOOPBACK" : State.DeviceName);
                 State.Quiet = _quiet;
                 ApplyTracker(dt);
+                AnalyzeMusicFromCapture(dt);
                 return;
             }
             _external = false;
@@ -261,6 +463,17 @@ public sealed class AudioEngine : IDisposable
         }
 
         _synthVisual.Advance(dt, State);
+        if (_enableOutput)
+        {
+            // the stand-in analysis only fakes chords/melody/drums for captures and tests; in the
+            // real game these come from the music actually playing (filled in just below), and
+            // silence means no wells, rails or chord colours
+            State.MelodyConfidence = 0f;
+            State.HarmLow = State.HarmMid = State.HarmHigh = 0f;
+            State.PercLow = State.PercMid = State.PercHigh = 0f;
+            State.ChordChanged = false;
+            State.ChordRoot = -1;
+        }
         State.External = false;
         State.LocalTrackActive = false;
         State.LocalTrackName = "";
@@ -280,11 +493,80 @@ public sealed class AudioEngine : IDisposable
         State.DeviceName = _captureName;
         State.BarCount = State.BeatCount / 4;
         DecayPulses(dt);
+        if (_output != null && !_quiet && _lookahead.PlayedFrames > MusicAnalyzer.WindowSize && _lookahead.CopyPlaybackWindow(_musicWindow))
+        {
+            _scoreFft.Magnitudes(_musicWindow.AsSpan(_musicWindow.Length - FftSize, FftSize), _scoreMags);
+            _music.Analyze(_musicWindow, _scoreMags, CaptureRate, dt, State);
+            AnalyzeStructureAhead(dt);
+        }
         if (!_enableOutput || _quiet || _external)
             Synth.TargetLevel = 0;
         else
             Synth.TargetLevel = 1;
     }
+
+    /// <summary>Buffered app: analyse the delayed playback window exactly like a local track.</summary>
+    private void UpdateBuffered(float dt)
+    {
+        var live = _live!;
+        bool recent = RecentCaptureData() && _capturePeak > 0.0008f;
+        _liveStale = recent ? 0f : _liveStale + dt;
+        // the app paused: let the built-in score fill the gap; switch back the moment music returns
+        if (_liveFeeding && _liveStale > 2.2f)
+        {
+            _liveFeeding = false;
+            _lookahead.SetSource(Synth);
+            ResetBeatTracking();
+            _analyzer.Reset();
+            _lookaheadTrackerFrame = -1;
+        }
+        else if (!_liveFeeding && recent)
+        {
+            _liveFeeding = true;
+            live.Clear();
+            _lookahead.SetSource(live);
+            ResetBeatTracking();
+            _analyzer.Reset();
+            _lookaheadTrackerFrame = -1;
+        }
+        _provider.LiveMode = _liveFeeding;
+        Synth.TargetLevel = _liveFeeding || _quiet ? 0f : 1f;
+        State.External = _liveFeeding;
+        State.LocalTrackActive = false;
+        State.LocalTrackName = "";
+        State.AppBuffered = true;
+        State.LookaheadSeconds = _lookahead.LookaheadSeconds;
+        State.Quiet = _quiet;
+        State.DeviceName = _captureName;
+        string name = !string.IsNullOrEmpty(State.SpotifyTrack) ? State.SpotifyTrack : _captureName.ToUpperInvariant();
+        State.SourceName = _liveFeeding ? "SPOTIFY // " + name + " (+0.75S)" : "SPOTIFY BUFFERED // PAUSED";
+        LastWindowPeak = 0f;
+        if (_lookahead.CopyPlaybackWindow(_analysis))
+        {
+            float pk = 0f;
+            for (int i = 0; i < _analysis.Length; i += 4) pk = MathF.Max(pk, MathF.Abs(_analysis[i]));
+            LastWindowPeak = pk;
+            _analyzer.Analyze(_analysis, FftSize, CaptureRate, dt, State);
+            FeedLookaheadTracker();
+            ApplyTracker(dt);
+            float targetAnt = _lookahead.ComputeDropAnticipation(out _, out _);
+            State.DropAnticipation = M.ExpSmooth(State.DropAnticipation, targetAnt, 14f, dt);
+            if (_liveFeeding && _lookahead.CopyPlaybackWindow(_musicWindow))
+            {
+                _music.Analyze(_musicWindow, _analyzer.Magnitudes, CaptureRate, dt, State);
+                AnalyzeStructureAhead(dt);
+            }
+        }
+        else
+        {
+            State.Bpm = _bpm;
+            State.DropAnticipation = M.ExpSmooth(State.DropAnticipation, 0f, 10f, dt);
+            DecayPulses(dt);
+        }
+    }
+
+    /// <summary>Peak of the playback window the game analysed this frame (diagnostics).</summary>
+    public float LastWindowPeak { get; private set; }
 
     private void DecayPulses(float dt)
     {
@@ -477,6 +759,7 @@ public sealed class AudioEngine : IDisposable
 
     private void StartCapture(MMDevice device)
     {
+        DisengageBuffer();
         StopCapture();
         _app = null;
         State.AppCapture = false;
@@ -540,6 +823,8 @@ public sealed class AudioEngine : IDisposable
         {
             frames = e.BytesRecorded / 4 / channels;
             var floats = MemoryMarshal.Cast<byte, float>(new ReadOnlySpan<byte>(e.Buffer, 0, e.BytesRecorded));
+            var live = _live;
+            int st = 0;
             for (int f = 0; f < frames; f++)
             {
                 float sum = 0;
@@ -548,25 +833,45 @@ public sealed class AudioEngine : IDisposable
                 peak = MathF.Max(peak, MathF.Abs(s));
                 _ring[write] = s;
                 write = (write + 1) % RingSize;
+                if (live != null)
+                {
+                    _stereoScratch[st++] = floats[f * channels];
+                    _stereoScratch[st++] = channels > 1 ? floats[f * channels + 1] : floats[f * channels];
+                    if (st >= _stereoScratch.Length) { live.Write(_stereoScratch.AsSpan(0, st)); st = 0; }
+                }
             }
+            if (live != null && st > 0) live.Write(_stereoScratch.AsSpan(0, st));
         }
         else if (format.BitsPerSample == 16)
         {
             frames = e.BytesRecorded / 2 / channels;
+            var live = _live;
+            int st = 0;
             for (int f = 0; f < frames; f++)
             {
-                float sum = 0;
+                float sum = 0, l = 0, r = 0;
                 for (int c = 0; c < channels; c++)
                 {
                     int idx = (f * channels + c) * 2;
                     short v = (short)(e.Buffer[idx] | (e.Buffer[idx + 1] << 8));
-                    sum += v / 32768f;
+                    float x = v / 32768f;
+                    sum += x;
+                    if (c == 0) l = x;
+                    if (c == 1) r = x;
                 }
+                if (channels == 1) r = l;
                 float s = sum / channels;
                 peak = MathF.Max(peak, MathF.Abs(s));
                 _ring[write] = s;
                 write = (write + 1) % RingSize;
+                if (live != null)
+                {
+                    _stereoScratch[st++] = l;
+                    _stereoScratch[st++] = r;
+                    if (st >= _stereoScratch.Length) { live.Write(_stereoScratch.AsSpan(0, st)); st = 0; }
+                }
             }
+            if (live != null && st > 0) live.Write(_stereoScratch.AsSpan(0, st));
         }
         else
         {
@@ -743,6 +1048,7 @@ public sealed class AudioEngine : IDisposable
             LastError = "per-app capture needs Windows 10 build 20348 or Windows 11";
             return false;
         }
+        if (_app == null || !_app.Name.Equals(app.Name, StringComparison.OrdinalIgnoreCase)) DisengageBuffer();
         StopCapture();
         _preferredApp = app.Name;
         try
@@ -803,6 +1109,86 @@ public sealed class AudioEngine : IDisposable
         _externalOnTimer = 0;
         _analyzer.Reset();
         ResetBeatTracking();
+        ResetMusic();
+    }
+
+    /// <summary>A new song or source: chords, key and section memory start over.</summary>
+    private void ResetMusic()
+    {
+        _music.Reset();
+        _structure.Reset();
+        _sectionPending = false;
+        State.SongEpoch++;
+        State.Key = -1;
+        State.ChordRoot = -1;
+    }
+
+    /// <summary>
+    /// Buffered sources: run structure detection on the newest buffered audio (ahead of what is
+    /// heard) and hand each section change to the game when playback reaches its first beat.
+    /// </summary>
+    private void AnalyzeStructureAhead(float dt)
+    {
+        _music.Structure = false;
+        float ahead = _lookahead.LookaheadSeconds;
+        long written = _lookahead.WrittenFrames;
+        if (_lookahead.CopyAheadWindow(_aheadWindow))
+        {
+            _structure.WindowEndFrame = written;
+            _structState.ClearBeatFlags();
+            _structState.BeatLocked = State.BeatLocked;
+            _structState.DownbeatOffset = State.DownbeatOffset;
+            _structState.BeatPosition = State.BeatPosition + ahead * State.Bpm / 60.0;
+            _structure.Analyze(_aheadWindow, ReadOnlySpan<float>.Empty, CaptureRate, dt, _structState);
+            if (_structState.SectionChanged)
+            {
+                if (_structState.SectionCorrected)
+                {
+                    // corrections apply straight away
+                    _sectionPending = false;
+                    State.SectionChanged = true;
+                    State.SectionRepeat = _structState.SectionRepeat;
+                    State.SectionCorrected = true;
+                    State.SectionLabel = _structState.SectionLabel;
+                }
+                else
+                {
+                    // pinned to the audio frame where the section's first beat starts: it fires when
+                    // playback reaches that frame (plus the sound card's output latency)
+                    _sectionPending = true;
+                    _sectionDueBeat = _structure.LastBoundaryBeatIndex;
+                    _sectionDueFrame = _structure.LastBoundaryFrame + (long)(OutputLatencySeconds * CaptureRate);
+                    _sectionDueLabel = _structState.SectionLabel;
+                    _sectionDueRepeat = _structState.SectionRepeat;
+                }
+            }
+        }
+        if (_sectionPending && _lookahead.PlayedFrames >= _sectionDueFrame)
+        {
+            _sectionPending = false;
+            State.SectionChanged = true;
+            State.SectionRepeat = _sectionDueRepeat;
+            State.SectionLabel = _sectionDueLabel;
+        }
+        if (!State.SectionChanged) State.SectionLabel = _sectionPending ? State.SectionLabel : _structState.SectionLabel;
+        State.SectionCount = _structState.SectionCount;
+        State.Section = _structState.Section;
+    }
+
+    /// <summary>Beat index on which the last structure-ahead section starts (diagnostics).</summary>
+    public double LastSectionStartBeat => _structure.LastBoundaryBeatIndex;
+    public float PlaybackSeconds => _lookahead.PlayedFrames / (float)CaptureRate;
+
+    private void AnalyzeMusicFromCapture(float dt)
+    {
+        if (_capture == null) return;
+        int n = MusicAnalyzer.WindowSize;
+        if (Volatile.Read(ref _samplesAvailable) < n) return;
+        int write = Volatile.Read(ref _writeIndex);
+        int start = (write - n + RingSize) % RingSize;
+        for (int i = 0; i < n; i++) _musicWindow[i] = Volatile.Read(ref _ring[(start + i) % RingSize]);
+        _music.Structure = true;
+        _music.Analyze(_musicWindow, _analyzer.Magnitudes, _captureFormat?.SampleRate ?? CaptureRate, dt, State);
     }
 
     public void CycleDevice()
@@ -848,6 +1234,7 @@ public sealed class AudioEngine : IDisposable
         if (_disposed) return;
         _disposed = true;
         StopRecording();
+        DisengageBuffer();
         StopCapture();
         try
         {
@@ -875,11 +1262,13 @@ public sealed class AudioEngine : IDisposable
         }
         public volatile float MusicVolume = 1f;
         public volatile float SfxVolume = 1f;
+        /// <summary>Replaying a buffered app: it plays at its own level (Spotify's volume rules), not the score's.</summary>
+        public volatile bool LiveMode;
         public WaveFormat WaveFormat => _music.WaveFormat;
         public int Read(float[] buffer, int offset, int count)
         {
             int read = _music.Read(buffer, offset, count);
-            float music = MusicVolume;
+            float music = LiveMode ? 1f : MusicVolume;
             if (music < 0.999f)
                 for (int i = offset; i < offset + count; i++) buffer[i] *= music;
             // SFX always mixes post-delay so gameplay hits/dashes have zero added latency.

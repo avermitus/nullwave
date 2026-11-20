@@ -19,6 +19,8 @@ public enum SfxType
     Menu,
     Unlock,
     Wave,
+    /// <summary>A pitched note (in-key guns): FM bell or soft pluck.</summary>
+    Note,
 }
 
 /// <summary>
@@ -51,6 +53,36 @@ public sealed class SoundBank
         public double Phase1, Phase2, Phase3;
         public float Lp, Lp2, Hp, HpIn, Bp, BpLow, Hold;
         public int HoldCount;
+        public float Freq;
+        public int Timbre;
+    }
+
+    /// <summary>
+    /// Plays a note (MIDI number) after <paramref name="delay"/> seconds — used to make kills and hits
+    /// sound in the song's key and, for kills, land on the next sixteenth note.
+    /// </summary>
+    public void PlayNote(float midi, float gain, float pan = 0f, float delay = 0f, int timbre = 0)
+    {
+        lock (_lock)
+        {
+            if (_voiceCount >= MaxVoices)
+            {
+                Array.Copy(_voices, 1, _voices, 0, MaxVoices - 1);
+                _voiceCount = MaxVoices - 1;
+            }
+            _voices[_voiceCount++] = new Voice
+            {
+                Type = SfxType.Note,
+                Life = timbre == 0 ? 0.9 : 0.35,
+                Age = -Math.Clamp(delay, 0f, 0.5f),
+                Gain = gain,
+                Pan = Math.Clamp(pan, -1f, 1f),
+                Seed = 1,
+                Pitch = 1f,
+                Freq = 440f * MathF.Pow(2f, (midi - 69f) / 12f),
+                Timbre = timbre,
+            };
+        }
     }
 
     public void Trigger(SfxType type, float gain = 1f, float pan = 0f)
@@ -71,6 +103,7 @@ public sealed class SoundBank
                 Pan = Math.Clamp(pan, -1f, 1f),
                 Seed = seed,
                 Pitch = 1f + ((seed >> 8) % 1000 / 1000f - 0.5f) * 0.12f,
+                Freq = 523.25f,   // a Note triggered without PlayNote sounds a C5
             };
         }
     }
@@ -96,6 +129,7 @@ public sealed class SoundBank
                 for (int i = 0; i < count; i += 2)
                 {
                     if (voice.Age >= voice.Life) break;
+                    if (voice.Age < 0) { voice.Age += dt; continue; }   // scheduled note not started yet
                     float s = Render(ref voice);
                     _dry[i] += s * leftGain;
                     _dry[i + 1] += s * rightGain;
@@ -309,6 +343,24 @@ public sealed class SoundBank
                 float sweep = BandPass(ref v, Noise(ref v), 300f + 4000f * u, 4f) * MathF.Sin(MathF.PI * u);
                 float chime = Osc(ref v.Phase1, 660f) * Env(t, 0.005f, 5f) * 0.18f;
                 return sweep * 0.5f + chime;
+            }
+            case SfxType.Note:
+            {
+                float f = v.Freq;
+                v.Phase1 += f / SampleRate;
+                v.Phase2 += f * (v.Timbre == 0 ? 3.5f : 2f) / SampleRate;
+                if (v.Phase1 > 1.0) v.Phase1 -= 1.0;
+                if (v.Phase2 > 1.0) v.Phase2 -= 1.0;
+                if (v.Timbre == 0)
+                {
+                    // FM bell: bright attack that mellows as the modulation dies away
+                    float index = 2.2f * MathF.Exp(-t * 9f);
+                    float mod = MathF.Sin((float)v.Phase2 * MathF.Tau) * index;
+                    return MathF.Sin((float)v.Phase1 * MathF.Tau + mod) * Env(t, 0.003f, 5.5f) * 0.32f;
+                }
+                // soft pluck
+                float body = MathF.Sin((float)v.Phase1 * MathF.Tau) + MathF.Sin((float)v.Phase2 * MathF.Tau) * 0.3f;
+                return body * Env(t, 0.002f, 12f) * 0.22f;
             }
             default:
                 return 0f;

@@ -10,7 +10,7 @@ using GameWorld = Nullwave.World.World;
 
 namespace Nullwave.Tools;
 
-public static class SelfTest
+public static partial class SelfTest
 {
     private static int _checks;
 
@@ -54,6 +54,22 @@ public static class SelfTest
             TestOverdriveAndHitStop();
             TestLookaheadAudioBuffer();
             Test3DBackdropAndReadability();
+            TestMusicDrivenBackdrop();
+            TestMusicAnalysis();
+            TestMusicToWorlds();
+            TestEnemiesChase();
+            TestMelodyPitch();
+            TestGravityWells();
+            TestMelodyRails();
+            TestLiveStreamBuffer();
+            TestSetlistRuns();
+            TestSongRecords();
+            TestInstrumentShips();
+            TestInKeyNotes();
+            TestSongBoss();
+            TestRunRecap();
+            TestRumbleAndCoach();
+            TestEdmShow();
             Console.WriteLine($"RESULT: PASS ({_checks} assertions, {sw.Elapsed.TotalSeconds:0.0}s)");
             return 0;
         }
@@ -491,25 +507,27 @@ public static class SelfTest
         var rng = new Random();
         var names = new HashSet<string>();
         var gens = new HashSet<int>();
+        var atmos = new HashSet<int>();
         Render.BackdropGenome? prev = null;
         const int count = 1000;
         for (int i = 0; i < count; i++)
         {
             var g = Render.BackdropGenome.Random(rng, prev);
-            Check(Render.BackdropGenome.Is3DOnly(g), "backdrop is 100% stationary 3D-only");
-            Check(g.Layers.Count == 1, "stationary 3D backdrop uses a single layer");
+            Check(Render.BackdropGenome.Is3DOnly(g), "backdrop is one map-anchored 3D world");
             var l = g.Layers[0];
-            Check(l.Generator is >= 0 and < Render.BackdropGenome.GeneratorCount, "generator in 3D range");
-            Check(l.Ops.All(o => o == 0), "zero 2D space-warping ops");
+            Check(l.Generator is >= 0 and < Render.BackdropGenome.GeneratorCount, "scene in range");
+            Check(g.Atmosphere is >= 0 and < Render.BackdropGenome.AtmosphereCount, "atmosphere in range");
             gens.Add(l.Generator);
+            atmos.Add(g.Atmosphere);
             if (prev != null)
-                Check(l.Generator != prev.Layers[0].Generator, "consecutive 3D backdrops switch scenes");
-            names.Add(g.Name + g.Global);
+                Check(l.Generator != prev.Layers[0].Generator, "consecutive backdrops switch worlds");
+            names.Add(g.Name + l.GenA + l.GenB + g.Global);
             prev = g;
         }
-        Console.WriteLine($"  backdrops: {count} generated, {names.Count} distinct, {gens.Count}/{Render.BackdropGenome.GeneratorCount} 3D scenes, 0 2D ops");
+        Console.WriteLine($"  backdrops: {count} generated, {names.Count} distinct, {gens.Count}/{Render.BackdropGenome.GeneratorCount} worlds, {atmos.Count}/{Render.BackdropGenome.AtmosphereCount} atmospheres");
         Check(names.Count == count, "no two backdrops alike");
-        Check(gens.Count == Render.BackdropGenome.GeneratorCount, "every 3D scene appears");
+        Check(gens.Count == Render.BackdropGenome.GeneratorCount, "every world appears");
+        Check(atmos.Count == Render.BackdropGenome.AtmosphereCount, "every atmosphere appears");
     }
 
     private static void TestRacerFeel()
@@ -1734,22 +1752,21 @@ public static class SelfTest
     /// <summary>TASK-014: 100% stationary 3D-only backdrops, zero 2D generators/ops, zero camera/aim UV panning, and combat readability contracts.</summary>
     private static void Test3DBackdropAndReadability()
     {
-        Check(BackdropGenome.GeneratorCount == 5 && BackdropGenome.MaxLayers == 1 && BackdropGenome.OpCount == 0, "BackdropGenome locked to 5 single-layer 3D scenes");
+        Check(BackdropGenome.GeneratorCount == 6 && BackdropGenome.MaxLayers == 1 && BackdropGenome.OpCount == 0, "BackdropGenome: six single-layer 3D worlds");
 
         var rng = new Random(14014);
         var seen = new HashSet<int>();
         BackdropGenome? prev = null;
-        for (int i = 0; i < 50; i++)
+        for (int i = 0; i < 60; i++)
         {
             var g = BackdropGenome.Random(rng, prev);
-            Check(BackdropGenome.Is3DOnly(g), $"genome {i} is 3D-only with zero 2D ops");
+            Check(BackdropGenome.Is3DOnly(g), $"genome {i} is one 3D world with zero 2D ops");
             Check(g.Layers[0].Blend == 0 && MathF.Abs(g.Layers[0].Gain - 1f) < 1e-5f, "single 3D base layer uses Blend=0, Gain=1");
             seen.Add(g.Layers[0].Generator);
             prev = g;
         }
-        Check(seen.Count == 5, "all 5 3D scenes reachable within 50 random rolls");
+        Check(seen.Count == BackdropGenome.GeneratorCount, "all 3D worlds reachable within 60 rolls");
 
-        // Negative checks on Is3DOnly
         var badOps = BackdropGenome.Random(new Random(7));
         badOps.Layers[0].Ops[0] = 2;
         Check(!BackdropGenome.Is3DOnly(badOps), "Is3DOnly rejects non-zero 2D space-warping ops");
@@ -1757,28 +1774,427 @@ public static class SelfTest
         badMulti.Layers.Add(new BackdropGenome.Layer { Generator = 1 });
         Check(!BackdropGenome.Is3DOnly(badMulti), "Is3DOnly rejects multi-layer stacks");
 
-        // Stationary UV & 3D-only shader contract
+        // Map-anchored contract: rays are cast through the world camera onto the arena plane,
+        // geometry is animated by the beat clock and by shockwaves anchored in the world.
         string frag = Shaders.BackgroundFrag;
-        Check(frag.Contains("vec2 uv = screenPos;", StringComparison.Ordinal), "BackgroundFrag locks uv strictly to screenPos");
-        foreach (string required3D in new[]
+        foreach (string required in new[]
         {
-            "genLiquid3D", "genCyberTunnel3D", "genVoidHorizon3D", "genCathedral3D", "genOrbitalGyroid3D",
+            "uniform vec2 uCam;", "uniform vec2 uView;", "uniform float uOblique;",
+            "uniform float uBeatPos;", "uniform vec4 uWaves[6];", "vec3 onFloor = vec3((uCam",
+            "mapSea", "mapCrust", "mapDunes", "mapGyroid", "renderNebula", "renderAurora", "atmosphere(",
+            "uniform float uSpec[16];", "uniform vec4 uFocus[16];",
             "uniform float uDarkTheme;", "uniform vec4 uLights[12];", "uniform float uOverdrive;", "uniform float uAnticipation;",
         })
         {
-            Check(frag.Contains(required3D, StringComparison.Ordinal), "BackgroundFrag contains " + required3D);
+            Check(frag.Contains(required, StringComparison.Ordinal), "BackgroundFrag contains " + required);
         }
-
         foreach (string forbidden in new[]
         {
-            "uCam", "uAim", "uVel", "uTravel", "pShift",
-            "genInk", "genPlasma", "genTruchet", "genHex", "genInterference", "genStreams", "genGridPulse",
-            "styleCells", "styleKaleido", "styleAurora", "applyOp",
+            "vec2 uv = screenPos;", "uAim", "uVel", "uTravel", "mapPrism", "mapCubes", "mapRings", "SCAN GRID",
+            "genInk", "genPlasma", "genTruchet", "genHex", "applyOp", "styleKaleido",
         })
         {
             Check(!frag.Contains(forbidden, StringComparison.Ordinal), "BackgroundFrag retired " + forbidden);
         }
+        // the 3D camera must match the 2D world projection on the floor plane (z = 0)
+        Check(MathF.Abs(Renderer.Oblique - 0.42f) < 1e-5f, "backdrop camera uses the world oblique");
+        Console.WriteLine($"  3d backdrop: worlds={seen.Count}/{BackdropGenome.GeneratorCount} mapAnchored=true beatClock=true");
+    }
 
-        Console.WriteLine($"  3d backdrop: scenes={seen.Count}/{BackdropGenome.GeneratorCount} stationaryUv=true 2dGenerators=0");
+
+    /// <summary>Each spectrum band moves its own part of the world, snapping on hits and settling after.</summary>
+    private static void TestMusicDrivenBackdrop()
+    {
+        var bars = new float[AudioState.SpectrumBars];
+        var avg = new float[16];
+        var outp = new float[16];
+        // steady mid-level mix for 3 s: bands settle near their level share
+        for (int i = 0; i < bars.Length; i++) bars[i] = 0.4f;
+        for (int t = 0; t < 180; t++) Renderer.ComputeBackdropSpectrum(bars, avg, outp, 1f / 60f);
+        float steady = outp[8];
+        // a hi-hat burst: only the top bands jump, instantly
+        for (int i = 36; i < 48; i++) bars[i] = 0.95f;
+        Renderer.ComputeBackdropSpectrum(bars, avg, outp, 1f / 60f);
+        float burst = outp[14];
+        Check(burst > steady + 0.5f, "treble band snaps up on a hat burst");
+        Check(MathF.Abs(outp[2] - steady) < 0.05f, "bass band ignores a hat burst");
+        for (int i = 36; i < 48; i++) bars[i] = 0.4f;
+        for (int t = 0; t < 30; t++) Renderer.ComputeBackdropSpectrum(bars, avg, outp, 1f / 60f);
+        Check(outp[14] < steady + 0.15f, "treble band settles within half a second");
+        bars[0] = float.NaN;
+        Renderer.ComputeBackdropSpectrum(bars, avg, outp, 1f / 60f);
+        Check(outp.All(float.IsFinite), "spectrum mapping survives NaN input");
+        Console.WriteLine($"  music backdrop: steady={steady:0.00} hatBurst={burst:0.00} bassDuringHat={outp[2]:0.00}");
+    }
+
+    /// <summary>The Spotify buffer FIFO primes, plays in order, recovers from underruns and sheds clock drift.</summary>
+    private static void TestLiveStreamBuffer()
+    {
+        var live = new LiveStreamSource();
+        var out1 = new float[960];
+        live.Read(out1, 0, out1.Length);
+        Check(out1.All(v => v == 0f), "silent until primed");
+        var chunk = new float[960];   // 10 ms stereo
+        for (int k = 0; k < 8; k++)
+        {
+            for (int f = 0; f < 480; f++) { chunk[f * 2] = k * 480 + f; chunk[f * 2 + 1] = -(k * 480 + f); }
+            live.Write(chunk);
+        }
+        live.Read(out1, 0, out1.Length);
+        Check(out1[0] == 0f && out1[2] == 1f && out1[3] == -1f, "plays captured frames in order, stereo intact");
+        // drain past the end: one underrun, then silence until re-primed
+        var big = new float[48000];
+        live.Read(big, 0, big.Length);
+        Check(live.Underruns == 1, "underrun counted once");
+        // capture running ahead of the output: the excess is dropped back to the cushion
+        var burst = new float[48000];
+        live.Write(burst);
+        live.Read(out1, 0, out1.Length);
+        Check(live.Fill < 48000 / 4, "clock drift excess is shed");
+        Console.WriteLine($"  spotify buffer fifo: underruns={live.Underruns} fillAfterDrift={live.Fill}");
+    }
+
+
+    /// <summary>
+    /// A synthetic 120 BPM song (A: C / G with kicks, B: Am / F with kicks and hats, A again):
+    /// chords, key, drums vs. melody and the returning section must all be recognised.
+    /// </summary>
+    private static void TestMusicAnalysis()
+    {
+        const int rate = 48000;
+        const float beatLen = 0.5f;
+        const int beatsPerSection = 24;
+        int total = (int)(beatsPerSection * 3 * beatLen * rate);
+        var sig = new float[total];
+        var rng = new Random(7);
+        float Midi(int m) => 440f * MathF.Pow(2f, (m - 69) / 12f);
+        // (root midi, minor) per 2-beat chord, by section
+        (int, bool)[] a = [(60, false), (65, false), (67, false), (60, false)];
+        (int, bool)[] b = [(57, true), (62, true), (65, false), (64, true)];
+        for (int i = 0; i < total; i++)
+        {
+            float t = i / (float)rate;
+            int beat = (int)(t / beatLen);
+            int section = beat / beatsPerSection;
+            var prog = section == 1 ? b : a;
+            var (root, minor) = prog[(beat / 2) % 4];
+            if (beat == 44) (root, minor) = (71, false);   // a one-beat foreign chord: a fill, not a new section
+            float s = 0f;
+            foreach (int iv in new[] { 0, minor ? 3 : 4, 7 })
+            {
+                float f = Midi(root + iv);
+                s += MathF.Sin(MathF.Tau * f * t) * 0.12f + MathF.Sin(MathF.Tau * 2f * f * t) * 0.03f;
+            }
+            float tb = t - beat * beatLen;
+            s += MathF.Sin(MathF.Tau * 55f * tb) * MathF.Exp(-tb * 22f) * 0.6f;
+            if (section == 1)
+            {
+                float th = (t + beatLen * 0.5f) % beatLen;
+                s += (float)(rng.NextDouble() * 2 - 1) * MathF.Exp(-th * 50f) * 0.18f;
+            }
+            sig[i] = s;
+        }
+
+        var spectrum = new SpectrumAnalyzer();
+        var music = new MusicAnalyzer();
+        var state = new AudioState { BeatLocked = true };
+        var win2048 = new float[SpectrumAnalyzer.FftSize];
+        float dt = 1f / 60f;
+        int hop = rate / 60;
+        int chordFrames = 0, chordRight = 0;
+        float kickPerc = 0f, gapPerc = 0f; int kickN = 0, gapN = 0;
+        float hatsA = 0f, hatsB = 0f; int hatsAN = 0, hatsBN = 0;
+        float harmMid = 0f; int harmN = 0;
+        int keyAfterA = -2;
+        var changes = new List<(int beat, int label, bool repeat)>();
+        var starts = new List<double>();
+        var sims = new List<float>();
+        long analyzeTicks = 0; int analyzeFrames = 0;
+        int lastBeat = -1;
+        for (int pos = MusicAnalyzer.WindowSize; pos < total; pos += hop)
+        {
+            float t = pos / (float)rate;
+            int beat = (int)(t / beatLen);
+            state.ClearBeatFlags();
+            Array.Copy(sig, pos - win2048.Length, win2048, 0, win2048.Length);
+            spectrum.Analyze(win2048, win2048.Length, rate, dt, state);
+            // the beat tracker's clock, as the engine provides it
+            state.BeatPosition = t / beatLen;
+            state.BeatLocked = true;
+            state.DownbeatOffset = 0;
+            lastBeat = beat;
+            long t0 = Stopwatch.GetTimestamp();
+            music.Analyze(sig.AsSpan(pos - MusicAnalyzer.WindowSize, MusicAnalyzer.WindowSize), spectrum.Magnitudes, rate, dt, state);
+            analyzeTicks += Stopwatch.GetTimestamp() - t0;
+            analyzeFrames++;
+            int section = beat / beatsPerSection;
+            float inBeat = t - beat * beatLen;
+            var prog = section == 1 ? b : a;
+            var (root, minor) = prog[(beat / 2) % 4];
+            // judge the chord once the window has settled into the new chord
+            float inChord = t - (beat / 2) * 2 * beatLen;
+            if (inChord > 0.45f && t > 2f && beat != 44 && beat != 45)
+            {
+                chordFrames++;
+                if (state.ChordRoot == root % 12 && state.ChordMinor == minor) chordRight++;
+            }
+            if (t > 2f && inBeat < 0.06f) { kickPerc += state.PercLow; kickN++; }
+            if (t > 2f && inBeat > 0.3f && inBeat < 0.45f) { gapPerc += state.PercLow; gapN++; }
+            if (t > 2f) { harmMid += state.HarmMid; harmN++; }
+            // in B the hats sit on the off-beats: the high drum part should spike there
+            if (section == 1 && beat > beatsPerSection + 4)
+            {
+                float off = (inBeat + beatLen * 0.5f) % beatLen;
+                if (off < 0.05f) { hatsB += state.PercHigh; hatsBN++; }
+                else if (off > 0.2f && off < 0.35f) { hatsA += state.PercHigh; hatsAN++; }
+            }
+            if (beat == beatsPerSection - 1) keyAfterA = state.Key;
+            if (state.SectionChanged)
+            {
+                changes.Add((beat, state.SectionLabel, state.SectionRepeat));
+                sims.Add(music.LastRepeatSimilarity);
+                if (!state.SectionCorrected) starts.Add(music.LastBoundaryBeatIndex);
+            }
+        }
+        float chordAcc = chordRight / (float)Math.Max(1, chordFrames);
+        float kickRatio = (kickPerc / Math.Max(1, kickN)) / MathF.Max(0.01f, gapPerc / Math.Max(1, gapN));
+        float hatRatio = (hatsB / Math.Max(1, hatsBN)) / MathF.Max(0.01f, hatsA / Math.Max(1, hatsAN));
+        Console.WriteLine($"  music analysis cost: {analyzeTicks * 1000.0 / Stopwatch.Frequency / Math.Max(1, analyzeFrames):0.000} ms/frame");
+        Console.WriteLine($"  music analysis: chordAcc={chordAcc:P0} key={keyAfterA} kickPerc/gap={kickRatio:0.0}x hatOn/off={hatRatio:0.0}x harmMid={harmMid / Math.Max(1, harmN):0.00} sections=[{string.Join(" ", changes.Select(c => $"b{c.beat}:L{c.label}{(c.repeat ? "R" : "")}"))}] starts=[{string.Join(" ", starts.Select(x => x.ToString("0.00")))}] corrections={music.Corrections} sims=[{string.Join(" ", sims.Select(x => x.ToString("0.000")))}]");
+        Check(chordAcc > 0.6f, "chords recognised (C, G, Am, F)");
+        Check(keyAfterA == 0, "key recognised as C major");
+        Check(kickRatio > 1.5f, "drum part spikes on the kick, quiet between");
+        Check(hatRatio > 1.3f, "hi-hats spike the high drum part on the off-beats");
+        Check(harmMid / Math.Max(1, harmN) > 0.25f, "sustained chords live in the melody part");
+        // found on the section's first beat, decided as soon as that beat ends
+        var toB = changes.LastOrDefault(c => c.beat >= beatsPerSection && c.beat < beatsPerSection * 2);
+        var backToA = changes.LastOrDefault(c => c.beat >= beatsPerSection * 2);
+        var firstToB = changes.FirstOrDefault(c => c.beat >= beatsPerSection && c.beat < beatsPerSection * 2);
+        var firstToA = changes.FirstOrDefault(c => c.beat >= beatsPerSection * 2);
+        Check(starts.Any(x => Math.Abs(x - beatsPerSection) < 0.2) && starts.Any(x => Math.Abs(x - beatsPerSection * 2) < 0.2), "sections located on their exact first beat");
+        Check(firstToB.beat <= beatsPerSection + 1 && firstToA.beat <= beatsPerSection * 2 + 1, "section changes reported within one beat");
+        Check(toB != default && toB.label != 0, "section B gets a new label");
+        Check(backToA != default && backToA.repeat && backToA.label == 0, "returning A section recognised as a repeat");
+        Check(music.Corrections <= 1, "quick calls rarely need correcting");
+        // the one-beat fill at beat 44 must not leave a lasting section change
+        var lastBeforeA = changes.LastOrDefault(c => c.beat < beatsPerSection * 2);
+        Check(lastBeforeA == default || lastBeforeA.label == toB.label || lastBeforeA.beat < 44, "a one-beat fill is taken back");
+    }
+
+    /// <summary>Chords tint the world relative to the key; a returning section gets its old world back.</summary>
+    private static void TestMusicToWorlds()
+    {
+        Check(Renderer.ChordShiftFor(0, false, 0) == 0f, "home chord keeps the world's own colours");
+        Check(Renderer.ChordShiftFor(7, false, 7) == 0f, "home chord is relative to the key");
+        float fifth = MathF.Abs(Renderer.ChordShiftFor(7, false, 0));
+        float tritone = MathF.Abs(Renderer.ChordShiftFor(6, false, 0));
+        Check(fifth > 0f && tritone > fifth * 3f, "distant chords tint more than neighbours");
+        Check(Renderer.ChordShiftFor(-1, false, 0) == 0f, "no chord, no tint");
+
+        var rng = new Random(3);
+        var mem = new SectionWorldMemory();
+        var a = BackdropGenome.Random(rng);
+        var b = mem.Choose(1, false, 5, a, () => BackdropGenome.Random(rng, a));
+        Check(b != a, "new section gets a new world");
+        var back = mem.Choose(0, true, 5, b, () => BackdropGenome.Random(rng, b));
+        Check(back == a, "returning section brings its world back");
+        var bAgain = mem.Choose(1, true, 5, back, () => BackdropGenome.Random(rng, back));
+        Check(bAgain == b, "second section's world returns too");
+        var other = mem.Choose(0, true, 6, bAgain, () => BackdropGenome.Random(rng, bAgain));
+        Check(other != a, "a new song starts a fresh memory");
+        Console.WriteLine($"  music to worlds: fifthTint={fifth:0.000} tritoneTint={tritone:0.000} memory=ok");
+    }
+
+    /// <summary>Flee at full speed: every enemy type keeps hunting you and none is left behind.</summary>
+    private static void TestEnemiesChase()
+    {
+        var audio = new AudioState();
+        var visual = new SynthVisual();
+        var world = new GameWorld(new RunConfig { Seed = 0xC4A5EUL });
+        world.Player.InvincibleDemo = true;
+        world.StartGrace = 0f;
+        world.BeginWave(4);
+        world.ClearSpawnQueueForCapture();
+        world.Player.Pos = new Vector2(-1900f, 0f);
+        var roles = new[] { EnemyRole.Drifter, EnemyRole.Orbiter, EnemyRole.Sniper, EnemyRole.Dasher, EnemyRole.Turret, EnemyRole.Splitter, EnemyRole.Swarm, EnemyRole.Weaver, EnemyRole.Mortar, EnemyRole.Phantom, EnemyRole.Prism };
+        for (int i = 0; i < roles.Length; i++)
+            world.SpawnForCapture(roles[i], world.Player.Pos + M.FromAngle(i / (float)roles.Length * M.Tau, 520f));
+        var enemies = world.Enemies.ToList();
+        float dt = 1f / 60f;
+        float worst = 0f, sum = 0f;
+        string worstRole = "";
+        for (int t = 0; t < 60 * 3; t++)
+        {
+            audio.ClearBeatFlags(); audio.Time += dt; visual.Advance(dt, audio);
+            world.Step(dt, audio, new InputFrame(new Vector2(1f, 0f), new Vector2(1f, 0f), false, false, false, false));
+        }
+        int alive = 0;
+        foreach (var e in enemies)
+        {
+            if (e.Dead) continue;
+            alive++;
+            float d = M.Dist(e.Pos, world.Player.Pos);
+            sum += d;
+            if (d > worst) { worst = d; worstRole = e.Role.ToString(); }
+        }
+        float avg = sum / Math.Max(1, alive);
+        Console.WriteLine($"  chase: fled {world.Player.Pos.X + 1900f:0}u at speed {world.Player.SpeedFrac:0.00}; avgDist={avg:0} worst={worst:0} ({worstRole}) baseSpeed={GameWorld.EnemyBaseSpeed} farBoost={GameWorld.ChaseBoost(2000f):0.0}x");
+        Check(world.Player.SpeedFrac > 0.9f, "player fled at top speed");
+        Check(worst < 1100f, "no enemy type is left behind when you flee");
+        Check(avg < 750f, "the pack stays on your tail");
+        Check(GameWorld.EnemyBaseSpeed >= 170f, "enemies faster than before (100)");
+    }
+
+    /// <summary>The lead melody's notes are tracked from a harmonic-rich synthetic tune.</summary>
+    private static void TestMelodyPitch()
+    {
+        const int rate = 48000;
+        int[] notes = [60, 64, 67, 72, 69, 65, 62, 71];
+        const float noteLen = 0.4f;
+        int total = (int)(notes.Length * noteLen * rate) + MusicAnalyzer.WindowSize;
+        var sig = new float[total];
+        for (int i = 0; i < total; i++)
+        {
+            float t = i / (float)rate - MusicAnalyzer.WindowSize / (float)rate;
+            int k = Math.Clamp((int)(t / noteLen), 0, notes.Length - 1);
+            float f = 440f * MathF.Pow(2f, (notes[k] - 69) / 12f);
+            float s = 0f;
+            for (int h = 1; h <= 4; h++) s += MathF.Sin(MathF.Tau * f * h * t) * 0.25f / h;
+            sig[i] = s;
+        }
+        var spectrum = new SpectrumAnalyzer();
+        var music = new MusicAnalyzer();
+        var state = new AudioState();
+        var win = new float[SpectrumAnalyzer.FftSize];
+        int frames = 0, right = 0;
+        for (int pos = MusicAnalyzer.WindowSize; pos < total; pos += rate / 60)
+        {
+            float t = pos / (float)rate - MusicAnalyzer.WindowSize / (float)rate;
+            Array.Copy(sig, pos - win.Length, win, 0, win.Length);
+            spectrum.Analyze(win, win.Length, rate, 1f / 60f, state);
+            music.Analyze(sig.AsSpan(pos - MusicAnalyzer.WindowSize, MusicAnalyzer.WindowSize), spectrum.Magnitudes, rate, 1f / 60f, state);
+            float inNote = t % noteLen;
+            int k = (int)(t / noteLen);
+            if (k >= notes.Length || inNote < 0.2f) continue;   // the 8192 window needs ~0.17 s to fill with the new note
+            frames++;
+            if (MathF.Abs(state.MelodyPitch - notes[k]) < 0.5f && state.MelodyConfidence > 0.3f) right++;
+        }
+        float acc = right / (float)Math.Max(1, frames);
+        Console.WriteLine($"  melody pitch: accuracy={acc:P0} conf={state.MelodyConfidence:0.00}");
+        Check(acc > 0.8f, "melody notes tracked");
+    }
+
+    private static AudioState MusicState(float harmLow, float melodyConf, float pitch) => new()
+    {
+        HarmLow = harmLow, HarmMid = 0.6f, Rms = 0.1f, ChordRoot = 0,
+        MelodyConfidence = melodyConf, MelodyPitch = pitch, Bpm = 120f,
+    };
+
+    /// <summary>Bass gravity wells: open on a bass note, bend and swallow bullets, slingshot the ship, detonate on a drop.</summary>
+    private static void TestGravityWells()
+    {
+        var world = new GameWorld(new RunConfig { Seed = 0x6EA7UL });
+        world.Player.InvincibleDemo = true;
+        world.StartGrace = 0f;
+        world.BeginWave(2);
+        world.ClearSpawnQueueForCapture();
+        world.SpawnForCapture(EnemyRole.Splitter, world.Player.Pos + new Vector2(2400f, 1400f));
+        float dt = 1f / 60f;
+        var audio = MusicState(0.9f, 0f, 60f);
+        audio.ChordChanged = true;
+        world.Step(dt, audio, InputFrame.Empty);
+        audio.ChordChanged = false;
+        Check(world.Wells.Count == 1, "a bass note opens a gravity well");
+        for (int t = 0; t < 90; t++) world.Step(dt, audio, InputFrame.Empty);
+        var w = world.Wells[0];
+        Check(w.Strength > 0.6f, "the well grows with the bass");
+        Check(M.Dist(w.Pos, world.Player.Pos) > 250f, "the well opens away from the ship");
+
+        // a shot passing beside the core is bent toward it; one aimed at the core is swallowed
+        var pass = world.SpawnEnemyBullet(w.Pos + new Vector2(-w.Radius * 0.9f, 120f), new Vector2(380f, 0f), 5f, 0.5f, BulletKind.Orb)!;
+        var into = world.SpawnEnemyBullet(w.Pos + new Vector2(0f, -150f), new Vector2(0f, 300f), 5f, 0.5f, BulletKind.Orb)!;
+        for (int t = 0; t < 50; t++) world.Step(dt, audio, InputFrame.Empty);
+        float bend = MathF.Abs(MathF.Atan2(pass.Vel.Y, pass.Vel.X)) * 180f / MathF.PI;
+        Check(bend > 8f, "bullets bend around the well");
+        Check(!world.EnemyBullets.Contains(into), "the core swallows bullets");
+
+        // skim the ring at speed, then break away: slingshot
+        var p = world.Player;
+        p.Pos = w.Pos + new Vector2(0f, -w.Radius * 0.55f);
+        p.Vel = new Vector2(540f, 0f);
+        for (int t = 0; t < 60; t++)
+        {
+            Vector2 toWell = M.SafeNorm(w.Pos - p.Pos);
+            Vector2 tangent = new(-toWell.Y, toWell.X);
+            if (Vector2.Dot(tangent, p.Vel) < 0f) tangent = -tangent;
+            world.Step(dt, audio, new InputFrame(M.SafeNorm(tangent + toWell * 0.35f), tangent, false, false, false, false));
+        }
+        for (int t = 0; t < 40 && p.SlingBoost <= 0f; t++)
+            world.Step(dt, audio, new InputFrame(M.SafeNorm(p.Pos - w.Pos), M.SafeNorm(p.Pos - w.Pos), false, false, false, false));
+        float boost = p.SlingBoost;
+        Check(boost > 0.3f, "skimming a well and breaking away slingshots the ship");
+
+        // a drop detonates the well
+        world.SpawnForCapture(EnemyRole.Splitter, w.Pos + new Vector2(120f, 0f));
+        var victim = world.Enemies[^1];
+        float hp = victim.Hp;
+        world.OnMusicDrop(1f, false);
+        Check(world.Wells.Count == 0, "a drop collapses the wells");
+        Check(victim.Hp < hp || victim.Dead, "the collapse hurts enemies near the well");
+        Console.WriteLine($"  gravity wells: strength={w.Strength:0.00} radius={w.Radius:0} bend={bend:0}deg slingshot={boost:0.00}");
+    }
+
+    /// <summary>Melody rails: drawn by the tune, curve with its pitch, boost a rider, let tuned bullets through.</summary>
+    private static void TestMelodyRails()
+    {
+        var world = new GameWorld(new RunConfig { Seed = 0x7A11UL });
+        world.StartGrace = 0f;
+        world.BeginWave(2);
+        world.ClearSpawnQueueForCapture();
+        world.SpawnForCapture(EnemyRole.Splitter, world.Player.Pos + new Vector2(2400f, 1400f));
+        float dt = 1f / 60f;
+        var audio = MusicState(0f, 0.8f, 72f);
+        for (int t = 0; t < 40; t++) world.Step(dt, audio, InputFrame.Empty);
+        audio.MelodyPitch = 79f;   // the tune climbs: the rail turns
+        for (int t = 0; t < 50; t++) world.Step(dt, audio, InputFrame.Empty);
+        Check(world.Rails.Count == 1, "a melody draws a rail");
+        var rail = world.Rails[0];
+        Check(rail.Points.Count > 25, "the rail grows ahead while the melody plays");
+        Vector2 d0 = M.SafeNorm(rail.Points[3] - rail.Points[0]);
+        Vector2 d1 = M.SafeNorm(rail.Points[^1] - rail.Points[^4]);
+        float turn = MathF.Acos(M.Clamp(Vector2.Dot(d0, d1), -1f, 1f)) * 180f / MathF.PI;
+        Check(turn > 20f, "the rail curves with the melody's pitch");
+        Check(rail.Hues[0] != rail.Hues[^1], "the rail is coloured by its notes");
+
+        // ride it
+        var p = world.Player;
+        int k0 = 2;
+        p.Pos = rail.Points[k0];
+        Vector2 along = M.SafeNorm(rail.Points[k0 + 1] - rail.Points[k0]);
+        p.Vel = along * 520f;
+        float topSeen = 0f;
+        for (int t = 0; t < 30; t++)
+        {
+            int k = 0; float best = float.MaxValue;
+            for (int i = 0; i < rail.Points.Count - 1; i++) { float dd = M.DistSq(rail.Points[i], p.Pos); if (dd < best) { best = dd; k = i; } }
+            Vector2 dir = M.SafeNorm(rail.Points[Math.Min(k + 2, rail.Points.Count - 1)] - p.Pos);
+            world.Step(dt, audio, new InputFrame(dir, dir, false, false, false, false));
+            topSeen = MathF.Max(topSeen, p.Vel.Length());
+        }
+        Check(p.RailRiding, "moving along the rail rides it");
+        Check(topSeen > Player.TopSpeed * 1.1f, "riding boosts speed past the normal top speed");
+
+        // a tuned bullet passes through a rider; an untuned one does not
+        p.Invuln = 0f;
+        int health = p.Health;
+        var tuned = world.SpawnEnemyBullet(p.Pos, Vector2.Zero, 5f, 0.5f, BulletKind.Orb)!;
+        tuned.Tuned = true;
+        p.RailRiding = true;
+        world.ResolveCollisionsForTest();
+        Check(p.Health == health, "tuned bullets pass through a ship riding the rail");
+        p.RailRiding = false;
+        world.ResolveCollisionsForTest();
+        Check(p.Health < health, "off the rail they hit as usual");
+        Console.WriteLine($"  melody rails: points={rail.Points.Count} turn={turn:0}deg rideSpeed={topSeen:0} (top {Player.TopSpeed})");
     }
 }

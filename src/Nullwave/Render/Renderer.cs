@@ -86,6 +86,205 @@ public sealed class Renderer : IDisposable
     private readonly Vector4[] _screenShockwaves = new Vector4[MaxScreenShockwaves];
     private int _screenShockwaveCount;
 
+    public const int MaxBackdropFocus = 16;
+    private static readonly string[] FocusNames = Enumerable.Range(0, MaxBackdropFocus).Select(i => $"uFocus[{i}]").ToArray();
+    private static readonly string[] SpecNames = Enumerable.Range(0, 16).Select(i => $"uSpec[{i}]").ToArray();
+    private readonly Vector4[] _focus = new Vector4[MaxBackdropFocus];
+    private int _focusCount;
+    private readonly float[] _spec = new float[16];
+    private readonly float[] _specAvg = new float[16];
+    public int BackdropFocusCount => _focusCount;
+    /// <summary>Last 16-band spectrum sent to the backdrop (diagnostics / tests).</summary>
+    public IReadOnlyList<float> BackdropSpectrum => _spec;
+
+    /// <summary>
+    /// Darkens the backdrop in a soft pool around a map position (the ship, enemies, the boss) so
+    /// what you fight always sits on a calm, dark patch of the world. Strength 0..1.
+    /// </summary>
+    public void AddBackdropFocus(Vector2 worldPos, float worldRadius, float strength)
+    {
+        if (_focusCount >= MaxBackdropFocus || !float.IsFinite(strength) || strength <= 0.01f) return;
+        var f = ProjectBackdropLight(worldPos, worldRadius, 1f, _camera, _view);
+        _focus[_focusCount++] = new Vector4(f.X, f.Y, f.Z, Math.Clamp(strength, 0f, 0.95f));
+    }
+
+    /// <summary>
+    /// 48 spectrum bars -> 16 bands, each mixed between its level and how far it sits above its own
+    /// recent average, so every band moves the world (not just the always-loud bass).
+    /// </summary>
+    public static void ComputeBackdropSpectrum(float[] bars, float[] avg, float[] output, float dt)
+    {
+        for (int b = 0; b < 16; b++)
+        {
+            float v = 0f;
+            for (int k = 0; k < 3; k++)
+            {
+                int i = b * 3 + k;
+                float x = i < bars.Length && float.IsFinite(bars[i]) ? bars[i] : 0f;
+                v += x;
+            }
+            v /= 3f;
+            avg[b] = M.ExpSmooth(avg[b], v, 0.8f, dt);
+            float target = Math.Clamp(v * 0.55f + (v - avg[b]) * 2.2f, 0f, 1.2f);
+            // instant attack, quick release: the world snaps to each hit and settles between them
+            output[b] = target > output[b] ? target : M.ExpSmooth(output[b], target, 9f, dt);
+        }
+    }
+
+    private float _chordShift;
+    private double _dropBeat = -1e6;
+    private float _rollSign = 1f;
+    private float _snareRoll;
+    private float _letterbox;
+    private float _screenRoll;
+    /// <summary>This frame's EDM show values (diagnostics and tests).</summary>
+    public EdmFx LastEdmFx { get; private set; }
+    /// <summary>Frames rendered so far (captures start their scripts on the first one).</summary>
+    public long RenderedFrames { get; private set; }
+
+    /// <summary>What the EDM show does this frame: background lasers, kaleidoscope, camera lift and dive,
+    /// kick dip, hue steps, pump and strobe; camera roll and letterbox in the composite.</summary>
+    public readonly record struct EdmFx(float Laser, float Kaleido, float Vertigo, float Dive, float CamKick,
+        float HueStep, float Pump, float Strobe, float Roll, float Letterbox);
+
+    /// <summary>
+    /// The EDM show for a frame. <paramref name="dropBeats"/> is beats since the last drop. Build-ups fold the
+    /// world into a kaleidoscope, lift the camera away and close letterbox bars; the drop slams the camera
+    /// down, pulses its first bar on the beat, steps the hue every beat and pumps for four bars.
+    /// Lasers follow the loudness and go dark in breakdowns. musicFx scales the show, camFx the camera
+    /// moves; reduceFlashing removes the strobe and hue steps and halves the rest.
+    /// </summary>
+    public static EdmFx EdmFxFor(float dropBeats, double beatPos, float energy, float build, float breakdown,
+        float overdrive, float snareRoll, float musicFx, float camFx, bool reduceFlashing)
+    {
+        static float Fin(float v, float fallback) => float.IsFinite(v) ? v : fallback;
+        static float Ss(float e0, float e1, float x)
+        {
+            float u = Math.Clamp((x - e0) / (e1 - e0), 0f, 1f);
+            return u * u * (3f - 2f * u);
+        }
+        float show = Math.Clamp(Fin(musicFx, 0f), 0f, 1.4f), showC = MathF.Min(1f, show);
+        float cam = Math.Clamp(Fin(camFx, 0f), 0f, 1.5f), camC = MathF.Min(1f, cam);
+        float since = Math.Clamp(Fin(dropBeats, 1000f), 0f, 1000f);
+        if (!double.IsFinite(beatPos)) beatPos = 0.0;
+        float window = since < 16f ? 1f - since / 16f : 0f;   // the drop's first four bars
+        float calm = 1f - Math.Clamp(Fin(breakdown, 0f), 0f, 1f);
+        float b = Math.Clamp(Fin(build, 0f), 0f, 1f);
+        float od = Math.Clamp(Fin(overdrive, 0f), 0f, 1f);
+        float safe = reduceFlashing ? 0.5f : 1f;
+
+        float laser = Math.Clamp((Fin(energy, 0f) - 0.35f) * 1.6f + window * 0.9f + od * 0.6f, 0f, 1.2f) * show * calm;
+        float kaleido = Ss(0.25f, 0.85f, b) * 0.85f * showC * safe;
+        float vertigo = Ss(0.1f, 1f, b) * camC;
+        float dive = 0.42f * MathF.Exp(-since * 1.1f) * camC;
+        float camKick = 0.07f * MathF.Min(1.2f, cam);
+        double step = Math.Floor(beatPos) * 0.13;
+        float hue = !reduceFlashing && window > 0f ? (float)(step - Math.Floor(step)) * showC : 0f;
+        float pump = (window * 0.9f + od * 0.3f) * showC * safe;
+        // a tinted pulse on each beat of the drop's first bar: at most four, and under 3 a second even
+        // at 174 BPM (photosensitivity guidance), never a full white-out
+        double frac = beatPos - Math.Floor(beatPos);
+        float strobe = !reduceFlashing && since < 4f && frac < 0.12 ? 0.3f * showC * (1f - since / 4f) : 0f;
+        // the drop rocks the frame left and right on the beat, settling over a couple of bars
+        float roll = (0.05f * MathF.Exp(-since * 0.8f) * MathF.Cos(since * MathF.PI) + Fin(snareRoll, 0f)) * cam * safe;
+        float letterbox = Ss(0.2f, 0.9f, b) * 0.06f * camC;
+        return new EdmFx(laser, kaleido, vertigo, dive, camKick, hue, pump, strobe, roll, letterbox);
+    }
+
+    /// <summary>Where the composite samples the scene for a screen point (0..1, y down): undoes the camera roll.</summary>
+    public static Vector2 UnrollScreen(Vector2 n, float roll, float aspect)
+    {
+        if (!float.IsFinite(roll) || MathF.Abs(roll) < 1e-6f) return n;
+        float cx = (n.X - 0.5f) * aspect, cy = 0.5f - n.Y;
+        float cr = MathF.Cos(roll), sr = MathF.Sin(roll), k = 1f / EdgeFit(roll, aspect);
+        float rx = (cr * cx + sr * cy) * k, ry = (-sr * cx + cr * cy) * k;
+        return new Vector2(rx / aspect + 0.5f, 0.5f - ry);
+    }
+
+    /// <summary>How far a rolled frame is scaled up so its corners stay inside the picture (exact for any aspect).</summary>
+    private static float EdgeFit(float roll, float aspect)
+    {
+        float r = MathF.Abs(roll);
+        return MathF.Cos(r) + MathF.Sin(r) * MathF.Max(aspect, 1f / MathF.Max(aspect, 1e-3f));
+    }
+
+    /// <summary>The inverse of <see cref="UnrollScreen"/>: where a point of the scene shows up on screen.</summary>
+    public static Vector2 RollScreen(Vector2 n, float roll, float aspect)
+    {
+        if (!float.IsFinite(roll) || MathF.Abs(roll) < 1e-6f) return n;
+        float cx = (n.X - 0.5f) * aspect, cy = 0.5f - n.Y;
+        float cr = MathF.Cos(roll), sr = MathF.Sin(roll), k = EdgeFit(roll, aspect);
+        float rx = (cr * cx - sr * cy) * k, ry = (sr * cx + cr * cy) * k;
+        return new Vector2(rx / aspect + 0.5f, 0.5f - ry);
+    }
+    private readonly SectionWorldMemory _sections = new();
+    public int SectionWorldCount => _sections.Count;
+    public BackdropGenome CurrentBackdrop => _genB ?? _genA;
+
+    /// <summary>
+    /// Palette phase shift for the chord being played, relative to the song's key, laid out on the
+    /// circle of fifths: the home chord is the world's own colours, neighbouring chords tint it a
+    /// little, distant chords more. Minor chords lean cooler.
+    /// </summary>
+    public static float ChordShiftFor(int chordRoot, bool minor, int key)
+    {
+        if (chordRoot < 0) return 0f;
+        int keyRoot = key >= 0 ? key % 12 : 0;
+        int rel = ((chordRoot - keyRoot) % 12 + 12) % 12;
+        int fifths = (rel * 7) % 12;                  // position on the circle of fifths
+        if (fifths > 6) fifths -= 12;                 // -5..6, home = 0
+        return fifths / 12f * 0.32f + (minor ? 0.05f : 0f);
+    }
+
+    /// <summary>
+    /// A new song section starts. A section heard before brings back the world it had; a new one
+    /// gets a brand-new world. Memory is per song (<paramref name="songEpoch"/>).
+    /// </summary>
+    public void ShowSection(int label, bool repeat, int songEpoch)
+    {
+        var current = _genB ?? _genA;
+        var next = _sections.Choose(label, repeat, songEpoch, current, () => BackdropGenome.Random(_genRng, current));
+        if (next != current) TransitionTo(next);
+    }
+
+    private void TransitionTo(BackdropGenome g)
+    {
+        if (_genB != null) _genA = _genB;
+        _genB = g;
+        _mix = 0f;
+    }
+
+    public const int MaxBackdropWaves = 6;
+    private static readonly string[] WaveNames =
+        ["uWaves[0]", "uWaves[1]", "uWaves[2]", "uWaves[3]", "uWaves[4]", "uWaves[5]"];
+    // world x, world y, birth time, strength
+    private readonly Vector4[] _waves = new Vector4[MaxBackdropWaves];
+    private int _waveCount;
+    private long _lastBeatIndex = long.MinValue;
+    private float _lastDrop;
+    public int BackdropWaveCount => _waveCount;
+
+    /// <summary>
+    /// Sends a shockwave through the 3D backdrop world from a map position: it rolls outward
+    /// through the geometry (towers lift, the sea swells, cubes are tossed) and stays anchored
+    /// to where it started.
+    /// </summary>
+    public void PulseBackdrop(Vector2 worldPos, float strength)
+    {
+        if (!float.IsFinite(strength) || strength <= 0.02f || !float.IsFinite(worldPos.X) || !float.IsFinite(worldPos.Y)) return;
+        float now = MathF.Max(0f, _lastRenderTime);
+        int slot = _waveCount;
+        if (_waveCount >= MaxBackdropWaves)
+        {
+            // replace the oldest
+            slot = 0;
+            for (int i = 1; i < _waveCount; i++)
+                if (_waves[i].Z < _waves[slot].Z) slot = i;
+        }
+        else _waveCount++;
+        _waves[slot] = new Vector4(worldPos.X, worldPos.Y, now, Math.Clamp(strength, 0f, 2f));
+    }
+
     public int BackdropLightCount => _lightCount;
     public int ScreenShockwaveCount => _screenShockwaveCount;
     /// <summary>Live Drop/Sync Overdrive intensity (0..1) amplifying reactive backdrop surges.</summary>
@@ -214,6 +413,7 @@ public sealed class Renderer : IDisposable
         if (_genB != null) return;
         _genB = BackdropGenome.Random(_genRng, _genA);
         _mix = 0f;
+        _sections.Replace(_genB);
     }
 
     /// <summary>Pins a specific style (capture/debug).</summary>
@@ -237,6 +437,7 @@ public sealed class Renderer : IDisposable
         string arr = "uL" + suffix;
         _background.SetInt("uCount" + suffix, g.Layers.Count);
         _background.SetVec4("uGlob" + suffix, g.Global);
+        _background.SetInt("uAtmo" + suffix, g.Atmosphere);
         for (int i = 0; i < g.Layers.Count; i++)
         {
             var l = g.Layers[i];
@@ -309,6 +510,7 @@ public sealed class Renderer : IDisposable
         _backdropMeshes.Clear();
         _lightCount = 0;
         _screenShockwaveCount = 0;
+        _focusCount = 0;
     }
 
     /// <summary>Perspective camera for the background 3D layer (its own space, z up).</summary>
@@ -336,14 +538,18 @@ public sealed class Renderer : IDisposable
     {
         float nx = windowSize.X <= 0 ? 0.5f : mouse.X / windowSize.X;
         float ny = windowSize.Y <= 0 ? 0.5f : mouse.Y / windowSize.Y;
-        return _camera + new Vector2((nx - 0.5f) * 2f * _view.X, (ny - 0.5f) * 2f * _view.Y);
+        // aim at what is drawn under the cursor, even while the camera is rolled
+        var n = UnrollScreen(new Vector2(nx, ny), _screenRoll, Width / (float)Math.Max(1, Height));
+        return _camera + new Vector2((n.X - 0.5f) * 2f * _view.X, (n.Y - 0.5f) * 2f * _view.Y);
     }
 
     public Vector2 WorldToUi(Vector2 world)
     {
-        return new Vector2(
-            DesignWidth * 0.5f + (world.X - _camera.X) / MathF.Max(0.001f, _view.X * 2f) * DesignWidth,
-            DesignHeight * 0.5f + (world.Y - _camera.Y) / MathF.Max(0.001f, _view.Y * 2f) * DesignHeight);
+        var n = new Vector2(
+            0.5f + (world.X - _camera.X) / MathF.Max(0.001f, _view.X * 2f),
+            0.5f + (world.Y - _camera.Y) / MathF.Max(0.001f, _view.Y * 2f));
+        n = RollScreen(n, _screenRoll, Width / (float)Math.Max(1, Height));
+        return new Vector2(n.X * DesignWidth, n.Y * DesignHeight);
     }
 
     public bool InView(Vector2 world, float margin = 140f)
@@ -374,7 +580,7 @@ public sealed class Renderer : IDisposable
         float punchHat = ClampDrive(drives.Hat * 1.35f);
         float punchDrop = ClampDrive(drives.Drop * 1.35f);
         // breakdowns slow the liquid right down, drops and Overdrive make it surge
-        _flow += frameDt * (0.38f + audio.Energy * 1.85f + audio.BeatPulse * 1.05f + punchDrop * 4.4f + overdriveEff * 1.8f) * (1f - drives.Breakdown * 0.65f) * settings.BackgroundMotion / 100f;
+        _flow += frameDt * (0.38f + audio.Energy * 1.3f + (audio.HarmLow + audio.HarmMid) * 0.6f + audio.BeatPulse * 0.8f + punchDrop * 4.4f + overdriveEff * 1.8f) * (1f - drives.Breakdown * 0.65f) * settings.BackgroundMotion / 100f;
 
         _background.Use();
         _background.SetVec2("uResolution", Width, Height);
@@ -419,6 +625,74 @@ public sealed class Renderer : IDisposable
         SetGenome("A", _genA);
         SetGenome("B", _genB ?? _genA);
         _background.SetFloat("uMix", _genB != null ? _mix : 0f);
+
+        // map-anchored camera: the 3D world is seen through the same camera as the fight
+        _background.SetVec2("uCam", _camera);
+        _background.SetVec2("uView", _view);
+        _background.SetFloat("uOblique", Oblique);
+        double beatPos = double.IsFinite(audio.BeatPosition) ? audio.BeatPosition : 0.0;
+        _background.SetFloat("uBeatPos", (float)(((beatPos % 256.0) + 256.0) % 256.0));
+        _background.SetFloat("uBeatLock", audio.BeatLocked || !audio.External ? 1f : 0.3f);
+
+        // every beat sends a wave through the world from wherever you are; downbeats and drops hit harder
+        long beatIndex = (long)Math.Floor(beatPos);
+        if (beatIndex != _lastBeatIndex)
+        {
+            if (_lastBeatIndex != long.MinValue && beatIndex > _lastBeatIndex && motionScale > 0f)
+            {
+                bool down = ((beatIndex - audio.DownbeatOffset) % 4 + 4) % 4 == 0;
+                PulseBackdrop(_camera, (down ? 0.85f : 0.4f) * Math.Clamp(fx, 0.3f, 1.4f) * (0.6f + audio.Energy * 0.6f));
+            }
+            _lastBeatIndex = beatIndex;
+        }
+        if (beatPos < _dropBeat) _dropBeat = -1e6;   // the beat clock restarted (new track)
+        if (punchDrop > 0.9f && _lastDrop <= 0.9f)
+        {
+            PulseBackdrop(_camera, 1.6f);
+            _dropBeat = beatPos;
+            _rollSign = -_rollSign;
+        }
+        _lastDrop = punchDrop;
+        // the EDM show: lasers with the loudness; kaleidoscope, lift-away and letterbox through builds;
+        // a slam, strobe, hue steps and pump on drops; snares nudge the roll left and right
+        if (audio.SnareHit) _snareRoll = _snareRoll > 0f ? -0.01f : 0.01f;
+        _snareRoll *= MathF.Exp(-frameDt * 6f);
+        var edm = EdmFxFor((float)Math.Min(1000.0, beatPos - _dropBeat), beatPos, audio.Energy, mood?.Build ?? 0f,
+            mood?.Breakdown ?? 0f, overdriveEff, _snareRoll, fx, settings.CameraFx / 100f, settings.ReduceFlashing);
+        LastEdmFx = edm;
+        int live = 0;
+        for (int i = 0; i < _waveCount; i++)
+        {
+            float age = time - _waves[i].Z;
+            if (age > 3.5f || age < -1f) continue;
+            _waves[live] = _waves[i];
+            _background.SetVec4(WaveNames[live], _waves[i].X * 0.01f, _waves[i].Y * 0.01f, MathF.Max(0f, age), _waves[i].W * motionScale);
+            live++;
+        }
+        _waveCount = live;
+        _background.SetInt("uWaveCount", live);
+
+        // the music's spectrum shapes the world; focus pools keep the fight readable
+        ComputeBackdropSpectrum(audio.Spectrum, _specAvg, _spec, frameDt);
+        float specScale = Math.Clamp(0.6f + fx * 0.5f, 0.4f, 1.4f);
+        for (int i = 0; i < 16; i++) _background.SetFloat(SpecNames[i], _spec[i] * specScale);
+        float musicFx = Math.Clamp(fx, 0f, 1.4f);
+        _background.SetVec3("uPerc", new Vector3(audio.PercLow, audio.PercMid, audio.PercHigh) * musicFx);
+        _background.SetVec3("uHarm", new Vector3(audio.HarmLow, audio.HarmMid, audio.HarmHigh) * MathF.Min(1f, 0.4f + musicFx * 0.6f));
+        float chordTarget = ChordShiftFor(audio.ChordRoot, audio.ChordMinor, audio.Key) * MathF.Min(1f, musicFx);
+        _chordShift = M.ExpSmooth(_chordShift, chordTarget, 3.5f, frameDt);
+        _background.SetFloat("uChordShift", _chordShift);
+        _background.SetFloat("uBright", audio.Brightness);
+        _background.SetFloat("uLaserShow", edm.Laser);
+        _background.SetFloat("uKaleido", edm.Kaleido);
+        _background.SetFloat("uVertigo", edm.Vertigo);
+        _background.SetFloat("uDive", edm.Dive);
+        _background.SetFloat("uCamKick", edm.CamKick);
+        _background.SetFloat("uHueStep", edm.HueStep);
+        _background.SetFloat("uPump", edm.Pump);
+        _background.SetFloat("uStrobe", edm.Strobe);
+        _background.SetInt("uFocusCount", _focusCount);
+        for (int i = 0; i < _focusCount; i++) _background.SetVec4(FocusNames[i], _focus[i]);
         _gl.BindVertexArray(_fullscreenVao);
         _gl.DrawArrays(PrimitiveType.Triangles, 0, 3);
         _gl.BindVertexArray(0);
@@ -482,6 +756,10 @@ public sealed class Renderer : IDisposable
 
         var postMood = WithSpeed(BuildPostMood(mood, fx, settings.ReduceFlashing));
         postMood.DarkTheme = darkTheme;
+        _letterbox = M.ExpSmooth(_letterbox, edm.Letterbox, edm.Letterbox > _letterbox ? 2.5f : 14f, frameDt);
+        _screenRoll = edm.Roll * _rollSign;
+        postMood.Roll = _screenRoll;
+        postMood.Letterbox = _letterbox;
         float bloomAmt = (1.18f + audio.Energy * 0.32f + MathF.Min(drives.Drop, 1.2f) * 0.55f) * settings.Bloom / 100f;
         Post.Process(scene.Texture, Width, Height, time, bloomAmt,
             (aberration + drives.Build * 0.45f + MathF.Min(drives.Drop, 1.2f) * 0.45f) * settings.Aberration / 100f,
@@ -504,6 +782,7 @@ public sealed class Renderer : IDisposable
         PostFx.RestoreBaseline(_gl);
 
         _useA = !_useA;
+        RenderedFrames++;
     }
 
     /// <summary>Live GL state check after <see cref="Render"/> (smoke/tools only; glGet stalls the pipeline).</summary>
@@ -755,6 +1034,28 @@ public sealed class Renderer : IDisposable
             fixed (byte* ptr = data)
                 _gl.ReadPixels(0, 0, (uint)Width, (uint)Height, PixelFormat.Rgba, PixelType.UnsignedByte, ptr);
         }
+    }
+
+    private GlFbo? _smallFbo;
+
+    /// <summary>Downscales the finished frame on the GPU and reads it back as RGB (for highlight clips).</summary>
+    public unsafe bool BlitSmall(byte[] rgb, int w, int h)
+    {
+        if (rgb.Length < w * h * 3) return false;
+        if (_smallFbo == null || _smallFbo.Width != w || _smallFbo.Height != h)
+        {
+            _smallFbo?.Dispose();
+            _smallFbo = new GlFbo(_gl, w, h, false, false);
+        }
+        _gl.BindFramebuffer(FramebufferTarget.ReadFramebuffer, 0);
+        _gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, _smallFbo.Fbo);
+        _gl.BlitFramebuffer(0, 0, Width, Height, 0, 0, w, h, ClearBufferMask.ColorBufferBit, BlitFramebufferFilter.Linear);
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _smallFbo.Fbo);
+        _gl.PixelStore(PixelStoreParameter.PackAlignment, 1);
+        fixed (byte* ptr = rgb)
+            _gl.ReadPixels(0, 0, (uint)w, (uint)h, PixelFormat.Rgb, PixelType.UnsignedByte, ptr);
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+        return true;
     }
 
     public void SaveScreenshot(string path)

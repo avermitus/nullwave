@@ -118,7 +118,8 @@ public sealed partial class World
         else
         {
             // racer handling: high top speed, quick to accelerate, glides when you let go
-            float speed = Player.TopSpeed * (1f - p.Focus * 0.6f);
+            // melody rails and gravity slingshots lift the top speed
+            float speed = Player.TopSpeed * (1f - p.Focus * 0.6f) * (1f + p.RailBoost * 0.45f + p.SlingBoost * 0.4f);
             Vector2 targetVel = move * speed;
             p.Vel = M.Lerp(p.Vel, targetVel, 1f - MathF.Exp(-dt * (move.LengthSquared() > 0.01f ? 6.5f : 2.6f)));
         }
@@ -147,18 +148,18 @@ public sealed partial class World
         }
 
         p.FireTimer -= dt;
-        if (input.Fire && p.FireTimer <= 0)
-            Shoot();
+        FireWeapon(input, audio, dt);
         UpdateFlow(dt);
     }
 
-    private void Shoot()
+    /// <summary>One volley. Instrument ships pass a style (bigger, slower, fanned, ...); attunements always apply.</summary>
+    private void Shoot(ShotStyle style)
     {
         var p = Player;
         p.ShotCounter++;
         p.FireTimer = p.FireInterval * OverdriveFireScale / MathF.Max(0.4f, Mods.PlayerFireRate);
-        float dmgMult = OverdriveDamageScale;
-        float baseAngle = M.AngleOf(p.AimDir);
+        float dmgMult = OverdriveDamageScale * style.DamageScale;
+        float baseAngle = M.AngleOf(p.AimDir) + style.AngleOffset;
         int fired = 0;
 
         void FireAngle(float angle, float sideOffset, float damageScale = 1f)
@@ -167,12 +168,18 @@ public sealed partial class World
             Vector2 side = M.Perp(dir) * sideOffset;
             Vector2 pos = p.Pos + dir * 18f + side;
             float spread = FxRng.Signed() * 0.012f;
-            SpawnPlayerBullet(pos, M.FromAngle(angle + spread, p.BulletSpeed), p.BulletRadius, p.Damage * damageScale * dmgMult, p.BulletLife, p.PierceLevel, p.HomingLevel * 2.2f, p.RicochetLevel);
+            SpawnPlayerBullet(pos, M.FromAngle(angle + spread, p.BulletSpeed * style.SpeedScale), p.BulletRadius * style.RadiusScale,
+                p.Damage * damageScale * dmgMult, p.BulletLife * (style.Kind == 4 ? 1.1f : 1f), p.PierceLevel + style.ExtraPierce,
+                p.HomingLevel * 2.2f, p.RicochetLevel, style.Kind, style.Hue);
             fired++;
         }
 
-        FireAngle(baseAngle, -4.4f);
-        FireAngle(baseAngle, 4.4f);
+        if (style.Kind == 4) FireAngle(baseAngle, 0f);   // bass: one heavy orb
+        else
+        {
+            FireAngle(baseAngle, -4.4f);
+            FireAngle(baseAngle, 4.4f);
+        }
         for (int i = 0; i < p.SplitLevel; i++)
         {
             float spread = 0.09f + i * 0.055f;
@@ -230,7 +237,8 @@ public sealed partial class World
 
         Vector4 flash = M.Hsv(0.51f, 0.5f, 1f, 0.8f);
         SpawnParticle(p.Pos + p.AimDir * 20f, p.AimDir * 120f + FxRng.InCircle(50), 0.12f, 4.5f, flash, ParticleKind.Spark, 4f);
-        Sfx?.Trigger(SfxType.Shot, 0.16f + MathF.Min(0.12f, fired * 0.005f), M.Clamp(p.Pos.X / (ArenaW * 0.5f), -1f, 1f) * 0.45f);
+        if (!style.Quiet)
+            Sfx?.Trigger(SfxType.Shot, (0.16f + MathF.Min(0.12f, fired * 0.005f)) * (style.Kind == 4 ? 1.6f : 1f), M.Clamp(p.Pos.X / (ArenaW * 0.5f), -1f, 1f) * 0.45f);
     }
 
     public void SpawnPlayerBullet(Vector2 pos, Vector2 vel, float radius, float damage, float life, int pierce, float homing = 0f, int bounces = 0, byte synergyKind = 0, float hue = 0.51f)
@@ -274,9 +282,9 @@ public sealed partial class World
     /// <summary>All enemy fire travels this much faster than the original tuning (fewer, faster shots).</summary>
     public const float BulletPace = 1.75f;
 
-    public void SpawnEnemyBullet(Vector2 pos, Vector2 vel, float radius, float hue, BulletKind kind, float life = 7f, float damage = 1f, float angular = 0f)
+    public Bullet? SpawnEnemyBullet(Vector2 pos, Vector2 vel, float radius, float hue, BulletKind kind, float life = 7f, float damage = 1f, float angular = 0f)
     {
-        if (EnemyBullets.Count >= 2600) return;
+        if (EnemyBullets.Count >= 2600) return null;
         vel *= BulletPace;
         life = MathF.Min(life, 4.2f);
         if (!_bulletPool.TryPop(out var b)) b = new Bullet();
@@ -295,6 +303,7 @@ public sealed partial class World
         if (Rules.DriftBullets && angular == 0f && FxRng.Chance(0.28f))
             b.AngularVel = FxRng.Signed() * 0.45f;
         EnemyBullets.Add(b);
+        return b;
     }
 
     public void ReturnBullet(List<Bullet> list, int index)
@@ -328,6 +337,7 @@ public sealed partial class World
             b.Pos += b.Vel * dt;
             if (b.Life <= 0 || b.Pos.LengthSquared() > (ArenaW * 0.5f + 240f) * (ArenaW * 0.5f + 240f))
             {
+                if (b.SynergyKind == 4 && b.Life <= 0) BassBurst(b.Pos, b.Damage);
                 ReturnBullet(PlayerBullets, i);
                 continue;
             }

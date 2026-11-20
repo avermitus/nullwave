@@ -17,12 +17,13 @@ Current verification (re-measured 2026-11-18):
 
 | check | result |
 |---|---|
-| `--selftest` | `PASS (7586 assertions, 0.5s)` |
+| `--selftest` | `PASS (71952 assertions, 5.1s)` (2026-11-20) |
 | `--smoke 5` | 64 fps |
 | `--audiotest` | loopback capture works, BPM tracked correctly |
 | Release build | 0 warnings / 0 errors |
 
-There is **no git repository** — nothing is tracked and no history exists.
+The project is a git repository with a private GitHub remote. Last commit: `c473322`; the work in
+TASK-016 to TASK-020 is not committed yet.
 
 ---
 
@@ -51,6 +52,9 @@ Pre-change sources are backed up at `_backup/Nullwave-pre-v2/` (there is still n
 | Hype + trails (V9) | `World.Hype` (flow, combo, time since hit) scales every music effect via `Renderer.HypeScale` (0.55x..1.45x); HYPE readout and level-up callouts. Enemy bullets have two-layer comet tails scaled by speed. | `World.cs` UpdateHype, `WorldRenderer.DrawBullets` |
 | Enemies + song lasers (V9) | New roles Weaver (mines), Mortar (`Strike` telegraphs, detonate 2 beats later), Phantom (teleports on beats), Prism (560-unit rotating blade); join from waves 4/6/6/8. Song lasers on downbeats from director cues (`World.SetMusicCue`): drop STARBURST, build SCAN, high-energy GATE/CROSS, none in breakdowns; 2-beat warnings. Capture scenarios `roster` (all 11 enemies), `songlasers`. | `World.Enemies.cs`, `World.cs` UpdateSongLasers |
 | Generative backdrops (V10) | `BackdropGenome` now assembles 1–3 layers of random transform chains (11 ops) feeding 13 animated generators with random blend/gain/palette; uploaded as `Layer` uniform structs and interpreted by `applyOp`/`runGen` in `BackgroundFrag`. Raymarched generators base-layer only. TASK-007's `DrawBackdrop3D` removed. Tools: `--capture backdrop`, `--reel N`, `--style N` (backdrop seed), `NULLWAVE_BENCH=1`. See `.game-studio/tasks/TASK-008.md`. | `Render/BackdropGenome.cs`, `Shaders.BackgroundFrag` |
+| Gravity wells, melody rails, hunting enemies (V14) | `World/World.MusicFields.cs`: `GravityWell` (spawn on `ChordChanged`/held `HarmLow`, `WellPull` bends bullets, core absorbs, ship slingshot via `SlingCharge/SlingBoost`, `CollapseWells` on `OnMusicDrop`) and `MelodyRail` (grown from `MelodyPitch`/`MelodyConfidence`, riding → `RailBoost`, crossing bullets get `Bullet.Tuned` and pass a riding ship; spatial hash). Player top speed × (1 + 0.45 rail + 0.4 sling). `UpdateEnemyBrain`: per-role chase styles, `EnemyBaseSpeed` 175, `ChaseBoost(dist)` up to 4.4×. `SynthVisual` now fakes chords/bass/melody for captures and tests. See `.game-studio/tasks/TASK-019.md`. | `World/World.MusicFields.cs`, `World/World.Enemies.cs`, `Render/WorldRenderer.cs` |
+| Music understanding (V13) | `Audio/MusicAnalyzer.cs`: HPSS (drums vs. melody, `PercLow..High`/`HarmLow..High`), chroma → chord (`ChordRoot/Minor`) and key (`Key`), timbre (`Brightness`, `TextureChanged`), beat-synchronous structure (`SectionChanged/Label/Repeat`, per `SongEpoch`). Renderer: `uPerc`/`uHarm`/`uChordShift`/`uBright`; `SectionWorldMemory` brings a section's world back when it repeats. Sections: first-beat nearest-twin novelty on a kick-aligned grid; buffered sources run a second `MusicAnalyzer` on `LookaheadAudioBuffer.CopyAheadWindow` and fire at the boundary's audio frame. Galaga arrivals / screen-holding enemies were reverted (owner: unplayable). See `.game-studio/tasks/TASK-017.md`. | `Audio/MusicAnalyzer.cs`, `Audio/AudioEngine.cs`, `Render/SectionWorldMemory.cs` |
+| Music-shaped 3D worlds + Spotify buffer (V12) | Backdrop = raymarched organic world under the arena seen through the game camera (`uCam`/`uView`/`uOblique`): 6 worlds × 4 atmospheres, geometry driven by `uSpec[16]` (Renderer.ComputeBackdropSpectrum), `uBeatPos`, world-anchored `uWaves`; readability pools `uFocus[16]` under ship/enemies. Spotify buffer: `AppAudioRouter` (undocumented AudioPolicyConfig, as EarTrumpet) routes Spotify to a silent output, `LiveStreamSource` feeds the 0.75 s `LookaheadAudioBuffer`; routing undone on switch/exit/crash. See `.game-studio/tasks/TASK-015.md`, `TASK-016.md`. | `Shaders.BackgroundFrag`, `Audio/AppAudioRouter.cs`, `Audio/AudioEngine.cs` |
 | Tests | New suites: model mesh validity, beat-grid firing (0 off-grid volleys), layouts, health display. New capture scenario `hurt`. | `Tools/SelfTest.cs` |
 
 Re-measured after V2/V3 (V3 also: `--audiotest --app self` PASS; `--audiotest --app <silent app>` correctly FAILs with external=False, which proves isolation): `--selftest` PASS (58054 assertions), `--smoke 15` 64 fps, 0 warnings.
@@ -61,6 +65,25 @@ Re-measured after V2/V3 (V3 also: `--audiotest --app self` PASS; `--audiotest --
 * The backdrop mesh pass (`Renderer.Backdrop`, perspective camera) is still wired but nothing draws into it since V3. The backdrop camera mirrors x because game y points down the screen; do not "fix" the `CreateScale(-1,1,1)`.
 * Process-loopback activation must run on an MTA thread and the completion handler must implement IAgileObject; there is no mix format, so the capture asks for 48k float with AUTOCONVERTPCM.
 * `Models.Monolith(o)` is cached per obstacle via `ConditionalWeakTable`.
+
+## 1c. Round 7 (2026-11-20): setlists, ships, THE DROP, recap, tutorial, rumble, EDM show
+
+See `.game-studio/tasks/TASK-020.md` for the details and `CHANGELOG.md` for the player-facing list.
+
+| feature | where |
+|---|---|
+| track detection, setlist stages, song records | `Audio/AudioEngine.cs` (`UpdateTrack`), `World/World.Setlist.cs`, `World/Meta.cs` |
+| instrument ships | `World/World.Ships.cs` (`ShipKind`, `ShotStyle`, `FireWeapon`) |
+| in-key notes | `World/World.Notes.cs`, `Audio/SoundBank.cs` (`PlayNote`) |
+| THE DROP | `World/World.SongBoss.cs` |
+| run recap, highlight clips | `World/RunTimeline.cs`, `Render/ClipRecorder.cs`, `UI/Screens.cs` (`DrawRecap`) |
+| tutorial & tips, rumble | `Core/Coach.cs`, `Core/Game.cs` (`RumbleFor`), `Core/InputState.cs` (`SetRumble`) |
+| EDM show | `Render/Renderer.cs` (`EdmFxFor`, `UnrollScreen`), `Render/Shaders.cs` (`stageLasers`, kaleidoscope, roll, letterbox) |
+
+Release builds while the game is running: build to another folder (`-p:OutDir=...`), because the running
+game locks `bin/Release`.
+
+---
 
 ## 2. Environment
 
@@ -103,7 +126,10 @@ cd /d "%~dp0"
 | `./run.cmd --capture <scenario> --out screenshots/x.png` | deterministic screenshot |
 | `./run.cmd --record 50 --wave 8 --video out.mp4 --wav out.wav` | offline recorder |
 
-Capture scenarios: `title, archive, combat, boss, laser, attune, pause, gameover`.
+Capture scenarios: `title, archive, combat, boss, laser, attune, pause, gameover`, plus `backdrop`,
+`drop`, `breakdown`, `roster`, `speed`, `songlasers`, `overdrive`, and `edm` / `edmbackdrop` (a scripted
+six-second build-up into a drop; use `--reel 10 --out x.mp4`). Captures run ~3 s of updates before the
+first rendered frame; scripted scenarios start their clock on `Renderer.RenderedFrames`.
 
 ---
 
@@ -198,7 +224,9 @@ ffmpeg -v error -i capture/take_mux.mp4 -f null -        # must be silent, exit 
 ## 8. Open work
 
 1. **Human playtest is unverified.** Mouse aim, controller input, and a real external-app loopback
-   test (outside the browser) have never been exercised by a person.
+   test (outside the browser) have never been exercised by a person. Round 7 adds: ship feel and
+   balance, THE DROP's difficulty, setlist pacing on a real playlist, the EDM show at full CAMERA FX,
+   rumble on a real pad, and clip saving with ffmpeg.
 2. **No version control.** Consider `git init` and an initial commit before further changes. `.gitignore`
    currently covers `.dotnet/`, `bin/`, `obj/`, `build/`, `screenshots/`, `*.user`, `*.log`, `tools/nuget/`
    — it does **not** exclude `capture/*.mp4` or `capture/*.wav`, which can grow to hundreds of MB.

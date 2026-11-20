@@ -228,7 +228,9 @@ public sealed partial class World
         Vector2 pos = role == EnemyRole.Boss
             ? ClampToArena(Player.Pos + new Vector2(0f, -560f), 300f)
             : EdgeSpawnPoint();
-        SpawnEnemyAt(role, pos, true);
+        // every second boss wave brings THE DROP instead of THE CHOIR
+        if (role == EnemyRole.Boss && Wave % 10 == 0) SpawnSongBoss();
+        else SpawnEnemyAt(role, pos, true);
     }
 
     /// <summary>
@@ -254,7 +256,9 @@ public sealed partial class World
 
     private void CheckWaveEnd()
     {
-        if (!_waveActive || _spawnQueue.Count > 0) return;
+        // only while playing: a stage-clear upgrade pick, a won set or a death mid-step must not be
+        // turned into an intermission by the wave emptying in the same step
+        if (Phase != GamePhase.Playing || !_waveActive || _spawnQueue.Count > 0) return;
         foreach (var e in Enemies)
             if (!e.Dead) return;
 

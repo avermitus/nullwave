@@ -18,6 +18,12 @@ Candidates are scored on a 1–5 scale for **Player Impact** (higher is better),
 | **12** | `TASK-012` | **Frame-Pacing Telemetry (`P95/P99` + Alloc Guard) & Seed PB Pace Splits** | **4 / 5** | **1 / 5** | **2 / 5** | `TASK-003` | Proposed |
 | **13** | `TASK-013` | **Lookahead Audio Buffer & Local Track Player** | **5 / 5** | **2 / 5** | **3 / 5** | `TASK-011` | **Done** |
 | **14** | `TASK-014` | **Stationary 3D-Only Reactive Backdrops & Combat Readability** | **5 / 5** | **2 / 5** | **3 / 5** | `TASK-011` | **Done** |
+| **15** | `TASK-015` | **Map-Anchored Beat-Animated 3D Backdrops & Galaga Enemy Entry** | **5 / 5** | **2 / 5** | **3 / 5** | `TASK-014` | **Done (Galaga entry reverted)** |
+| **16** | `TASK-016` | **Organic Music-Shaped Worlds, Spotify 0.75 s Buffer & Combat Readability** | **5 / 5** | **3 / 5** | **3 / 5** | `TASK-015` | **Review** |
+| **17** | `TASK-017` | **Music Understanding (Drums/Melody, Chords, Key, Timbre, First-Beat Sections)** | **5 / 5** | **3 / 5** | **3 / 5** | `TASK-016` | **Review** |
+| **18** | `TASK-018` | **Phase 2: AI Stem Separation & Neural Beat Tracking (ONNX, buffered sources only)** | **4 / 5** | **4 / 5** | **4 / 5** | `TASK-017` | Proposed |
+| **19** | `TASK-019` | **Bass Gravity Wells, Melody Rails & Hunting Enemy Movement** | **5 / 5** | **3 / 5** | **3 / 5** | `TASK-017` | **Review** |
+| **20** | `TASK-020` | **Setlists, Song Records, Instrument Ships, In-Key Guns, THE DROP, Run Recap, Tutorial, Rumble & the EDM Show** | **5 / 5** | **3 / 5** | **4 / 5** | `TASK-019` | **Review** |
 
 ---
 

@@ -1,5 +1,8 @@
 using System.Numerics;
 using Silk.NET.Input;
+#if DEBUG
+using System.Collections.Concurrent;
+#endif
 
 namespace Nullwave.Core;
 
@@ -95,6 +98,37 @@ public sealed class InputState
 
     public bool WasPressed(Key key) => _down.Contains(key) && !_prev.Contains(key);
 
+#if DEBUG
+    /// <summary>Debug bridge input: keys held for N frames, a mouse position and left-button clicks.</summary>
+    public sealed record VirtualCommand(Key[] Keys, int Frames, float? MouseX, float? MouseY, bool Click, bool Release);
+    public static readonly ConcurrentQueue<VirtualCommand> Virtual = new();
+    private readonly List<(Key Key, int Frames)> _virtualKeys = new();
+    private int _virtualClick;
+    private Vector2? _virtualMouse;
+
+    /// <summary>Merges queued virtual input into this frame (works while the window is unfocused).</summary>
+    private void ApplyVirtual()
+    {
+        while (Virtual.TryDequeue(out var c))
+        {
+            if (c.Release) { _virtualKeys.Clear(); _virtualClick = 0; _virtualMouse = null; }
+            foreach (var k in c.Keys) _virtualKeys.Add((k, c.Frames));
+            if (c.MouseX != null || c.MouseY != null)
+                _virtualMouse = new Vector2(c.MouseX ?? _virtualMouse?.X ?? MousePosition.X, c.MouseY ?? _virtualMouse?.Y ?? MousePosition.Y);
+            if (c.Click) _virtualClick = Math.Max(_virtualClick, c.Frames);
+        }
+        for (int i = _virtualKeys.Count - 1; i >= 0; i--)
+        {
+            var (key, frames) = _virtualKeys[i];
+            _down.Add(key);
+            if (frames <= 1) _virtualKeys.RemoveAt(i);
+            else _virtualKeys[i] = (key, frames - 1);
+        }
+        if (_virtualMouse != null) MousePosition = _virtualMouse.Value;
+        if (_virtualClick > 0) { _mouseLeft = true; _virtualClick--; }
+    }
+#endif
+
     /// <summary>Writes newly pressed alphanumeric seed characters (normalized via <see cref="SeedCode.NormalizeChar"/>) into <paramref name="destination"/>.</summary>
     public int ReadTypedSeedChars(Span<char> destination)
     {
@@ -136,6 +170,9 @@ public sealed class InputState
             MousePosition = _mouse.Position;
             _mouseLeft = _mouse.IsButtonPressed(MouseButton.Left);
         }
+#if DEBUG
+        ApplyVirtual();
+#endif
 
         if (_input.Gamepads.Count > 0)
         {
@@ -216,9 +253,39 @@ public sealed class InputState
         ThreePressed = WasPressed(Key.Number3);
         MouseLeftDown = _mouseLeft;
         MouseLeftPressed = _mouseLeft && !_prevMouseLeft;
+#if DEBUG
+        DebugLast = $"fire={Fire} move=({Move.X:0.##},{Move.Y:0.##}) mouse=({MousePosition.X:0},{MousePosition.Y:0}) down=[{string.Join(",", _down)}] vKeys={_virtualKeys.Count} vClick={_virtualClick}";
+#endif
     }
+#if DEBUG
+    /// <summary>What the game saw from the input layer last frame (debug bridge state).</summary>
+    public static volatile string DebugLast = "";
+#endif
 
     private bool IsDown(Key key) => _down.Contains(key);
+
+    private float _rumbleLow = -1f, _rumbleHigh = -1f;
+
+    /// <summary>Drives the gamepad's two motors (0..1): low = heavy motor, high = light motor.</summary>
+    public void SetRumble(float low, float high)
+    {
+        if (_gamepad == null) return;
+        low = Math.Clamp(low, 0f, 1f);
+        high = Math.Clamp(high, 0f, 1f);
+        if (MathF.Abs(low - _rumbleLow) < 0.02f && MathF.Abs(high - _rumbleHigh) < 0.02f) return;
+        _rumbleLow = low;
+        _rumbleHigh = high;
+        try
+        {
+            var motors = _gamepad.VibrationMotors;
+            if (motors.Count > 0) motors[0].Speed = low;
+            if (motors.Count > 1) motors[1].Speed = high;
+        }
+        catch
+        {
+            // pads without motors, or a disconnect mid-frame
+        }
+    }
 
     private bool PadButton(ButtonName name)
     {

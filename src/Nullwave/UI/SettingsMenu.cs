@@ -43,6 +43,9 @@ public sealed class SettingsMenu
         Slider("AUDIO", "MUSIC VOLUME", s => s.MusicVolume, (s, v) => s.MusicVolume = v, 0, 100, 5, "%", "The built-in score. It already fades out whenever other music is playing.");
         Slider("AUDIO", "EFFECTS VOLUME", s => s.SfxVolume, (s, v) => s.SfxVolume = v, 0, 100, 5, "%", "Shots, hits, explosions and menu sounds.");
         _rows.Add(new Row("AUDIO", "AUDIO SOURCE", Kind.Action, _ => 0, (_, _) => { }, 0, 0, 0, "", "Which audio drives the game: all system audio, or one app (F3 in game)."));
+        Toggle("AUDIO", "IN-KEY SOUNDS", s => s.InKeySounds, (s, v) => s.InKeySounds = v, "Kills and hits play notes of the chord that is playing; kills land on the beat and climb as your chain grows.");
+        Slider("AUDIO", "SETLIST LENGTH", s => s.SetlistTracks, (s, v) => s.SetlistTracks = v, 2, 8, 1, " TRACKS", "How many tracks a SETLIST run lasts. Each track is a stage; the last one ends with THE DROP.");
+        Toggle("AUDIO", "SPOTIFY BUFFER", s => s.BufferSpotify, (s, v) => s.BufferSpotify = v, "Plays Spotify through the game 0.75 s late (via a silent output like Steam Streaming Speakers) so the visuals see every hit coming.");
         Slider("AUDIO", "BEAT OFFSET", s => s.BeatOffsetMs, (s, v) => s.BeatOffsetMs = v, -200, 200, 10, "MS", "Enemies fire early or late versus what you hear? Shift them later (+) or earlier (-).");
         Slider("AUDIO", "BEAT MOTION", s => s.BeatMotion, (s, v) => s.BeatMotion = v, 0, 150, 10, "%", "How hard bullets and enemies surge forward on each beat. 0 = steady speed, same difficulty.");
         Toggle("VIDEO", "FULLSCREEN", s => s.Fullscreen, (s, v) => s.Fullscreen = v, "Also F2.");
@@ -52,9 +55,13 @@ public sealed class SettingsMenu
         Slider("VIDEO", "BLOOM", s => s.Bloom, (s, v) => s.Bloom = v, 0, 150, 10, "%", "Glow around bright shots and lights.");
         Slider("VIDEO", "SCREEN SHAKE", s => s.ScreenShake, (s, v) => s.ScreenShake = v, 0, 150, 10, "%", "Camera shake from hits, bosses and explosions.");
         Slider("VIDEO", "CHROMATIC ABERRATION", s => s.Aberration, (s, v) => s.Aberration = v, 0, 100, 10, "%", "Colour fringing that pulses on the beat.");
+        Slider("VIDEO", "CAMERA FX", s => s.CameraFx, (s, v) => s.CameraFx = v, 0, 150, 10, "%", "EDM camera moves: a bounce on every kick, a slam, roll and dive on drops, a pull back and letterbox bars through build-ups. 0% turns them off.");
         Slider("VIDEO", "MUSIC FX", s => s.MusicFx, (s, v) => s.MusicFx = v, 0, 150, 10, "%", "Colour mood, kick thump, camera punch, build-ups and drops driven by the song.");
         Toggle("VIDEO", "REDUCE FLASHING", s => s.ReduceFlashing, (s, v) => s.ReduceFlashing = v, "Softens full-screen flashes and turns off glitch effects.");
         Toggle("VIDEO", "SHOW FPS", s => s.ShowFps, (s, v) => s.ShowFps = v, "Frame rate counter in the corner of the HUD.");
+        Slider("INTERFACE", "CONTROLLER RUMBLE", s => s.Rumble, (s, v) => s.Rumble = v, 0, 150, 10, "%", "Gamepad rumble that hits with the kick and hums with the bass.");
+        Toggle("INTERFACE", "TUTORIAL & TIPS", s => s.TutorialTips, (s, v) => s.TutorialTips = v, "The first-run tutorial and one-time tips for wells, rails, bosses and stages.");
+        Toggle("INTERFACE", "HIGHLIGHT CLIPS", s => s.HighlightClips, (s, v) => s.HighlightClips = v, "Keep your best moment of each run so you can save it as a video (C on the game-over screen). Uses ffmpeg if installed.");
         Toggle("INTERFACE", "MINIMAP", s => s.Minimap, (s, v) => s.Minimap = v, "Map of the arena: monoliths, enemies, pickups and your view.");
         Toggle("INTERFACE", "THREAT ARROWS", s => s.ThreatArrows, (s, v) => s.ThreatArrows = v, "Arrows at the screen edge pointing at enemies outside the view.");
         Toggle("INTERFACE", "ENEMY HEALTH BARS", s => s.EnemyHealthBars, (s, v) => s.EnemyHealthBars = v, "Bars over damaged and elite enemies.");

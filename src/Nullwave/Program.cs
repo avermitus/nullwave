@@ -42,6 +42,9 @@ internal static class Program
     private static float _reelSeconds;
     private static Process? _reelEncoder;
     private static int _reelFrames;
+#if DEBUG
+    private static ClaudeDebugBridge? _bridge;
+#endif
 
     private static void Main(string[] args)
     {
@@ -90,6 +93,45 @@ internal static class Program
         if (_mode == "audiotest")
         {
             Environment.ExitCode = AudioTest.Run(Game.AppOverride);
+            return;
+        }
+        if (args.Contains("--musicprobe"))
+        {
+            int ix = Array.IndexOf(args, "--musicprobe");
+            float secs = ix + 1 < args.Length && float.TryParse(args[ix + 1], out float v) ? v : 15f;
+            int tx = Array.IndexOf(args, "--track");
+            Environment.ExitCode = MusicProbe.Run(secs, tx >= 0 && tx + 1 < args.Length ? args[tx + 1] : null);
+            return;
+        }
+        if (args.Contains("--buffertest"))
+        {
+            Environment.ExitCode = BufferTest.Run();
+            return;
+        }
+        if (args.Contains("--routecheck"))
+        {
+            // read-only: where is each process of the app currently routed?
+            int ix = Array.IndexOf(args, "--routecheck");
+            string app = ix + 1 < args.Length ? args[ix + 1] : "spotify";
+            foreach (var proc in System.Diagnostics.Process.GetProcessesByName(app))
+            {
+                string? route = Nullwave.Audio.AppAudioRouter.GetAppEndpoint(proc.Id);
+                Console.WriteLine($"ROUTECHECK | {app} pid={proc.Id} route='{(route == null ? "(query failed)" : route.Length == 0 ? "default" : route)}'");
+                proc.Dispose();
+            }
+            string marker = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Nullwave", "routed_app.txt");
+            Console.WriteLine($"ROUTECHECK | crash marker present={File.Exists(marker)}");
+            return;
+        }
+        if (args.Contains("--routeprobe"))
+        {
+            int ix = Array.IndexOf(args, "--routeprobe");
+            Environment.ExitCode = RouteProbe.Run(ix + 1 < args.Length ? args[ix + 1] : null);
+            return;
+        }
+        if (args.Contains("--muteprobe"))
+        {
+            Environment.ExitCode = MuteProbe.Run();
             return;
         }
         if (args.Contains("--sfxdump"))
@@ -159,6 +201,9 @@ internal static class Program
         _window.Resize += OnResize;
         _window.Render += OnRender;
         _window.Closing += OnClosing;
+#if DEBUG
+        _window.Update += OnUpdate;
+#endif
         _window.Run();
     }
 
@@ -201,6 +246,13 @@ internal static class Program
             StartEncoder();
         }
         Console.WriteLine($"AUDIO | capture={_game.Audio.CaptureAvailable} output={_game.Audio.OutputAvailable} device={_game.Audio.State.DeviceName} error={_game.Audio.LastError}");
+#if DEBUG
+        if (_mode is "play" or "smoke")
+        {
+            _bridge = new ClaudeDebugBridge(_window);
+            _bridge.Start();
+        }
+#endif
         _clock = Stopwatch.StartNew();
         _lastTime = 0;
         _lastFrameEnd = 0;
@@ -320,6 +372,10 @@ internal static class Program
 
         _game.Update(dt);
         _game.Render();
+#if DEBUG
+        // backbuffer is complete here; Silk.NET swaps right after this callback returns
+        _bridge?.OnRender(_game, _renderer);
+#endif
 
         if (_mode == "smoke" && now >= _smokeSeconds)
         {
@@ -446,8 +502,15 @@ internal static class Program
         }
     }
 
+#if DEBUG
+    private static void OnUpdate(double dt) => _bridge?.OnUpdate(dt);
+#endif
+
     private static void OnClosing()
     {
+#if DEBUG
+        _bridge?.Dispose();
+#endif
         _game?.Dispose();
         _renderer?.Dispose();
         _input?.Dispose();

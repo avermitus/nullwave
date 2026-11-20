@@ -7,6 +7,11 @@ public sealed class SynthVisual
     public float BeatPhase { get; private set; }
     public int BeatIndex { get; private set; }
     private float _time;
+    private int _lastRoot = -1;
+    // a little score for the stand-in analysis: I-vi-IV-V every 2 bars and an 8-note motif that
+    // plays for two bars then rests for two (so melody rails start and stop)
+    private static readonly int[] Progression = [0, 9, 5, 7];
+    private static readonly int[] Motif = [72, 74, 76, 79, 76, 74, 72, 67, 69, 72, 74, 76, 74, 72, 69, 67];
 
     public SynthVisual()
     {
@@ -88,6 +93,27 @@ public sealed class SynthVisual
         }
 
         state.DownPulse = MathF.Max(state.DownPulse * 0.9f, state.Downbeat ? 1f : 0f);
+
+        // musical understanding for the stand-in score
+        int barIdx = BeatIndex / 4;
+        int root = Progression[(barIdx / 2) % 4];
+        if (root != _lastRoot) { state.ChordChanged = true; _lastRoot = root; }
+        state.ChordRoot = root;
+        state.ChordMinor = root == 9;
+        state.ChordConfidence = 0.8f;
+        state.Key = 0;
+        float snare = BeatIndex % 2 == 1 ? MathF.Exp(-phase * 14f) : 0f;
+        state.PercLow = MClamp(0.2f + kick * 0.8f);
+        state.PercMid = MClamp(0.2f + snare * 0.8f);
+        state.PercHigh = MClamp(0.2f + hat * 0.6f);
+        state.HarmLow = MClamp(0.62f + 0.18f * MathF.Sin(_time * 0.9f));
+        state.HarmMid = MClamp(0.45f + arp * 0.3f);
+        state.HarmHigh = MClamp(0.35f + 0.1f * MathF.Sin(_time * 1.3f));
+        state.Brightness = 0.4f;
+        bool playing = barIdx % 4 < 2;
+        int eighth = (int)((BeatIndex % 8 + phase) * 2f) % 16;
+        state.MelodyPitch = Motif[eighth];
+        state.MelodyConfidence = playing ? 0.8f : 0f;
         state.CopyBands();
     }
 

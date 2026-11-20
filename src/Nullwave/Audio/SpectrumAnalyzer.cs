@@ -78,6 +78,9 @@ public sealed class SpectrumAnalyzer
     private float _fluxCeil = 0.5f;
     private bool _primed;
 
+    /// <summary>Magnitude spectrum of the last analysed window (2048-point FFT).</summary>
+    public ReadOnlySpan<float> Magnitudes => _magnitudes;
+
     public void Reset()
     {
         Array.Clear(_prevLog);

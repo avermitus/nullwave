@@ -32,6 +32,18 @@ public readonly record struct RecordBreak(RunRecords Records, long PreviousScore
     public bool Combo => (Records & RunRecords.Combo) != 0;
 }
 
+/// <summary>Your best on one song (kept per track title).</summary>
+public sealed class SongRecord
+{
+    public string Title { get; set; } = "";
+    public long BestScore { get; set; }
+    public string BestRank { get; set; } = "";
+    public int BestKills { get; set; }
+    public int FewestHits { get; set; } = int.MaxValue;
+    public int Plays { get; set; }
+    public string LastPlayedUtc { get; set; } = "";
+}
+
 /// <summary>One entry of the archive's flight recorder (persisted in save.json, newest first).</summary>
 public sealed class RunRecord
 {
@@ -103,6 +115,48 @@ public sealed class MetaProgress
     public int BestCombo { get; set; }
     /// <summary>Flight recorder: the last <see cref="RecentRunCap"/> runs, newest first.</summary>
     public List<RunRecord> RecentRuns { get; set; } = new();
+    /// <summary>Best score / rank per song title.</summary>
+    public Dictionary<string, SongRecord> SongRecords { get; set; } = new();
+    /// <summary>Instrument ship chosen on the title screen.</summary>
+    public string SelectedShip { get; set; } = "Classic";
+    /// <summary>The first-run tutorial has been finished or skipped.</summary>
+    public bool TutorialDone { get; set; }
+    /// <summary>One-time tips already shown.</summary>
+    public HashSet<string> SeenTips { get; set; } = new();
+    public const int SongRecordCap = 400;
+
+    public static string SongKey(string title) => (title ?? "").Trim().ToUpperInvariant();
+
+    /// <summary>The record for a song, or null if it has never been played.</summary>
+    public SongRecord? GetSong(string title) =>
+        SongRecords.TryGetValue(SongKey(title), out var r) ? r : null;
+
+    private static int RankValue(string rank) => rank switch { "S" => 4, "A" => 3, "B" => 2, "C" => 1, _ => 0 };
+
+    /// <summary>
+    /// Folds a finished track into its song record. Returns true when it set a new best score.
+    /// Only real songs played for at least 30 s count.
+    /// </summary>
+    public bool RecordSong(TrackStat t)
+    {
+        if (!t.IsSong || t.Duration < 30f || string.IsNullOrWhiteSpace(t.Title)) return false;
+        string key = SongKey(t.Title);
+        if (!SongRecords.TryGetValue(key, out var r))
+        {
+            r = new SongRecord { Title = t.Title };
+            SongRecords[key] = r;
+        }
+        bool best = t.Score > r.BestScore;
+        r.Plays++;
+        r.BestScore = Math.Max(r.BestScore, t.Score);
+        if (RankValue(t.Rank) > RankValue(r.BestRank)) r.BestRank = t.Rank;
+        r.BestKills = Math.Max(r.BestKills, t.Kills);
+        r.FewestHits = Math.Min(r.FewestHits, t.Hits);
+        r.LastPlayedUtc = DateTime.UtcNow.ToString("O");
+        while (SongRecords.Count > SongRecordCap)
+            SongRecords.Remove(SongRecords.OrderBy(kv => kv.Value.LastPlayedUtc).First().Key);
+        return best;
+    }
 
     public const int RecentRunCap = 8;
 

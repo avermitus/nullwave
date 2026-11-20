@@ -4,7 +4,70 @@ All notable gameplay, rendering, audio-intelligence, and UI updates to **NULLWAV
 
 ---
 
-## Latest Updates — Stationary 3D-Only Reactive Backdrops, Lookahead Audio & Local Track Player, Drop Overdrive, Harmonic Overclock & Abyssal Theme
+## Latest Updates — Setlists, Song Records, Instrument Ships, In-Key Guns, THE DROP, Run Recap, Tutorial & the EDM Show
+
+### Gameplay
+- **Setlist runs (`SETLIST` on the title screen):** play a set of songs (2–8, `SETTINGS > AUDIO > SETLIST LENGTH`, default 4). Every new track is a new stage: the floor is swept, you get a stage bonus and an upgrade. The last track's first drop (or 45 s in) brings **THE DROP** as the final boss; beat it to win the set. Tracks come from Spotify's song title, the local file (each loop counts), or a new chapter every 3 minutes for untitled sources.
+- **Song records:** every real song you play for 30 s or more keeps a record (best score, best rank, most kills, fewest hits, plays), with a toast when you beat it. Ranks: **S** no hits and 22+ kills a minute, **A** at most one hit and 12+, **B** at most two hits, **C** otherwise.
+- **Instrument ships (Left/Right on the title screen):** **CLASSIC** (steady auto-fire), **DRUMS** (kick slugs, snare fans, hat needles; a light eighth-note pulse when there are no drums), **BASS** (slow, heavy orbs on the beat and on bass notes that burst), **LEAD** (a beam that bends with the melody and cuts through everything). Hold fire and the music pulls the trigger. Attunements apply to every ship.
+- **In-key guns (`SETTINGS > AUDIO > IN-KEY SOUNDS`):** kills and hits play notes from the current chord, timed to the next sixteenth note; kill chains climb an arpeggio and boss kills play a four-note run.
+- **THE DROP:** a boss built from the song, on every 10th wave and at the end of a setlist. Rings on the kick, fans on the snare, needles on the hats, a laser that follows the melody; every song section is a new phase, and a returning chorus brings its phase back.
+- **Run recap & highlight clips:** the game-over screen lists each track with its score and rank and shows the run as a timeline (score, sections, hits, drops) with your best six seconds marked. Press **C** to save that moment as an MP4 in `Videos\NULLWAVE` (needs ffmpeg; otherwise a still). `SETTINGS > INTERFACE > HIGHLIGHT CLIPS`.
+- **First-run tutorial & tips:** six short steps (move, fire, dash, Flow, Phase Sync, Cascade) that finish when you do them (Tab skips), and one-time tips the first time you meet wells, rails, bosses, drops, Overdrive, stages and each ship. `SETTINGS > INTERFACE > TUTORIAL & TIPS`.
+- **Controller rumble (`SETTINGS > INTERFACE > CONTROLLER RUMBLE`):** the kick thumps the heavy motor and the bass hums it, snares and hats tick the light motor, and hits shake both.
+- **Fixes:** wave 1 eases in (enemies at 72 % speed, full speed by wave 5); gravity wells pull your ship far less; the built-in score no longer feeds stand-in melody, chord and drum data over the real analysis while it is playing; a stage-clear upgrade or a won set can no longer be turned into an intermission when the last enemy dies in the same moment.
+
+### Rendering — the EDM show
+- **Stage lasers:** fans of thin beams fire up out of the depths from emitters fixed to the map. Every beat a new set lights up and the fans snap to new angles. They follow the loudness, flare on drops, go dark in breakdowns, and fade out before they reach the arena.
+- **Build-ups:** the world folds into a turning six-way kaleidoscope, the camera lifts away so the world recedes, letterbox bars close in (translucent, so nothing hides under them) and the fight camera eases back.
+- **Drops:** the camera slams down into the world and eases back, the frame rocks left and right on the beat, the colours jump to a new hue on every beat for four bars, the light pumps with the beat, and the first bar pulses on the beat. The fight camera bounces on every kick.
+- **Readability:** the folds, lasers and pulses stay dim in the pools under your ship and enemies, and the mouse aims exactly through the camera roll.
+- **Photosensitivity:** the drop pulse is tinted (never a white-out), at most four per drop and under 3 a second even at 174 BPM. `REDUCE FLASHING` removes the pulse and hue jumps and halves the rest.
+- `SETTINGS > VIDEO > CAMERA FX` (0–150 %) scales the camera moves; `MUSIC FX` scales the show. About 3 ms per frame for the whole frame at 1600×900 on an RTX 5060 laptop.
+
+### Tools & Tests
+- Self-test adds setlist runs, song records, instrument ships, in-key notes, THE DROP, the run recap, rumble and the tutorial, and the EDM show (including the flash-rate limit and aiming through the roll): **71,952 assertions**.
+- `--capture edm` and `--capture edmbackdrop` script a six-second build-up into a drop for reels (`--reel 10`).
+
+![The EDM show: build-up, drop and after, background only and in play](docs/screenshots/edm_show.png)
+
+---
+
+## Bass Gravity Wells, Melody Rails, Hunting Enemies, Music Understanding, Music-Shaped 3D Worlds & Spotify Buffer
+
+### Gameplay
+- **Bass Gravity Wells:** a sustained bass note opens a gravity well on the map ahead of you, growing with the bass and fading when it stops (up to 3). Bullets bend around wells and are swallowed by their dark core, so a well is cover. Skim a well's ring at speed and break away to **SLINGSHOT** (+40 % top speed, Flow and score). On a drop every well detonates: a shockwave that clears bullets and hurts enemies near it.
+- **Melody Rails:** while a melody plays, it draws a glowing rail across the map ahead of you, curving up and down with the tune's pitch and coloured note by note. Riding it (close and moving along it) lifts your top speed by up to 45 % and builds Flow. Enemy bullets that cross a rail are tuned to it (white ring) and pass straight through you while you ride.
+- **Enemies hunt you, each in its own way, and faster:** close-range speed 175 (was 100), and the further away they are the harder they chase (up to 4.4×), so none are left behind when you race off. Hunter (drifter) leads its target; Spiraller (orbiter) corkscrews in; Stalker (sniper) stays on your tail at rifle range; Pouncer (dasher) sways, braces and lunges; Hopper (turret) leaps at you on every beat; Juggernaut (splitter) surges on the downbeat; Pack (swarm) closes from all sides; Serpent (weaver) weaves close and beelines from far; Siege (mortar) advances half a bar, plants half a bar; Blinker (phantom) blinks to your flank every other beat; Sentinel (prism) circles you at range.
+
+
+### Music understanding (new)
+- **Drums vs. melody:** the sound is split into its percussive part (kicks, snares, hats) and its tonal part (bass notes, chords, pads, vocals), each in three registers. Drums drive the impacts; melody drives the flowing motion and the world's swells.
+- **Chords & key:** a 12-note chroma is matched to major/minor chords and, over a longer memory, to the song's key. Chords tint the world's colours relative to the key (home chord = the world's own colours, distant chords tint more); a real key change brings a new world.
+- **Timbre:** brightness sharpens or softens highlights; when the texture changes (a new instrument, a riser, a vocal) a shockwave rolls through the world.
+- **Song structure:** each song section gets its own world, and when a section comes back (a returning chorus or drop) its world comes back with it. Memory resets on every new track. Sections are found on their **first beat**: the beat is compared with its closest twin among the last 16 beats (chords from the current loop always have one, a new section's first beat does not), on a beat grid re-aligned to where the kicks actually land. With buffered audio (Spotify buffer, local tracks, built-in score) this runs on the audio 0.75 s before you hear it and the world change is pinned to the exact audio frame where the section starts, so it lands on the downbeat; with live system audio it lands about one beat in. Four beats later the call is checked: a one-off fill is taken back and the label is re-checked.
+- **Melody:** the lead note is tracked (harmonic-product spectrum, 180–1100 Hz) for the melody rails.
+- All classic signal processing (~0.5 ms/frame CPU), works for live audio, Spotify (buffered or live), local tracks and the built-in score. `--musicprobe [seconds] [--track file]` prints what it hears.
+
+### Audio
+- **Spotify buffer (`SETTINGS > AUDIO > SPOTIFY BUFFER`, on by default):** when Spotify is the audio source, the game sends Spotify to a silent output (Steam Streaming Speakers, VB-CABLE, Voicemeeter or similar), captures it there and plays it through the game **0.75 s later**, exactly like local tracks. The visuals, beat grid and pre-drop anticipation now see every hit before you hear it. Spotify plays at its own volume; pausing Spotify lets the built-in score fill in. Routing is undone when you switch source, turn the option off, quit, or (after a crash) at the next start. Needs Windows 11 / Windows 10 21H2+ and a silent output device; otherwise Spotify stays live with a note.
+- Diagnostics: `--buffertest` (end-to-end with a stand-in player), `--routeprobe [app]`, `--muteprobe`.
+
+### Rendering
+- **Map-anchored 3D worlds:** the backdrop is a raymarched world lying *under* the arena floor, seen through the same camera as the fight. It is fixed to the map (it scrolls and parallaxes as you fly, deep layers slower) and never follows the ship or the cursor.
+- **Six organic worlds, nothing on a grid:** `SPECTRAL SEA`, `MOLTEN CRUST`, `SOUND DUNES`, `GYROID CAVERN` (noise-warped), `STORM NEBULA` (volumetric) and `AURORA ABYSS`, each with randomized shape, motion and colour, plus `MOTES`, `FOG BANKS`, `EMBERS` or clear air.
+- **The world is shaped by the music:** the spectrum is split into 16 bands that react instantly to hits and settle quickly. The sea is eight swell trains, one per band (bass lifts the long swells, highs chop the surface). Each lava fissure flickers with its own band. The dunes' octaves are the spectrum, so the land re-forms with the song. The nebula and aurora lay the song out by depth (treble near, bass deep). Kicks and drops send shockwaves rolling through the world from where they happened, contour lines climb a step per beat, and before a drop the world sinks and drains of colour. Overall exposure follows the loudness: quiet passages go dark, loud ones light up.
+- **Readability:** the backdrop sits in a calmer range and darkens in soft pools under your ship and every on-screen enemy; the arena floor plate is darker; the ship has a lighter hull, a dark backing disc and a crisp rim; enemy bullets have a larger, darker halo.
+- 2.7–5.2 ms/frame for the backdrop at 1600×900 on an RTX 5060 laptop.
+
+### Tools & Tests
+- Self-test adds music analysis (chords, key, drums vs. melody, first-beat sections, fill take-back), music-driven backdrop spectrum, Spotify buffer FIFO and map-anchored backdrop suites.
+
+![Music-shaped 3D worlds](docs/screenshots/music_worlds.png)
+
+---
+
+## Previous Update — Stationary 3D-Only Reactive Backdrops, Lookahead Audio & Local Track Player, Drop Overdrive, Harmonic Overclock & Abyssal Theme
 
 ### Rendering, Visual Themes & Visual Effects
 - **Stationary 3D-Only Reactive Backdrops & Combat Readability:** Replaced all flat 2D backdrop generators and camera/aim/warp UV panning with **5 rock-steady, true 3D raymarched & perspective scenes** (`LIQUID 3D`, `CYBER TUNNEL 3D`, `VOID HORIZON 3D`, `CATHEDRAL 3D`, `ORBITAL GYROID 3D`). Each 3D environment stays completely stationary relative to the ship while its lighting, Fresnel rims, and architectural ribs pulse to kicks, snares, hi-hats, drops, Overdrive, and lookahead anticipation — held strictly below the bloom threshold with atmospheric depth fog and a soft center combat readability well so your ship, enemies, lasers, and bullets pop with unmistakable clarity in both **Standard** and **Abyssal** themes.

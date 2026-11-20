@@ -12,6 +12,10 @@ public sealed class RunConfig
     public HashSet<string> SelectedModifiers = new();
     public HashSet<string> UnlockedAttunements = new();
     public SoundBank? Sfx;
+    /// <summary>Setlist run: number of tracks (0 = endless).</summary>
+    public int Setlist;
+    /// <summary>The instrument ship for this run.</summary>
+    public ShipKind Ship;
 }
 
 public sealed class RunSummary
@@ -30,6 +34,15 @@ public sealed class RunSummary
     public int NoHitWaves;
     public int Movement;
     public string MovementName = "";
+    /// <summary>Setlist runs: the final boss went down.</summary>
+    public bool SetComplete;
+    public int Stages = 1;
+    public int SetlistLength;
+    public ShipKind Ship;
+    /// <summary>Every track played this run.</summary>
+    public List<TrackStat> Tracks = new();
+    /// <summary>Run recap timeline.</summary>
+    public RunTimeline? Timeline;
     public int Attunements;
     public int PhaseSyncs;
     public string Track = "";
@@ -108,6 +121,7 @@ public sealed partial class World
     public readonly Rng FxRng;
     public readonly Player Player = new();
     public readonly Camera Cam = new();
+
     public readonly List<Enemy> Enemies = new();
     public readonly List<Bullet> PlayerBullets = new();
     public readonly List<Bullet> EnemyBullets = new();
@@ -292,11 +306,17 @@ public sealed partial class World
         if (Phase != GamePhase.Playing) return;
 
         UpdatePlayer(dt, input, audio);
+        UpdateRails(dt, audio);
+        UpdateSetlist(dt, audio);
+        if (Phase != GamePhase.Playing) return;   // a new stage opened its upgrade pick
+        Timeline.Sample(this, audio, dt);
+        CacheHarmony(audio);
         UpdateHype(dt);
         UpdateDirector(dt, audio);
         UpdateEnemies(dt, audio);
         UpdateLasers(dt);
         UpdateStrikes(dt);
+        UpdateWells(dt, audio);
         UpdateBullets(dt);
         UpdateObstacles(dt, audio);
         UpdatePickups(dt);
@@ -421,7 +441,7 @@ public sealed partial class World
         _cueIntensity = intensity;
         _cueBuild = build;
         _cueBreakdown = breakdown;
-        if (drop) _cueDrop = true;
+        if (drop) { _cueDrop = true; _setlistDropCue = true; Timeline.AddDrop(SessionTime); }
     }
 
     /// <summary>
@@ -591,6 +611,7 @@ public sealed partial class World
         AddShockwave(Player.Pos, 1400f * strength, 1.4f, 22f * strength, hot, filled: true, heavy: true);
         AddShockwave(Player.Pos, 820f * strength, 0.9f, 8f, new Vector4(0.6f, 1f, 1f, 1f));
         BurstParticles(Player.Pos, new Vector4(1f, 0.7f, 1f, 0.85f), (int)(140 * strength), 900f, 3.4f, 1.1f, ParticleKind.Spark);
+        CollapseWells(strength);
         foreach (var e in Enemies) if (!e.Dead) e.HitFlash = MathF.Max(e.HitFlash, 0.6f);
         foreach (var o in Obstacles) if (!o.Dead) o.HitFlash = MathF.Max(o.HitFlash, 0.5f);
         Cam.AddShake(12f * strength);
@@ -880,6 +901,8 @@ public sealed partial class World
         if (Phase != GamePhase.Playing || Player.InvincibleDemo) return;
         if (Player.Invuln > 0f || Player.IsDashing || StartGrace > 0f) return;
         Player.Health--;
+        if (CurrentTrack != null) CurrentTrack.Hits++;
+        Timeline.AddHit(SessionTime);
         Player.PhaseSyncStreak = 0;
         Flow *= 0.35f;
         _sinceHit = 0f;
@@ -907,8 +930,21 @@ public sealed partial class World
         AddShockwave(Player.Pos, 720, 1.4f, 18, new Vector4(1f, 0.2f, 0.35f, 1f), true);
         BurstParticles(Player.Pos, new Vector4(1f, 0.3f, 0.4f, 0.9f), 110, 520, 3.5f, 1.4f, ParticleKind.Spark);
         Sfx?.Trigger(SfxType.Explosion, 1f);
-        Summary = new RunSummary
+        FinishTrack();
+        Summary = MakeSummary();
+        if (!Demo) RunEnded?.Invoke(Summary);
+    }
+
+    private RunSummary MakeSummary()
+    {
+        Timeline.Finish(SessionTime, Score);
+        return new RunSummary
         {
+            SetlistLength = SetlistLength,
+            Stages = Stage,
+            Ship = Ship,
+            Tracks = new List<TrackStat>(Tracks),
+            Timeline = Timeline,
             Seed = Seed,
             Daily = Daily,
             Wave = Wave,
@@ -927,7 +963,6 @@ public sealed partial class World
             PhaseSyncs = PhaseSyncs,
             Modifiers = new List<string>(Mods.Active),
         };
-        if (!Demo) RunEnded?.Invoke(Summary);
     }
 
     public void ForceDeathForTest() => HurtPlayer(99);

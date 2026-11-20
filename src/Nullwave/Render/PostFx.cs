@@ -6,6 +6,8 @@ namespace Nullwave.Render;
 public struct PostMood
 {
     public float Hue, Saturation, Contrast, Thump, Glitch, Vignette, SpeedLines, DarkTheme;
+    /// <summary>EDM camera: frame roll in radians and letterbox bar height (0..0.5 of the screen).</summary>
+    public float Roll, Letterbox;
     public System.Numerics.Vector2 SpeedDir;
     public System.Numerics.Vector3 Tint;
     public static PostMood Neutral => new() { Saturation = 1f, Contrast = 1f, Vignette = 1f, Tint = System.Numerics.Vector3.One };
@@ -135,6 +137,8 @@ public sealed class PostFx : IDisposable
         _composite.SetFloat("uSpeedLines", mood.SpeedLines);
         _composite.SetVec2("uSpeedDir", mood.SpeedDir.X, -mood.SpeedDir.Y);
         _composite.SetFloat("uDarkTheme", mood.DarkTheme);
+        _composite.SetFloat("uRoll", mood.Roll);
+        _composite.SetFloat("uLetterbox", mood.Letterbox);
         int swCount = Math.Min(4, shockwaves.Length);
         _composite.SetInt("uShockwaveCount", swCount);
         for (int i = 0; i < swCount; i++)

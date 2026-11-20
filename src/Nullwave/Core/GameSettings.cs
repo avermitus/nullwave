@@ -22,6 +22,20 @@ public sealed class GameSettings
     public int BeatOffsetMs { get; set; }
     /// <summary>How hard bullets and enemies surge forward on each beat (0 = constant speed).</summary>
     public int BeatMotion { get; set; } = 100;
+    /// <summary>Delay Spotify 0.75 s through the game so visuals and enemies see the music coming.</summary>
+    public bool BufferSpotify { get; set; } = true;
+    /// <summary>Kills and hits play notes in the song's key.</summary>
+    public bool InKeySounds { get; set; } = true;
+    /// <summary>Tracks in a setlist run.</summary>
+    public int SetlistTracks { get; set; } = 4;
+    /// <summary>Gamepad rumble on the kick and bass (percent).</summary>
+    public int Rumble { get; set; } = 80;
+    /// <summary>Keep the last seconds of play so the best moment can be saved as a clip.</summary>
+    public bool HighlightClips { get; set; } = true;
+    /// <summary>First-run tutorial and one-time tips.</summary>
+    public bool TutorialTips { get; set; } = true;
+    /// <summary>EDM camera effects (roll on drops, zoom punch, letterbox on build-ups), percent.</summary>
+    public int CameraFx { get; set; } = 100;
 
     // video
     public bool Fullscreen { get; set; }

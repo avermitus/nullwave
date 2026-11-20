@@ -14,14 +14,19 @@ public static class WorldRenderer
     {
         r.Palette = palette;
         PopulateCombatLights(r, world, palette);
+        // the ship's dark backdrop pool goes first so it is never dropped when the field is crowded
+        if (world.Phase != GamePhase.Dead) r.AddBackdropFocus(world.Player.Pos, 260f, 0.75f);
         DrawArena(r, world, palette, audio, time);
         DrawMotes(r, world, palette, audio, time);
+        DrawRails(r, world, time);
+        DrawWells(r, world, time);
         DrawObstacles(r, world, palette, time);
         DrawPickups(r, world, palette, time);
         DrawLasers(r, world, palette);
         DrawStrikes(r, world, time);
         DrawEnemies(r, world, palette, audio, time);
         DrawBullets(r, world, palette);
+        DrawLeadBeam(r, world, time);
         DrawPlayer(r, world, palette, audio, time);
         DrawParticles(r, world, palette);
         DrawShockwaves(r, world);
@@ -132,7 +137,7 @@ public static class WorldRenderer
         bool abyssal = GameSettings.Current.IsAbyssal;
         var floorCol = abyssal
             ? new Vector4(0.002f, 0.003f, 0.008f, 0.52f)
-            : new Vector4(0.006f, 0.008f, 0.02f, 0.28f);
+            : new Vector4(0.006f, 0.008f, 0.02f, 0.40f);
         r.Quad(new Vector2(-hw, -hh), new Vector2(hw, -hh), new Vector2(hw, hh), new Vector2(-hw, hh), floorCol);
 
         // Floor grid, only the part in view; lines near the player brighten on the beat.
@@ -428,6 +433,8 @@ public static class WorldRenderer
                 continue;
             }
 
+            if (r.InView(e.Pos, 60f)) r.AddBackdropFocus(e.Pos, R * (e.Boss ? 5f : 4f), e.Boss ? 0.7f : 0.55f);
+            r.FillCircle(e.Pos, R * 1.7f, new Vector4(0f, 0f, 0.01f, 0.38f), 20);
             r.FillCircle(e.Pos + new Vector2(R * 0.32f, R * 0.42f), R * (e.Boss ? 0.8f : 0.92f), Shadow, 16);
             if (!e.Boss)
             {
@@ -441,6 +448,8 @@ public static class WorldRenderer
             float pulse = 1f + MathF.Sin(time * 3f + e.Angle) * 0.025f + kick * (e.Boss ? 0.06f : 0.16f);
             DrawEnemyModel(r, w, e, hue, pulse, e.HitFlash, time, audio);
 
+            // Galaga-style arrival: a streak behind the dive, then lock-on brackets that close in
+            // while it holds fire.
             // On-beat telegraph: a ring that closes onto the enemy exactly as it fires.
             if (e.Telegraph > 0.02f && !e.Boss && GameSettings.Current.BeatTelegraphs)
             {
@@ -536,7 +545,8 @@ public static class WorldRenderer
                 break;
             }
             case EnemyRole.Boss:
-                DrawBoss(r, w, e, hue, scale, flash, time, audio);
+                if (e.SongBoss) DrawSongBoss(r, w, e, hue, scale, flash, time, audio);
+                else DrawBoss(r, w, e, hue, scale, flash, time, audio);
                 break;
             case EnemyRole.Weaver:
             {
@@ -660,6 +670,17 @@ public static class WorldRenderer
             if (!r.InView(b.Pos, 80)) continue;
             Vector2 dir = M.SafeNorm(b.Vel);
             float baseTail = Math.Clamp(b.Vel.Length() * 0.032f, 22f, 56f);
+            if (b.SynergyKind == 4)
+            {
+                // BASS orb: a heavy, slow, throbbing ember
+                float throb = 1f + MathF.Sin(b.Age * 18f) * 0.12f;
+                var ember = new Vector4(1f, 0.52f, 0.2f, 1f);
+                r.GradientLine(b.Pos - dir * baseTail * 1.6f, b.Pos, b.Radius * 2.2f, M.WithAlpha(ember, 0f), M.WithAlpha(ember, 0.35f), true);
+                r.FillCircle(b.Pos, b.Radius * 2.1f * throb, M.WithAlpha(ember, 0.22f), 18, true);
+                r.FillCircle(b.Pos, b.Radius * 1.15f * throb, M.WithAlpha(ember, 0.85f), 16, true);
+                r.FillCircle(b.Pos, b.Radius * 0.55f, new Vector4(1f, 0.95f, 0.8f, 1f), 12, true);
+                continue;
+            }
             if (b.SynergyKind == 1)
             {
                 // SEEKER SALVO: hyper-magenta/cyan flanking micro-seekers with elongated plasma ribbons
@@ -720,7 +741,9 @@ public static class WorldRenderer
         {
             if (!r.InView(b.Pos, 80)) continue;
             Vector4 hue = M.Hsv(b.Hue, 0.78f, 1f);
-            r.FillCircle(b.Pos, b.Radius * 2.25f, new Vector4(0f, 0f, 0.012f, 0.58f), 10);
+            r.FillCircle(b.Pos, b.Radius * 2.8f, new Vector4(0f, 0f, 0.012f, 0.72f), 10);
+            if (b.Tuned)
+                r.Circle(b.Pos, b.Radius * 2.2f, 1.4f, new Vector4(1f, 1f, 1f, w.Player.RailRiding ? 0.85f : 0.45f), 12, true);
             // glowing dual-layer comet ribbon + shimmer nodes
             {
                 Vector2 vdir = M.SafeNorm(b.Vel);
@@ -849,12 +872,15 @@ public static class WorldRenderer
         }
         float z = 8f + MathF.Sin(time * 2.6f) * 1.2f;
 
+        // readability: the ship sits on a dark disc with a crisp rim (its backdrop pool is added first in Draw)
+        r.FillCircle(pos, 34f, new Vector4(0f, 0f, 0.01f, 0.55f), 24);
         r.FillCircle(pos + new Vector2(9, 12), 15f, Shadow, 16);
-        r.FillCircle(pos, 30f, new Vector4(col.X, col.Y, col.Z, 0.04f * (player.IsDashing ? 2f : 1f)), 24, true);
+        r.FillCircle(pos, 30f, new Vector4(col.X, col.Y, col.Z, 0.05f * (player.IsDashing ? 2f : 1f)), 24, true);
+        r.Circle(pos, 31f, 1.6f, new Vector4(0.85f, 1f, 1f, 0.42f * flicker), 32, true);
 
         var mats = MaterialSet.ForHue(col, (1f + (player.IsDashing ? 1f : 0f) + w.BeatPulse * 0.3f + player.PhaseSyncFlash * 0.65f) * flicker, player.HitFlash, 1f);
-        mats.Trim = new Vector4(0.62f, 0.68f, 0.78f, 1f);
-        mats.Hull = new Vector4(0.16f, 0.18f, 0.24f, 1f);
+        mats.Trim = new Vector4(0.85f, 0.92f, 1f, 1f);
+        mats.Hull = new Vector4(0.42f, 0.47f, 0.58f, 1f);
         var ship = Xf(pos, z, aim, 1.35f, roll);
         DrawSpeedFx(r, w, p, time, ship, aim);
         r.Meshes.Add(Models.Player, ship, mats);
@@ -962,10 +988,146 @@ public static class WorldRenderer
         }
     }
 
+    /// <summary>LEAD ship: a ribbon of light along the melody, white core, note-coloured sheath.</summary>
+    private static void DrawLeadBeam(Renderer r, GameWorld w, float time)
+    {
+        var pts = w.LeadBeam;
+        if (pts.Count < 2) return;
+        var c = M.Hsv(w.LeadBeamHue, 0.6f, 1f);
+        float power = w.LeadBeamPower;
+        for (int i = 1; i < pts.Count; i++)
+        {
+            float f = 1f - i / (float)pts.Count * 0.6f;
+            float shimmer = 0.8f + 0.2f * MathF.Sin(time * 40f - i * 0.9f);
+            r.Line(pts[i - 1], pts[i], 46f * f, M.WithAlpha(c, 0.10f * power), true);
+            r.Line(pts[i - 1], pts[i], 18f * f, M.WithAlpha(c, 0.42f * power * shimmer), true);
+            r.Line(pts[i - 1], pts[i], 5f * f, new Vector4(1f, 1f, 1f, 0.9f * power), true);
+        }
+        r.FillCircle(pts[0], 16f, M.WithAlpha(c, 0.5f), 14, true);
+        r.FillCircle(pts[^1], 10f, M.WithAlpha(c, 0.4f), 12, true);
+    }
+
+    /// <summary>THE DROP: a speaker-like core whose rings answer the kick, snare and hats.</summary>
+    private static void DrawSongBoss(Renderer r, GameWorld w, Enemy e, Vector4 hue, float scale, float flash, float time, AudioState audio)
+    {
+        float R = e.Radius * scale * e.BossScale;
+        Vector2 c = e.Pos;
+        var hc = M.Hsv(e.Hue, 0.65f, 1f);
+        var hc2 = M.Hsv((e.Hue + 0.5f) % 1f, 0.6f, 1f);
+        float kick = MathF.Max(audio.PercLow, audio.KickPulse);
+        float snare = MathF.Max(audio.PercMid, audio.SnarePulse);
+        float hat = MathF.Max(audio.PercHigh, audio.HatPulse);
+        // dark body and cone
+        r.FillCircle(c, R * 1.05f, new Vector4(0.02f, 0.02f, 0.05f, 0.92f), 48);
+        r.FillCircle(c, R * (0.55f + kick * 0.12f), M.WithAlpha(hc, 0.25f + kick * 0.5f), 40, true);
+        r.FillCircle(c, R * (0.22f + kick * 0.08f), new Vector4(1f, 1f, 1f, 0.75f + kick * 0.25f), 28, true);
+        // kick: the cone throws rings outward
+        for (int k = 0; k < 3; k++)
+        {
+            float ph = (time * 1.6f + k / 3f) % 1f;
+            r.Circle(c, R * (0.6f + ph * 1.1f), 2.5f * (1f - ph), M.WithAlpha(hc, (1f - ph) * (0.25f + kick * 0.6f)), 48, true);
+        }
+        // snare ring: segments that flash
+        int segs = 12;
+        for (int i = 0; i < segs; i++)
+        {
+            float a0 = e.Angle + i * M.Tau / segs;
+            float lit = 0.25f + snare * 0.75f * (0.5f + 0.5f * MathF.Sin(i * 1.7f + time * 8f));
+            r.Arc(c, R * 1.18f, a0, M.Tau / segs * 0.7f, 5f, M.WithAlpha(hc2, lit), 8, true);
+        }
+        // hat ring: fine counter-rotating ticks
+        for (int i = 0; i < 24; i++)
+        {
+            float a = -e.Angle * 1.6f + i * M.Tau / 24f;
+            Vector2 dir = M.FromAngle(a);
+            float len = 8f + hat * 16f * (i % 2 == 0 ? 1f : 0.5f);
+            r.Line(c + dir * R * 1.38f, c + dir * (R * 1.38f + len), 1.6f, M.WithAlpha(Vector4.One, 0.25f + hat * 0.6f), true);
+        }
+        r.Circle(c, R * 1.05f, 2f, M.WithAlpha(Vector4.Lerp(hc, Vector4.One, flash), 0.8f), 48, true);
+        if (e.BossInvuln > 0f)
+            r.Circle(c, R * 1.6f, 3f, new Vector4(1f, 1f, 1f, 0.4f + 0.3f * MathF.Sin(time * 20f)), 48, true);
+    }
+
+    // ------------------------------------------------------------------ music fields
+
+    /// <summary>Bass gravity wells: a dark lens with a spinning accretion ring and inflowing sparks.</summary>
+    private static void DrawWells(Renderer r, GameWorld w, float time)
+    {
+        foreach (var g in w.Wells)
+        {
+            if (!r.InView(g.Pos, g.Radius)) continue;
+            float s = g.Strength;
+            var hue = M.Hsv(g.Hue, 0.65f, 1f);
+            r.AddBackdropFocus(g.Pos, g.Radius * 0.7f, 0.55f * s);
+            // influence edge
+            r.Circle(g.Pos, g.Radius, 1.2f, M.WithAlpha(hue, 0.07f + s * 0.06f), 64, true);
+            // the lens: a dark core
+            r.FillCircle(g.Pos, g.Core * 2.2f, new Vector4(0f, 0f, 0.01f, 0.55f + s * 0.3f), 32);
+            r.FillCircle(g.Pos, g.Core, new Vector4(0f, 0f, 0f, 0.95f), 24);
+            // accretion rings spinning faster with the bass
+            for (int k = 0; k < 3; k++)
+            {
+                float rad = g.Core * (1.35f + k * 0.55f);
+                float a0 = g.Spin * (1.4f - k * 0.3f) + k * 2.1f;
+                r.Arc(g.Pos, rad, a0, 2.2f + s, 2.2f + s * 2f, M.WithAlpha(hue, 0.35f + s * 0.45f), 20, true);
+                r.Arc(g.Pos, rad, a0 + MathF.PI, 1.2f, 1.4f + s, M.WithAlpha(hue, 0.2f + s * 0.3f), 14, true);
+            }
+            r.Circle(g.Pos, g.Core * 1.05f, 2f, new Vector4(1f, 1f, 1f, 0.35f + s * 0.4f), 32, true);
+            // sparks falling in
+            for (int k = 0; k < 10; k++)
+            {
+                float ph = (time * (0.6f + s) + k * 0.1f) % 1f;
+                float ang = k * 2.39996f + g.Spin * 0.5f + ph * 2.5f;
+                float rad = g.Radius * 0.8f * (1f - ph) + g.Core;
+                r.FillCircle(g.Pos + M.FromAngle(ang, rad), 2.2f, M.WithAlpha(hue, 0.6f * ph * s), 6, true);
+            }
+        }
+    }
+
+    /// <summary>Melody rails: a glowing ribbon coloured note by note, fading from its tail.</summary>
+    private static void DrawRails(Renderer r, GameWorld w, float time)
+    {
+        bool riding = w.Player.RailRiding;
+        foreach (var rail in w.Rails)
+        {
+            var pts = rail.Points;
+            for (int k = 1; k < pts.Count; k++)
+            {
+                if (!r.InView(pts[k], 80f)) continue;
+                float f0 = 1f - rail.Ages[k - 1] / GameWorld.RailLife, f1 = 1f - rail.Ages[k] / GameWorld.RailLife;
+                f0 = MathF.Min(1f, f0 * 2.5f); f1 = MathF.Min(1f, f1 * 2.5f);
+                var c0 = M.Hsv(rail.Hues[k - 1], 0.6f, 1f);
+                var c1 = M.Hsv(rail.Hues[k], 0.6f, 1f);
+                float shimmer = 0.85f + 0.15f * MathF.Sin(time * 9f - k * 0.5f);
+                r.GradientLine(pts[k - 1], pts[k], 34f, M.WithAlpha(c0, 0.10f * f0), M.WithAlpha(c1, 0.10f * f1), true);
+                r.GradientLine(pts[k - 1], pts[k], 10f, M.WithAlpha(c0, 0.45f * f0 * shimmer), M.WithAlpha(c1, 0.45f * f1 * shimmer), true);
+                r.GradientLine(pts[k - 1], pts[k], 3f, new Vector4(1f, 1f, 1f, 0.8f * f0), new Vector4(1f, 1f, 1f, 0.8f * f1), true);
+            }
+            if (rail.Growing && pts.Count > 0)
+            {
+                var hc = M.Hsv(rail.Hues[^1], 0.5f, 1f);
+                r.FillCircle(pts[^1], 16f, M.WithAlpha(hc, 0.25f), 16, true);
+                r.FillCircle(pts[^1], 6f, new Vector4(1f, 1f, 1f, 0.95f), 10, true);
+            }
+        }
+        if (riding)
+        {
+            var p = w.Player;
+            r.Circle(p.Pos, 40f + MathF.Sin(time * 20f) * 3f, 2f, new Vector4(1f, 1f, 1f, 0.5f), 32, true);
+        }
+    }
+
     private static void DrawShockwaves(Renderer r, GameWorld w)
     {
         foreach (var s in w.Shockwaves)
         {
+            // big impacts (drops, overdrive, bombs, kills of big enemies) roll through the 3D world too
+            if (!s.BackdropPulsed)
+            {
+                s.BackdropPulsed = true;
+                if (s.Heavy) r.PulseBackdrop(s.Pos, 1.3f);
+                else if (s.MaxRadius >= 180f) r.PulseBackdrop(s.Pos, MathF.Min(0.9f, s.MaxRadius / 600f));
+            }
             float t = M.Clamp01(s.Life / MathF.Max(0.01f, s.MaxLife));
             if (s.Heavy)
             {
