@@ -53,6 +53,7 @@ public static class SelfTest
             TestAttunementSynergies();
             TestOverdriveAndHitStop();
             TestLookaheadAudioBuffer();
+            Test3DBackdropAndReadability();
             Console.WriteLine($"RESULT: PASS ({_checks} assertions, {sw.Elapsed.TotalSeconds:0.0}s)");
             return 0;
         }
@@ -490,36 +491,25 @@ public static class SelfTest
         var rng = new Random();
         var names = new HashSet<string>();
         var gens = new HashSet<int>();
-        var ops = new HashSet<int>();
-        int layerTotal = 0;
         Render.BackdropGenome? prev = null;
         const int count = 1000;
         for (int i = 0; i < count; i++)
         {
             var g = Render.BackdropGenome.Random(rng, prev);
-            Check(g.Layers.Count is >= 1 and <= Render.BackdropGenome.MaxLayers, "backdrop has 1-3 layers");
-            int expensive = 0;
-            for (int li = 0; li < g.Layers.Count; li++)
-            {
-                var l = g.Layers[li];
-                Check(l.Generator is >= 0 and < Render.BackdropGenome.GeneratorCount, "generator in range");
-                if (Render.BackdropGenome.IsExpensive(l.Generator)) { expensive++; Check(li == 0, "raymarched generator only as base layer"); }
-                Check(l.Ops.All(o => o is >= 0 and <= Render.BackdropGenome.OpCount), "ops in range");
-                Check(l.Ops.Count(o => o is 2 or 7) <= 1, "at most one space remap per layer");
-                gens.Add(l.Generator);
-                foreach (var o in l.Ops) if (o > 0) ops.Add(o);
-                layerTotal++;
-            }
-            Check(expensive <= 1, "at most one raymarched generator");
+            Check(Render.BackdropGenome.Is3DOnly(g), "backdrop is 100% stationary 3D-only");
+            Check(g.Layers.Count == 1, "stationary 3D backdrop uses a single layer");
+            var l = g.Layers[0];
+            Check(l.Generator is >= 0 and < Render.BackdropGenome.GeneratorCount, "generator in 3D range");
+            Check(l.Ops.All(o => o == 0), "zero 2D space-warping ops");
+            gens.Add(l.Generator);
             if (prev != null)
-                Check(g.Layers[0].Generator != prev.Layers[0].Generator || !g.Layers[0].Ops.SequenceEqual(prev.Layers[0].Ops), "consecutive backdrops differ");
+                Check(l.Generator != prev.Layers[0].Generator, "consecutive 3D backdrops switch scenes");
             names.Add(g.Name + g.Global);
             prev = g;
         }
-        Console.WriteLine($"  backdrops: {count} generated, {names.Count} distinct, {gens.Count}/{Render.BackdropGenome.GeneratorCount} generators, {ops.Count}/{Render.BackdropGenome.OpCount} transforms, {layerTotal / (float)count:0.0} layers avg");
+        Console.WriteLine($"  backdrops: {count} generated, {names.Count} distinct, {gens.Count}/{Render.BackdropGenome.GeneratorCount} 3D scenes, 0 2D ops");
         Check(names.Count == count, "no two backdrops alike");
-        Check(gens.Count == Render.BackdropGenome.GeneratorCount, "every generator appears");
-        Check(ops.Count == Render.BackdropGenome.OpCount, "every transform appears");
+        Check(gens.Count == Render.BackdropGenome.GeneratorCount, "every 3D scene appears");
     }
 
     private static void TestRacerFeel()
@@ -1288,7 +1278,7 @@ public static class SelfTest
         var nanFx = Renderer.ComputeBackdropAudioDrives(audio, mood, float.NaN);
         Check(nanFx == new Renderer.BackdropAudioDrives(0f, 0f, 0f, 0f, 0f, 0f), "NaN fx yields zero drives");
 
-        // BackgroundFrag uniform contract: active onset/aim/transition uniforms present, zero dead V7 uniforms
+        // BackgroundFrag uniform contract: active onset/transition uniforms present, zero dead V7 uniforms
         string frag = Shaders.BackgroundFrag;
         foreach (string required in new[]
         {
@@ -1296,7 +1286,6 @@ public static class SelfTest
             "uniform float uHat;",
             "uniform float uKick;",
             "uniform float uDrop;",
-            "uniform vec2 uAim;",
             "uniform float uMix;",
         })
         {
@@ -1740,5 +1729,56 @@ public static class SelfTest
 
         Check(Shaders.BackgroundFrag.Contains("uniform float uAnticipation;", StringComparison.Ordinal), "BackgroundFrag declares uAnticipation");
         Console.WriteLine($"  lookahead audio: delay={firstHitFrame}f ({lookahead.LookaheadSeconds:0.00}s) preDropAnt={maxPreDropAnt:0.00} dropSnap={dropTime:0.00}s wavLoop=PASS");
+    }
+
+    /// <summary>TASK-014: 100% stationary 3D-only backdrops, zero 2D generators/ops, zero camera/aim UV panning, and combat readability contracts.</summary>
+    private static void Test3DBackdropAndReadability()
+    {
+        Check(BackdropGenome.GeneratorCount == 5 && BackdropGenome.MaxLayers == 1 && BackdropGenome.OpCount == 0, "BackdropGenome locked to 5 single-layer 3D scenes");
+
+        var rng = new Random(14014);
+        var seen = new HashSet<int>();
+        BackdropGenome? prev = null;
+        for (int i = 0; i < 50; i++)
+        {
+            var g = BackdropGenome.Random(rng, prev);
+            Check(BackdropGenome.Is3DOnly(g), $"genome {i} is 3D-only with zero 2D ops");
+            Check(g.Layers[0].Blend == 0 && MathF.Abs(g.Layers[0].Gain - 1f) < 1e-5f, "single 3D base layer uses Blend=0, Gain=1");
+            seen.Add(g.Layers[0].Generator);
+            prev = g;
+        }
+        Check(seen.Count == 5, "all 5 3D scenes reachable within 50 random rolls");
+
+        // Negative checks on Is3DOnly
+        var badOps = BackdropGenome.Random(new Random(7));
+        badOps.Layers[0].Ops[0] = 2;
+        Check(!BackdropGenome.Is3DOnly(badOps), "Is3DOnly rejects non-zero 2D space-warping ops");
+        var badMulti = BackdropGenome.Random(new Random(8));
+        badMulti.Layers.Add(new BackdropGenome.Layer { Generator = 1 });
+        Check(!BackdropGenome.Is3DOnly(badMulti), "Is3DOnly rejects multi-layer stacks");
+
+        // Stationary UV & 3D-only shader contract
+        string frag = Shaders.BackgroundFrag;
+        Check(frag.Contains("vec2 uv = screenPos;", StringComparison.Ordinal), "BackgroundFrag locks uv strictly to screenPos");
+        foreach (string required3D in new[]
+        {
+            "genLiquid3D", "genCyberTunnel3D", "genVoidHorizon3D", "genCathedral3D", "genOrbitalGyroid3D",
+            "uniform float uDarkTheme;", "uniform vec4 uLights[12];", "uniform float uOverdrive;", "uniform float uAnticipation;",
+        })
+        {
+            Check(frag.Contains(required3D, StringComparison.Ordinal), "BackgroundFrag contains " + required3D);
+        }
+
+        foreach (string forbidden in new[]
+        {
+            "uCam", "uAim", "uVel", "uTravel", "pShift",
+            "genInk", "genPlasma", "genTruchet", "genHex", "genInterference", "genStreams", "genGridPulse",
+            "styleCells", "styleKaleido", "styleAurora", "applyOp",
+        })
+        {
+            Check(!frag.Contains(forbidden, StringComparison.Ordinal), "BackgroundFrag retired " + forbidden);
+        }
+
+        Console.WriteLine($"  3d backdrop: scenes={seen.Count}/{BackdropGenome.GeneratorCount} stationaryUv=true 2dGenerators=0");
     }
 }

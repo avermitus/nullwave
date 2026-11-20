@@ -3,27 +3,30 @@ using System.Numerics;
 namespace Nullwave.Render;
 
 /// <summary>
-/// A fully generated backdrop. Nothing is picked from a fixed list of looks: every backdrop is
-/// assembled from scratch out of 1-3 layers, each with
-///   - a chain of up to four motion transforms that move space itself (tunnel flight, endless
-///     log-spiral zoom, kaleidoscope folds, flowing warps, vortex swirls, ripples, scrolling,
-///     independently spinning tiles, beat breathing) with continuous random parameters,
-///   - one of 13 animated pattern generators with its own random parameters,
-///   - a random cosine colourway, blend mode and gain,
-/// plus global spin, zoom and mirror. Seeds come from an unseeded RNG, so a backdrop is
-/// effectively never seen twice.
+/// A stationary, 100% 3D procedural backdrop genome. Every backdrop selects one of 5 genuine
+/// 3D raymarched or 3D perspective scenes with continuous random structural and cool/deep
+/// palette parameters (single layer, zero 2D space-warping ops) so the background stays
+/// rock-steady relative to the ship while pulsing its 3D lighting and rims to the music.
 /// </summary>
 public sealed class BackdropGenome
 {
-    public const int OpCount = 11;        // 1..11 (0 = none)
-    public const int GeneratorCount = 13; // 0..12
-    public const int MaxLayers = 3;
+    public const int OpCount = 0;         // 2D space-warping ops retired (stationary 3D only)
+    public const int GeneratorCount = 5;  // 0..4 (100% genuine 3D scenes)
+    public const int MaxLayers = 1;
 
-    public static readonly string[] OpNames = { "-", "SPIN", "TUNNEL", "FOLD", "WARP", "SWIRL", "MIRROR", "SPIRAL", "STREAM", "RIPPLE", "TILES", "BREATHE" };
-    public static readonly string[] GeneratorNames = { "INK", "CELLS", "FRACTAL", "CIRCUIT", "MOIRE", "STREAMS", "GRID", "LIQUID", "FIELD", "PLASMA", "AURORA", "HEX", "HYPERSPACE" };
+    public static readonly string[] OpNames = { "-" };
+    public static readonly string[] GeneratorNames = { "LIQUID 3D", "CYBER TUNNEL 3D", "VOID HORIZON 3D", "CATHEDRAL 3D", "ORBITAL GYROID 3D" };
 
-    /// <summary>Raymarched generators: only allowed as the base layer, at most once per backdrop.</summary>
-    public static bool IsExpensive(int gen) => gen is 7 or 8;
+    /// <summary>All 5 scenes are full 3D raymarched or perspective scenes (single base layer).</summary>
+    public static bool IsExpensive(int gen) => gen is >= 0 and < GeneratorCount;
+
+    /// <summary>True iff the genome is a single-layer genuine 3D scene with zero 2D space-warping ops.</summary>
+    public static bool Is3DOnly(BackdropGenome? g) =>
+        g != null
+        && g.Layers.Count == 1
+        && g.Layers[0].Generator >= 0
+        && g.Layers[0].Generator < GeneratorCount
+        && g.Layers[0].Ops.All(o => o == 0);
 
     public sealed class Layer
     {
@@ -40,20 +43,16 @@ public sealed class BackdropGenome
     public Vector4 Global;
     public ulong Seed;
 
-    /// <summary>Compact description, e.g. "TUNNEL+WARP>CIRCUIT | SPIN>STREAMS".</summary>
-    public string Name => string.Join(" | ", Layers.Select(l =>
-        string.Join("+", l.Ops.Where(o => o > 0).Select(o => OpNames[o])) is { Length: > 0 } ops
-            ? ops + ">" + GeneratorNames[l.Generator]
-            : GeneratorNames[l.Generator]));
+    /// <summary>Compact description, e.g. "CATHEDRAL 3D".</summary>
+    public string Name => string.Join(" | ", Layers.Select(l => GeneratorNames[l.Generator]));
 
     public static BackdropGenome Random(Random rng, BackdropGenome? previous = null)
     {
         for (int attempt = 0; ; attempt++)
         {
             var g = Build(rng);
-            // consecutive backdrops must look different: change the base generator or its motion
-            if (previous == null || attempt > 20 || g.Layers[0].Generator != previous.Layers[0].Generator
-                || !g.Layers[0].Ops.SequenceEqual(previous.Layers[0].Ops))
+            // consecutive backdrops always switch to a different 3D environment
+            if (previous == null || attempt > 20 || g.Layers[0].Generator != previous.Layers[0].Generator)
                 return g;
         }
     }
@@ -63,50 +62,19 @@ public sealed class BackdropGenome
         float F() => (float)rng.NextDouble();
         Vector4 V() => new(F(), F(), F(), F());
         var g = new BackdropGenome { Global = V(), Seed = (ulong)rng.NextInt64() };
-        int layers = F() switch { < 0.2f => 1, < 0.7f => 2, _ => 3 };
 
-        // one colour family per backdrop, drifted per layer, so layers feel related but not flat
-        var baseOffset = new Vector3(F(), F(), F());
-        var baseFreq = new Vector3(0.3f + F() * 1.1f, 0.3f + F() * 1.1f, 0.3f + F() * 1.1f);
-        if (F() < 0.35f) { float f = 0.4f + F() * 0.8f; baseFreq = new Vector3(f, f, f); }
-
-        for (int i = 0; i < layers; i++)
+        // Deep, cool architectural palette families so bright neon ships, lasers and bullets pop
+        var l = new Layer
         {
-            var l = new Layer();
-            // generator: raymarched ones only as the base layer, and then keep the stack light
-            int gen;
-            do gen = rng.Next(GeneratorCount);
-            while (i > 0 && IsExpensive(gen));
-            if (i == 0 && IsExpensive(gen) && layers == 3) layers = 2;
-            l.Generator = gen;
-            l.GenA = V();
-            l.GenB = V();
-
-            // motion chain: 0-4 transforms; at most one space remap (tunnel or spiral), placed first
-            int opCount = F() switch { < 0.1f => 0, < 0.35f => 1, < 0.7f => 2, < 0.9f => 3, _ => 4 };
-            var used = new HashSet<int>();
-            int slot = 0;
-            if (opCount > 0 && !IsExpensive(gen) && gen != 12 && F() < 0.45f)
-            {
-                int remap = F() < 0.5f ? 2 : 7;
-                l.Ops[slot] = remap; l.OpParams[slot] = V(); used.Add(remap); slot++;
-            }
-            while (slot < opCount)
-            {
-                int op = 1 + rng.Next(OpCount);
-                if (op is 2 or 7 || used.Contains(op)) continue;
-                // raymarched scenes only take gentle screen-space motion
-                if (IsExpensive(gen) && op is 3 or 10) continue;
-                l.Ops[slot] = op; l.OpParams[slot] = V(); used.Add(op); slot++;
-            }
-
-            l.Blend = i == 0 ? 0 : F() switch { < 0.35f => 0, < 0.65f => 1, < 0.8f => 2, < 0.92f => 3, _ => 4 };
-            l.Gain = i == 0 ? 1f : 0.45f + F() * 0.55f;
-            l.PaletteOffset = baseOffset + new Vector3(F(), F(), F()) * (0.08f + i * 0.12f);
-            l.PaletteFrequency = baseFreq * (0.85f + F() * 0.3f);
-            g.Layers.Add(l);
-            if (g.Layers.Count >= layers) break;
-        }
+            Generator = rng.Next(GeneratorCount),
+            GenA = V(),
+            GenB = V(),
+            Blend = 0,
+            Gain = 1f,
+            PaletteOffset = new Vector3(0.45f + F() * 0.45f, 0.35f + F() * 0.45f, 0.08f + F() * 0.35f),
+            PaletteFrequency = new Vector3(0.35f + F() * 0.45f, 0.35f + F() * 0.45f, 0.40f + F() * 0.45f),
+        };
+        g.Layers.Add(l);
         return g;
     }
 }

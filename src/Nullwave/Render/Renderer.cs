@@ -206,7 +206,6 @@ public sealed class Renderer : IDisposable
     public string BackdropName => (_genB ?? _genA).Name;
     private BackdropGenome? _genB;
     private float _mix;
-    private float _travel;
     private readonly Random _genRng = new();
 
     /// <summary>Starts a transition to a brand new random backdrop (ignored while one is running).</summary>
@@ -379,10 +378,9 @@ public sealed class Renderer : IDisposable
 
         _background.Use();
         _background.SetVec2("uResolution", Width, Height);
-        _background.SetVec2("uCam", _camera);
         _background.SetFloat("uTime", time);
         _background.SetFloat("uFlow", _flow);
-        _background.SetFloat("uIntensity", settings.BackgroundIntensity / 100f * Math.Clamp(1f - drives.Breakdown * 0.35f + (mood?.DropGlow ?? 0f) * fx * 0.14f + overdriveEff * 0.08f, 0.2f, 1.15f));
+        _background.SetFloat("uIntensity", settings.BackgroundIntensity / 100f * Math.Clamp(1f - drives.Breakdown * 0.35f + (mood?.DropGlow ?? 0f) * fx * 0.10f + overdriveEff * 0.05f, 0.2f, 1.05f));
         _background.SetFloat("uDrop", punchDrop);
         _background.SetFloat("uBuild", drives.Build);
         _background.SetFloat("uKick", punchKick);
@@ -405,12 +403,6 @@ public sealed class Renderer : IDisposable
         _background.SetVec3("uColC", Palette.BackC);
         _background.SetVec3("uPrim", new Vector3(Palette.Primary.X, Palette.Primary.Y, Palette.Primary.Z));
         _background.SetVec3("uSec", new Vector3(Palette.Secondary.X, Palette.Secondary.Y, Palette.Secondary.Z));
-        // travel: how far the ship has "flown" - drives tunnels and fields rushing past
-        _travel += frameDt * (0.18f + PlayerSpeed * 1.55f + Flow * 0.9f + punchDrop * 2.4f + overdriveEff * 1.8f) * settings.BackgroundMotion / 100f;
-        _background.SetFloat("uTravel", _travel);
-        _background.SetFloat("uSpeed", PlayerSpeed);
-        _background.SetVec2("uVel", PlayerDirection.X, -PlayerDirection.Y);
-        _background.SetVec2("uAim", ClampAimTilt(AimTilt));
         float darkTheme = settings.IsAbyssal ? 1f : 0f;
         _background.SetFloat("uDarkTheme", darkTheme);
         _background.SetInt("uLightCount", _lightCount);

@@ -17,6 +17,7 @@ Candidates are scored on a 1–5 scale for **Player Impact** (higher is better),
 | **11** | `TASK-011` | **Drop Overdrive, Micro-Hitstop, Radial Shockwave Distortion, 3× Phase-Sync Overdrive & High-Intensity Reactive Backdrops** | **5 / 5** | **2 / 5** | **3 / 5** | `TASK-004`, `TASK-009` | **Done** |
 | **12** | `TASK-012` | **Frame-Pacing Telemetry (`P95/P99` + Alloc Guard) & Seed PB Pace Splits** | **4 / 5** | **1 / 5** | **2 / 5** | `TASK-003` | Proposed |
 | **13** | `TASK-013` | **Lookahead Audio Buffer & Local Track Player** | **5 / 5** | **2 / 5** | **3 / 5** | `TASK-011` | **Done** |
+| **14** | `TASK-014` | **Stationary 3D-Only Reactive Backdrops & Combat Readability** | **5 / 5** | **2 / 5** | **3 / 5** | `TASK-011` | **Done** |
 
 ---
 

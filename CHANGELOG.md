@@ -4,9 +4,10 @@ All notable gameplay, rendering, audio-intelligence, and UI updates to **NULLWAV
 
 ---
 
-## Latest Updates — Lookahead Audio & Local Track Player, Drop Overdrive, High-Intensity Backdrops, Harmonic Overclock & Abyssal Theme
+## Latest Updates — Stationary 3D-Only Reactive Backdrops, Lookahead Audio & Local Track Player, Drop Overdrive, Harmonic Overclock & Abyssal Theme
 
 ### Rendering, Visual Themes & Visual Effects
+- **Stationary 3D-Only Reactive Backdrops & Combat Readability:** Replaced all flat 2D backdrop generators and camera/aim/warp UV panning with **5 rock-steady, true 3D raymarched & perspective scenes** (`LIQUID 3D`, `CYBER TUNNEL 3D`, `VOID HORIZON 3D`, `CATHEDRAL 3D`, `ORBITAL GYROID 3D`). Each 3D environment stays completely stationary relative to the ship while its lighting, Fresnel rims, and architectural ribs pulse to kicks, snares, hi-hats, drops, Overdrive, and lookahead anticipation — held strictly below the bloom threshold with atmospheric depth fog and a soft center combat readability well so your ship, enemies, lasers, and bullets pop with unmistakable clarity in both **Standard** and **Abyssal** themes.
 - **High-Intensity Reactive Backdrop Upgrade:** Supercharged the real-time combinatorial GPU backdrop synthesizer across all 13 generators and space transforms with live **Overdrive** visual coupling (`Drop Overdrive` & `Sync Overdrive`), punchier kick/snare/hi-hat/drop audio drives, beat-locked global spatial breathing and snare angular torque, progressive **3-plane layer parallax** (`layer 0 / 1 / 2`), overdrive palette cycling, and beat-synced outward **harmonic sonar waves** that ignite existing pattern ridges without flooding flat glare. Upgraded **Standard** tone-mapping for bolder neon peaks with crisp dark valleys, and tightened **Abyssal** ridge gating so kicks, drops, sonar waves, and dynamic combat lights carve razor-sharp electric neon contours out of pitch-black OLED obsidian — cleanly dampened when `REDUCE FLASHING` is enabled or `BACKGROUND MOTION` is lowered.
 - **GPU Radial Shockwave Refraction Distortion:** Heavy combat shockwaves (musical drops, **Resonance Cascade**, **THE CHOIR** phase breaks and kills, and **Sync Overdrive**) now project up to **4 simultaneous annular screen-space refraction rings** with subtle chromatic crest fringing in the post-processing composite pass — gated automatically by `REDUCE FLASHING` and `SCREEN SHAKE` settings.
 - **Abyssal / Void Noir Dark Theme & Dynamic Combat Illumination:** Added a selectable **VISUAL THEME** (`STANDARD` / `ABYSSAL`) in **SETTINGS** (and `--theme <standard|abyssal>` CLI override) while keeping `STANDARD` untouched. In **ABYSSAL** mode, the arena drops to near-OLED obsidian (`#010104`) between beats, audio transients (`kick`, `snare`, `drop`) ignite razor-thin bioluminescent contours, and up to **12 live combat light pools** (player interceptor + Phase Sync flare, **THE CHOIR** core, active shockwaves, and laser beams) dynamically illuminate the underlying generative shader geometry right around the fight, paired with matte-obsidian 3D hulls, heightened Fresnel rims, tighter bloom threshold, brighter beat sonar ripples, and smoked-glass HUD panels.
@@ -44,7 +45,7 @@ All notable gameplay, rendering, audio-intelligence, and UI updates to **NULLWAV
 
 ![Generative Animated Backdrops Contact Sheet](docs/screenshots/generative_backdrops.png)
 
-| Drop Overdrive & Shockwave Refraction (Abyssal) | High-Intensity Reactive Backdrop (Standard) |
+| Stationary 3D Backdrop — Cyber Tunnel 3D (Abyssal) | Stationary 3D Backdrop — Void Horizon 3D (Standard) |
 |---|---|
 | ![Drop Overdrive Abyssal](docs/screenshots/drop_overdrive.png) | ![Reactive Backdrop Standard](docs/screenshots/reactive_backdrop_standard.png) |
 | **Harmonic Overclock — Synergy Evolutions** | **Abyssal Theme — Dynamic Combat Illumination** |
