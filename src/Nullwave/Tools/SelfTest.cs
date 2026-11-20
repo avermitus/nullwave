@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Numerics;
+using NAudio.Wave;
 using Nullwave.Audio;
 using Nullwave.Core;
 using Nullwave.Render;
@@ -51,6 +52,7 @@ public static class SelfTest
             TestAbyssalThemeAndLighting();
             TestAttunementSynergies();
             TestOverdriveAndHitStop();
+            TestLookaheadAudioBuffer();
             Console.WriteLine($"RESULT: PASS ({_checks} assertions, {sw.Elapsed.TotalSeconds:0.0}s)");
             return 0;
         }
@@ -1583,5 +1585,160 @@ public static class SelfTest
         Check(Shaders.CompositeFrag.Contains("uniform vec4 uShockwaves[4];", StringComparison.Ordinal), "CompositeFrag declares uShockwaves[4]");
 
         Console.WriteLine($"  overdrive & hitstop: dropOD=4.0s syncOD=5.0s burstStop={wh.HitStop * 1000f:0}ms dropDrive={dBase.Drop:0.00}->{dOd.Drop:0.00} safe={dSafe.Drop:0.00}");
+    }
+
+    private sealed class FuncStereoProvider : ISampleProvider
+    {
+        private readonly Func<long, (float L, float R)> _gen;
+        private long _frame;
+        public WaveFormat WaveFormat { get; } = WaveFormat.CreateIeeeFloatWaveFormat(LookaheadAudioBuffer.SampleRate, 2);
+        public FuncStereoProvider(Func<long, (float L, float R)> gen) => _gen = gen;
+        public int Read(float[] buffer, int offset, int count)
+        {
+            int frames = count / 2;
+            for (int f = 0; f < frames; f++)
+            {
+                var (l, r) = _gen(_frame++);
+                buffer[offset + f * 2] = l;
+                buffer[offset + f * 2 + 1] = r;
+            }
+            return frames * 2;
+        }
+    }
+
+    /// <summary>TASK-013: Sample-accurate 0.75 s lookahead delay, pre-drop DropAnticipation + beat-1 drop snap, and local .wav track player.</summary>
+    private static void TestLookaheadAudioBuffer()
+    {
+        // 1. Sample-accurate impulse delay: 36,000 frames exact at 48 kHz
+        var impulse = new FuncStereoProvider(frame => frame == 0 ? (1f, -0.5f) : (0f, 0f));
+        var lookahead = new LookaheadAudioBuffer(impulse, LookaheadAudioBuffer.DefaultLookaheadSeconds);
+        Check(lookahead.LookaheadFrames == 36000 && MathF.Abs(lookahead.LookaheadSeconds - 0.75f) < 1e-5f, "0.75s lookahead equals 36,000 frames at 48 kHz");
+
+        float[] chunk = new float[2048]; // 1024 stereo frames
+        long firstHitFrame = -1;
+        float hitL = 0f, hitR = 0f;
+        long total = 0;
+        for (int iter = 0; iter < 40; iter++)
+        {
+            int n = lookahead.Read(chunk, 0, chunk.Length);
+            int frames = n / 2;
+            for (int f = 0; f < frames; f++)
+            {
+                float l = chunk[f * 2], r = chunk[f * 2 + 1];
+                if (firstHitFrame < 0 && (MathF.Abs(l) > 0.001f || MathF.Abs(r) > 0.001f))
+                {
+                    firstHitFrame = total + f;
+                    hitL = l;
+                    hitR = r;
+                }
+            }
+            total += frames;
+        }
+        Check(firstHitFrame == 36000, $"impulse emerges at exact frame 36000 (got {firstHitFrame})");
+        Check(MathF.Abs(hitL - 1f) < 1e-5f && MathF.Abs(hitR + 0.5f) < 1e-5f, "impulse stereo channels preserved exactly");
+
+        // 2. Pre-drop DropAnticipation rises BEFORE the drop reaches playback, and MusicDirector snaps DropTriggered on landing
+        const int sr = LookaheadAudioBuffer.SampleRate;
+        const long dropSourceFrame = sr * 3L; // drop starts at 3.0s in source -> plays at 3.75s out of speakers
+        var dropSrc = new FuncStereoProvider(frame =>
+        {
+            float t = frame / (float)sr;
+            if (frame < dropSourceFrame)
+            {
+                // quiet atmospheric passage (~0.025 amp)
+                float s = MathF.Sin(t * 220f * MathF.Tau) * 0.025f;
+                return (s, s);
+            }
+            // loud 128 BPM bass drop (~0.65 amp)
+            float beatT = ((frame - dropSourceFrame) / (float)sr) % (60f / 128f);
+            float kick = MathF.Sin(beatT * 68f * MathF.Tau) * MathF.Exp(-beatT * 10f) * 0.65f;
+            float bass = MathF.Sin(t * 110f * MathF.Tau) * 0.35f;
+            float v = kick + bass;
+            return (v, v);
+        });
+        var dropBuf = new LookaheadAudioBuffer(dropSrc, 0.75f);
+        var analyzer = new SpectrumAnalyzer();
+        var director = new MusicDirector();
+        var state = new AudioState { LookaheadSeconds = dropBuf.LookaheadSeconds };
+        float[] pull = new float[1600]; // 800 stereo frames = 1/60 s at 48 kHz
+        float[] fftWin = new float[SpectrumAnalyzer.FftSize];
+        float maxPreDropAnt = 0f;
+        float dropTime = -1f;
+        const float dt = 1f / 60f;
+        for (int step = 0; step < 320; step++) // ~5.33 s
+        {
+            dropBuf.Read(pull, 0, pull.Length);
+            float t = dropBuf.PlayedFrames / (float)sr;
+            state.ClearBeatFlags();
+            state.Time = t;
+            if (dropBuf.CopyPlaybackWindow(fftWin))
+                analyzer.Analyze(fftWin, fftWin.Length, sr, dt, state);
+            float ant = dropBuf.ComputeDropAnticipation(out _, out _);
+            state.DropAnticipation = ant;
+            if (t > 2.5f && t < 3.70f)
+                maxPreDropAnt = MathF.Max(maxPreDropAnt, ant);
+            director.Update(state, dt);
+            if (director.DropTriggered && dropTime < 0f)
+                dropTime = t;
+        }
+        Check(maxPreDropAnt > 0.5f, $"DropAnticipation rises above 0.5 before playback drop (got {maxPreDropAnt:0.00})");
+        Check(dropTime >= 3.65f && dropTime <= 4.15f, $"MusicDirector triggers drop right as drop lands at playback (t={dropTime:0.00}s)");
+
+        // 3. Real .wav LocalTrackSource + AudioEngine.LoadLocalTrack round-trip, seamless looping & missing-file fallback
+        string dir = Path.Combine(Path.GetTempPath(), "nullwave-track-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        string wavPath = Path.Combine(dir, "test_signal_loop.wav");
+        try
+        {
+            using (var writer = new WaveFileWriter(wavPath, new WaveFormat(44100, 16, 2)))
+            {
+                // 0.25s stereo 44.1 kHz sine wave (also exercises WdlResamplingSampleProvider 44.1 -> 48 kHz)
+                int frames = 44100 / 4;
+                float[] samples = new float[frames * 2];
+                for (int i = 0; i < frames; i++)
+                {
+                    float s = MathF.Sin(i * 440f / 44100f * MathF.Tau) * 0.45f;
+                    samples[i * 2] = s;
+                    samples[i * 2 + 1] = s;
+                }
+                writer.WriteSamples(samples, 0, samples.Length);
+            }
+
+            using (var track = new LocalTrackSource(wavPath))
+            {
+                Check(track.WaveFormat.SampleRate == LookaheadAudioBuffer.SampleRate && track.WaveFormat.Channels == 2, "LocalTrackSource normalizes 44.1kHz wav to 48kHz stereo");
+                Check(track.TrackName == "test signal loop", "LocalTrackSource derives clean TrackName");
+                // Pull 0.6s (> 2x file length) to prove seamless looping past EOF with non-zero audio
+                float[] readBuf = new float[4800];
+                float energyEnd = 0f;
+                for (int k = 0; k < 12; k++)
+                {
+                    int got = track.Read(readBuf, 0, readBuf.Length);
+                    Check(got == readBuf.Length, "LocalTrackSource returns full buffer across loop boundary");
+                    if (k == 11)
+                        for (int j = 0; j < readBuf.Length; j++) energyEnd += readBuf[j] * readBuf[j];
+                }
+                Check(energyEnd > 1f, "LocalTrackSource produces continuous non-zero audio after looping past EOF");
+            }
+
+            using (var engine = new AudioEngine(enableOutput: false, enableCapture: false))
+            {
+                Check(!engine.LoadLocalTrack(Path.Combine(dir, "does_not_exist_12345.wav")), "missing track returns false cleanly");
+                Check(!engine.LocalTrackActive && !engine.State.LocalTrackActive, "failed load preserves non-local fallback state");
+                Check(engine.LoadLocalTrack(wavPath), "valid .wav loads into AudioEngine");
+                Check(engine.LocalTrackActive && engine.State.LocalTrackActive && engine.State.LookaheadSeconds >= 0.74f, "loaded track sets LocalTrackActive and 0.75s lookahead");
+                engine.Update(1f / 60f);
+                Check(engine.State.LocalTrackActive && engine.State.LocalTrackName == "test signal loop", "AudioEngine.Update preserves local track state");
+                engine.UnloadLocalTrack();
+                Check(!engine.LocalTrackActive && !engine.State.LocalTrackActive, "UnloadLocalTrack cleanly restores SynthScore");
+            }
+        }
+        finally
+        {
+            try { Directory.Delete(dir, true); } catch { /* best-effort temp cleanup */ }
+        }
+
+        Check(Shaders.BackgroundFrag.Contains("uniform float uAnticipation;", StringComparison.Ordinal), "BackgroundFrag declares uAnticipation");
+        Console.WriteLine($"  lookahead audio: delay={firstHitFrame}f ({lookahead.LookaheadSeconds:0.00}s) preDropAnt={maxPreDropAnt:0.00} dropSnap={dropTime:0.00}s wavLoop=PASS");
     }
 }

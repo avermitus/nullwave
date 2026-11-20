@@ -4,7 +4,7 @@ All notable gameplay, rendering, audio-intelligence, and UI updates to **NULLWAV
 
 ---
 
-## Latest Updates — Drop Overdrive, High-Intensity Reactive Backdrops, Shockwave Refraction, Harmonic Overclock & Abyssal Theme
+## Latest Updates — Lookahead Audio & Local Track Player, Drop Overdrive, High-Intensity Backdrops, Harmonic Overclock & Abyssal Theme
 
 ### Rendering, Visual Themes & Visual Effects
 - **High-Intensity Reactive Backdrop Upgrade:** Supercharged the real-time combinatorial GPU backdrop synthesizer across all 13 generators and space transforms with live **Overdrive** visual coupling (`Drop Overdrive` & `Sync Overdrive`), punchier kick/snare/hi-hat/drop audio drives, beat-locked global spatial breathing and snare angular torque, progressive **3-plane layer parallax** (`layer 0 / 1 / 2`), overdrive palette cycling, and beat-synced outward **harmonic sonar waves** that ignite existing pattern ridges without flooding flat glare. Upgraded **Standard** tone-mapping for bolder neon peaks with crisp dark valleys, and tightened **Abyssal** ridge gating so kicks, drops, sonar waves, and dynamic combat lights carve razor-sharp electric neon contours out of pitch-black OLED obsidian — cleanly dampened when `REDUCE FLASHING` is enabled or `BACKGROUND MOTION` is lowered.
@@ -17,6 +17,10 @@ All notable gameplay, rendering, audio-intelligence, and UI updates to **NULLWAV
 - **Composite & UI Alpha Hygiene:** Clean OpenGL blend-state and texture-unit restoration after post-processing, plus alpha-preserving UI blending so screenshots and captured video frames remain fully opaque.
 
 ### Gameplay, Audio & Choreography
+- **Lookahead Audio Buffer (`+0.75s`) & Local Track Player:**
+  - **Built-In Local Track Playback (`--track <path>` / Drag-Onto-Exe):** Play local `.mp3`, `.wav`, `.m4a`, or `.aiff` music files directly inside NULLWAVE with automatic `48 kHz` stereo resampling, seamless looping, clean fallback to the built-in generative score if a file is missing, and a `LOCAL TRACK (+0.75S)` / `TRACK // <NAME>` readout on the Title screen, HUD, and Pause overlay.
+  - **Sample-Accurate `0.75s` Lookahead & Zero-Latency SFX:** Buffers both the local track player and built-in generative score `0.75s` ahead of speaker playback while mixing all combat SFX post-delay (zero added input-to-SFX latency), compensating for FFT/frame latency so kicks, snares, and hi-hats snap on the exact frame they hit your speakers. Live WASAPI system and per-app Spotify loopback stay real-time (`0 ms` delay).
+  - **Pre-Drop Tension & Beat-1 Drop Snap:** Scans the `0.75s` lookahead window ahead of playback to detect incoming energy drops, driving an inward spatial convergence and contracting violet-cyan tension ring across the reactive backdrop and around your ship (dampened cleanly by `REDUCE FLASHING` and `BACKGROUND MOTION`) before snapping **Drop Overdrive** right onto beat 1 of the drop.
 - **Drop Overdrive, 3× Phase-Sync Overdrive & Tactile Micro-Hitstop:**
   - **Drop Overdrive (`4.0s`):** Every musical drop now ignites a **Drop Overdrive** surge (`// DROP OVERDRIVE //`), granting **`+25%` fire cadence**, **`+18%` weapon damage**, **`1.5x` Flow gain**, and **`+0.50x` score multiplier**, with a rotating ship overdrive aura and live `DROP OD` HUD countdown bar.
   - **3× Phase-Sync Streak Overdrive (`5.0s`):** Chaining **3 consecutive on-beat dashes** triggers **`SYNC OVERDRIVE // 3x PHASE`**, awarding **`+30%` Resonance gain**, **`+15%` fire cadence** (stacking multiplicatively with Drop Overdrive), **`+0.35x` score multiplier**, a concentric cyan-gold shockwave, and a live `SYNC OD` HUD countdown bar (combined Flow+Overdrive multiplier up to `x3.35`). Off-beat emergency dodges remain completely unpenalized and only reset the streak counter.

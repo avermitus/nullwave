@@ -2,7 +2,7 @@
 
 - **Reviewer:** `@qa` (Independent QA / Performance Reviewer)
 - **Date:** `2026-11-19`
-- **Task Reviewed:** `TASK-001` through `TASK-011` (Drop Overdrive, Micro-Hitstop, Radial Shockwave Distortion, 3× Phase-Sync Overdrive & High-Intensity Reactive Backdrops)
+- **Task Reviewed:** `TASK-001` through `TASK-013` (Lookahead Audio Buffer & Local Track Player)
 - **Overall Verdict:** **PASS (`APPROVED — 0 DEFECTS`)**
 
 ---
@@ -701,3 +701,54 @@ All `TASK-010` acceptance criteria are satisfied with **0 defects**. `TASK-010` 
 
 ### 16.4 Final QA Sign-Off (`TASK-011`)
 All `TASK-011` acceptance criteria are satisfied with **0 defects**. `TASK-011` is **APPROVED** and marked **`done`**.
+
+---
+
+## 17. Independent QA Verification (`TASK-013` — Lookahead Audio Buffer & Local Track Player)
+
+### 17.1 Code, Zero-Allocation & Comfort Audit
+- **Sample-Accurate Lookahead & Post-Delay SFX (`LookaheadAudioBuffer.cs`, `LocalTrackSource.cs`, `AudioEngine.cs`):**
+  - `LookaheadAudioBuffer` maintains a pre-allocated `48 kHz` stereo/mono ring buffer (`36,000`-frame `0.75s` delay + `16,384`-frame lookback headroom) with zero per-call allocations in `Read`, `CopyPlaybackWindow`, `CopyNewPlaybackMono`, and `ComputeDropAnticipation`.
+  - `AudioProvider.Read` pulls `_music` (`LookaheadAudioBuffer`) and mixes `_sfx` strictly **post-delay**, guaranteeing zero added input-to-SFX latency.
+  - `LocalTrackSource` uses NAudio's built-in `AudioFileReader`, `MonoToStereoSampleProvider`/`StereoDownmixProvider`, and `WdlResamplingSampleProvider` (zero new NuGet packages — `Nullwave.csproj` untouched), loops seamlessly with a bounded 2-reset guard, and disposes cleanly.
+  - Live WASAPI / Spotify loopback remains real-time (`LookaheadSeconds = 0`, `DropAnticipation = 0`).
+- **Comfort Gating & HUD Hygiene (`Renderer.cs`, `WorldRenderer.cs`, `Screens.cs`):**
+  - `uAnticipation` is dampened `0.35x` when `ReduceFlashing` is enabled; the contracting player anticipation ring is suppressed when `ReduceFlashing` is enabled.
+  - Top-right HUD reuses `(1542, 72/93)` for `LOCAL TRACK (+0.75S)` / `TRACK // <NAME>` and `GENERATIVE SCORE (+0.75S)`; `SettingsMenu.cs` is untouched.
+
+### 17.2 Independent Build, SelfTest & Triple Smoke Verification (`TASK-013`)
+- **Release Build:**
+  ```text
+  ./.dotnet/dotnet.exe build src/Nullwave/Nullwave.csproj -c Release --nologo
+  Build succeeded.
+      0 Warning(s)
+      0 Error(s)
+  Time Elapsed 00:00:00.60
+  ```
+- **Headless Self-Test Suite (`--selftest`):**
+  ```text
+  ./run.cmd --selftest
+  ...
+    lookahead audio: delay=36000f (0.75s) preDropAnt=1.00 dropSnap=3.73s wavLoop=PASS
+  RESULT: PASS (78333 assertions, 2.6s)
+  ```
+- **Live OpenGL Smoke & Fallback Runs:**
+  ```text
+  ./run.cmd --smoke 5
+  SMOKE | 5.0s fps=118 wave=1 score=4747 enemies=2 bullets=4 bpm=126.0 audio=GENERATIVE SCORE capture=True
+  RENDERSTATE | after1=baseline after2=baseline alphaMin=255 rerenderDiff=0.000 % -> PASS
+
+  ./run.cmd --smoke 4 --attune synergy --theme abyssal
+  SMOKECONFIG | seed=00Z9DUE9 mods=5 mult=x2.29 bossPhases=3 attunes=12 synergies=3
+  SMOKE | 4.0s fps=116 wave=1 score=6302 enemies=2 bullets=4 bpm=126.0 audio=GENERATIVE SCORE capture=True
+  RENDERSTATE | after1=baseline after2=baseline alphaMin=255 rerenderDiff=0.000 % -> PASS
+
+  ./run.cmd --smoke 2 --track does_not_exist_12345.wav
+  AUDIO | capture=True output=True device=Headphones (Realtek(R) Audio) error=Local track: Local audio file not found.
+  SMOKE | 2.0s fps=64 wave=1 score=764 enemies=2 bullets=0 bpm=126.0 audio=GENERATIVE SCORE capture=True
+  RENDERSTATE | after1=baseline after2=baseline alphaMin=255 rerenderDiff=0.000 % -> PASS
+  ```
+
+### 17.3 Documentation Hygiene & Final QA Sign-Off (`TASK-013`)
+- Verified `README.md` and `CHANGELOG.md`: all image links resolve (`Test-Path == True`) with strictly game-focused copy and zero non-game/internal references.
+- All `TASK-013` acceptance criteria are satisfied with **0 defects**. `TASK-013` is **APPROVED** and marked **`done`**.

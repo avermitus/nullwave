@@ -41,7 +41,10 @@ public sealed class MusicDirector
     public float MoodHue { get; private set; }
     public float Kick { get; private set; }
     public float Sparkle { get; private set; }
+    /// <summary>Smoothed lookahead drop anticipation (0..1) ahead of speaker playback.</summary>
+    public float Anticipation { get; private set; }
     public int Drops { get; private set; }
+    private float _recentAnticipation;
 
     /// <summary>Pins the section state for deterministic screenshots.</summary>
     public void ForceForCapture(float intensity, float build, float breakdown, float drop, float hue, float kick)
@@ -59,7 +62,8 @@ public sealed class MusicDirector
         _age = -1f;
         _hi = 0.5f; _lo = 0.1f;
         _quietTime = 0; _sinceDrop = 99f;
-        Intensity = Build = Breakdown = DropPulse = DropGlow = Kick = Sparkle = 0f;
+        Intensity = Build = Breakdown = DropPulse = DropGlow = Kick = Sparkle = Anticipation = 0f;
+        _recentAnticipation = 0f;
         Brightness = 0.5f; MoodHue = 0f;
         Drops = 0;
     }
@@ -116,16 +120,22 @@ public sealed class MusicDirector
             _histPos = (_histPos + 1) % _hist.Length;
             _slotPeak = 0f;
         }
+        float rawAnt = M.Clamp01(a.DropAnticipation);
+        Anticipation = M.ExpSmooth(Anticipation, rawAnt, 10f, dt);
+        _recentAnticipation = MathF.Max(_recentAnticipation * MathF.Exp(-dt * 1.8f), rawAnt);
+
         // peak of the window from ~3.5 s to ~0.5 s ago
         float pastPeak = 0f;
         for (int k = 5; k < 35; k++) pastPeak = MathF.Max(pastPeak, _hist[(_histPos - 1 - k + _hist.Length * 2) % _hist.Length]);
         // a drop clears the recent peak by a wide margin; a gradual build never does
         bool slam = _inst > _slow + range * 0.45f && _inst > pastPeak + range * 0.25f && _inst > 0.3f;
-        bool primed = _buildRaw > 0.25f || _quietTime > 1.5f || Breakdown > 0.3f;
+        bool lookaheadPrimed = a.LookaheadSeconds > 0.05f && _recentAnticipation > 0.45f;
+        bool primed = _buildRaw > 0.25f || _quietTime > 1.5f || Breakdown > 0.3f || lookaheadPrimed;
         _sinceBeat = a.Beat || a.Downbeat ? 0f : _sinceBeat + dt;
         // the level needs a few frames to rise after the drop's first kick, so accept a recent beat
         bool onBeat = _sinceBeat < 0.15f || !a.BeatLocked;
-        if (slam && primed && onBeat && _sinceDrop > 10f && _age > 8f)
+        float minAge = lookaheadPrimed ? 2.5f : 8f;
+        if (slam && primed && onBeat && _sinceDrop > 10f && _age > minAge)
         {
             DropTriggered = true;
             if (Environment.GetEnvironmentVariable("NULLWAVE_DIRDEBUG") == "1")
@@ -135,6 +145,7 @@ public sealed class MusicDirector
             _sinceDrop = 0f;
             _quietTime = 0f;
             _buildRaw = 0f;
+            _recentAnticipation = 0f;
             Drops++;
         }
         DropPulse *= MathF.Exp(-dt * 2.2f);

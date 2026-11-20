@@ -85,6 +85,7 @@ public sealed class Game : IDisposable
     public static string? AttuneOverride;
     public static string? SeedOverride;
     public static VisualTheme? ThemeOverride;
+    public static string? TrackOverride;
 
     public void StartSmokeRun(ulong seed)
     {
@@ -163,7 +164,15 @@ public sealed class Game : IDisposable
             return label;
         };
         string app = AppOverride ?? _meta.AudioApp;
-        if (!capture && !string.IsNullOrWhiteSpace(app))
+        if (!string.IsNullOrWhiteSpace(TrackOverride))
+        {
+            if (!_audio.LoadLocalTrack(TrackOverride))
+            {
+                _toast = "TRACK LOAD FAILED // USING SCORE";
+                _toastTimer = 4.5f;
+            }
+        }
+        else if (!capture && !string.IsNullOrWhiteSpace(app))
         {
             if (app.Equals("system", StringComparison.OrdinalIgnoreCase)) _meta.AudioApp = "";
             else _audio.SelectApp(app);

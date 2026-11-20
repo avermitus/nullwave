@@ -74,10 +74,12 @@ internal static class Program
             else if (a == "--attune" && i + 1 < args.Length) Game.AttuneOverride = args[++i];
             else if (a == "--seed" && i + 1 < args.Length) Game.SeedOverride = args[++i];
             else if (a == "--theme" && i + 1 < args.Length && GameSettings.TryParseTheme(args[i + 1], out var th)) { Game.ThemeOverride = th; i++; }
+            else if (a == "--track" && i + 1 < args.Length) { Game.TrackOverride = args[++i]; }
             else if (a == "--list-apps") { _mode = "listapps"; }
             else if (a == "--beatbench") { _mode = "beatbench"; }
             else if (a == "--style" && i + 1 < args.Length && int.TryParse(args[i + 1], out int st)) { _forceStyle = st; i++; }
             else if (a == "--reel" && i + 1 < args.Length && float.TryParse(args[i + 1], out float rs)) { _reelSeconds = rs; i++; }
+            else if (!a.StartsWith("--") && IsAudioTrackArg(a)) { Game.TrackOverride = a; }
         }
 
         if (_mode == "selftest")
@@ -202,6 +204,14 @@ internal static class Program
         _clock = Stopwatch.StartNew();
         _lastTime = 0;
         _lastFrameEnd = 0;
+    }
+
+    private static bool IsAudioTrackArg(string arg)
+    {
+        if (string.IsNullOrWhiteSpace(arg)) return false;
+        string ext = Path.GetExtension(arg).ToLowerInvariant();
+        if (ext is ".mp3" or ".wav" or ".flac" or ".ogg" or ".m4a" or ".aiff" or ".wma") return true;
+        return File.Exists(arg);
     }
 
     private static void StartReel()

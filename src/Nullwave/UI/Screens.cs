@@ -51,9 +51,11 @@ public static class Screens
         r.UiText("BEST WAVE " + meta.BestWave.ToString("00") + "   //   BEST SCORE " + FormatScore(meta.BestScore), 64, 760, 1.75f, M.WithAlpha(p.Dim, 0.85f));
         r.UiText("MOVE  WASD / STICK     AIM  MOUSE / STICK     FIRE  LMB / RT", 64, 794, 1.55f, M.WithAlpha(p.Dim, 0.68f));
         r.UiText("DASH  SPACE / A     RESONANCE  E / X     FOCUS  SHIFT / LB", 64, 818, 1.55f, M.WithAlpha(p.Dim, 0.68f));
-        if (!string.IsNullOrEmpty(audio.SpotifyTrack))
+        if (audio.LocalTrackActive && !string.IsNullOrEmpty(audio.LocalTrackName))
+            r.UiTextRight("TRACK // " + FormatTrack(audio.LocalTrackName, 38), 1536, 748, 1.4f, M.WithAlpha(p.Accent, 0.9f), true);
+        else if (!string.IsNullOrEmpty(audio.SpotifyTrack))
             r.UiTextRight("SPOTIFY // " + FormatTrack(audio.SpotifyTrack, 38), 1536, 748, 1.4f, M.WithAlpha(p.Accent, 0.9f), true);
-        r.UiTextRight("AUDIO // " + SourceLabel(audio), 1536, 774, 1.55f, M.WithAlpha(audio.External ? p.Accent : p.Dim, 0.9f));
+        r.UiTextRight("AUDIO // " + SourceLabel(audio), 1536, 774, 1.55f, M.WithAlpha(audio.External || audio.LocalTrackActive ? p.Accent : p.Dim, 0.9f));
 
         DrawSpectrum(r, p, audio, 1090, 850, 420, 44);
         if (dailySeed)
@@ -195,8 +197,10 @@ public static class Screens
         }
 
         r.UiTextRight("BPM " + audio.Bpm.ToString("000"), 1542, 40, 2.2f, M.WithAlpha(p.Accent, 0.85f));
-        r.UiTextRight("AUDIO // " + SourceLabel(audio), 1542, 72, 1.45f, M.WithAlpha(p.Dim, 0.85f));
-        if (!string.IsNullOrEmpty(audio.SpotifyTrack))
+        r.UiTextRight("AUDIO // " + SourceLabel(audio), 1542, 72, 1.45f, M.WithAlpha(audio.LocalTrackActive ? p.Accent : p.Dim, 0.85f));
+        if (audio.LocalTrackActive && !string.IsNullOrEmpty(audio.LocalTrackName))
+            r.UiTextRight("TRACK // " + FormatTrack(audio.LocalTrackName, 28), 1542, 93, 1.25f, M.WithAlpha(p.Accent, 0.9f), true);
+        else if (!string.IsNullOrEmpty(audio.SpotifyTrack))
             r.UiTextRight("SPOTIFY // " + FormatTrack(audio.SpotifyTrack, 28), 1542, 93, 1.25f, M.WithAlpha(p.Accent, 0.9f), true);
         DrawSpectrum(r, p, audio, 1118, 188, 424, 74);
 
@@ -485,7 +489,9 @@ public static class Screens
         }
         r.UiLine(546, 602, 1054, 602, 1f, M.WithAlpha(p.Primary, 0.24f));
         DrawPauseAttunements(r, p, w.Player);
-        if (!string.IsNullOrEmpty(audio.SpotifyTrack))
+        if (audio.LocalTrackActive && !string.IsNullOrEmpty(audio.LocalTrackName))
+            r.UiText("TRACK // " + FormatTrack(audio.LocalTrackName, 42), 546, 686, 1.35f, M.WithAlpha(p.Accent, 0.9f), true);
+        else if (!string.IsNullOrEmpty(audio.SpotifyTrack))
             r.UiText("SPOTIFY // " + FormatTrack(audio.SpotifyTrack, 42), 546, 686, 1.35f, M.WithAlpha(p.Accent, 0.9f), true);
         r.UiText("AUDIO // " + SourceLabel(audio), 546, 706, 1.45f, M.WithAlpha(p.Dim, 0.75f));
         r.UiTextRight("P / START // RESUME", 1054, 706, 1.35f, M.WithAlpha(p.Dim, 0.65f));
@@ -866,13 +872,16 @@ public static class Screens
 
     private static string SourceLabel(AudioState audio)
     {
+        if (audio.LocalTrackActive)
+            return audio.LookaheadSeconds > 0.01f ? $"LOCAL TRACK (+{audio.LookaheadSeconds:0.00}S)" : "LOCAL TRACK";
         if (audio.External)
         {
             string name = audio.DeviceName;
             if (name.Length > 28) name = name[..28] + "..";
             return (audio.AppCapture ? "APP / " : "LOOPBACK / ") + (string.IsNullOrWhiteSpace(name) ? "SYSTEM" : name.ToUpperInvariant());
         }
-        return audio.Quiet ? "SILENT SIGNAL" : "GENERATIVE SCORE";
+        if (audio.Quiet) return "SILENT SIGNAL";
+        return audio.LookaheadSeconds > 0.01f ? $"GENERATIVE SCORE (+{audio.LookaheadSeconds:0.00}S)" : "GENERATIVE SCORE";
     }
 
     private static string FormatScore(long score)

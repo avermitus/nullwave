@@ -22,7 +22,7 @@ public static class WorldRenderer
         DrawStrikes(r, world, time);
         DrawEnemies(r, world, palette, audio, time);
         DrawBullets(r, world, palette);
-        DrawPlayer(r, world, palette, time);
+        DrawPlayer(r, world, palette, audio, time);
         DrawParticles(r, world, palette);
         DrawShockwaves(r, world);
     }
@@ -828,7 +828,7 @@ public static class WorldRenderer
         }
     }
 
-    private static void DrawPlayer(Renderer r, GameWorld w, Palette p, float time)
+    private static void DrawPlayer(Renderer r, GameWorld w, Palette p, AudioState audio, float time)
     {
         var player = w.Player;
         if (w.Phase == GamePhase.Dead) return;
@@ -894,6 +894,12 @@ public static class WorldRenderer
             r.Arc(pos, odR, time * 3.2f + MathF.PI, 1.65f, 2.2f, odGold, 16, true);
             if (w.IsDropOverdrive && player.IsSyncOverdrive)
                 r.Circle(pos, odR + 6f, 1.4f, new Vector4(0.55f, 1f, 0.98f, 0.48f * odPulse), 36, true);
+        }
+        if (audio.DropAnticipation > 0.25f && !GameSettings.Current.ReduceFlashing)
+        {
+            float ant = M.Clamp01(audio.DropAnticipation);
+            float antR = M.Lerp(210f, 36f, ant);
+            r.Circle(pos, antR, 1.4f + ant * 1.4f, new Vector4(0.62f, 0.52f, 1f, 0.20f + ant * 0.55f), 40, true);
         }
         r.Circle(pos, 22f, 4.5f, M.WithAlpha(col, 0.08f * flicker), 30, true);
         r.Arc(pos, 25f, time * 1.6f, 2.2f, 1.2f, M.WithAlpha(p.Secondary, 0.35f * flicker), 12, true);

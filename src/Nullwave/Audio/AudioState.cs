@@ -42,6 +42,12 @@ public sealed class AudioState
     public string DeviceName = "";
     public string SpotifyTrack = "";
     public SpotifyPlaybackState SpotifyStatus = SpotifyPlaybackState.NotRunning;
+    /// <summary>Active lookahead buffer depth in seconds (0 for real-time live loopback).</summary>
+    public float LookaheadSeconds;
+    /// <summary>0..1 rising tension ramp when a future energy/bass drop approaches speaker playback.</summary>
+    public float DropAnticipation;
+    public string LocalTrackName = "";
+    public bool LocalTrackActive;
     public float[] Spectrum = new float[SpectrumBars];
     public float[] Bands = new float[6];
 

@@ -65,6 +65,7 @@ uniform float uSnare;
 uniform float uHat;
 uniform float uOverdrive;
 uniform float uMotionScale;
+uniform float uAnticipation;
 uniform float uBass;
 uniform float uLowMid;
 uniform float uMid;
@@ -571,8 +572,9 @@ vec3 blendLayer(int mode, vec3 base, vec3 l) {
 
 vec3 renderGenomeA(vec2 uv) {
     float breathe = 1.0 - clamp((uKick * 0.085 + uDown * 0.055 + uDrop * 0.09 + uOverdrive * 0.065) * uMotionScale, 0.0, 0.24);
+    float inhale = 1.0 + clamp(uAnticipation * 0.075 * uMotionScale, 0.0, 0.12);
     float twist = (uSnare * 0.055 - uKick * 0.025 + sin(uFlow * 0.7) * uOverdrive * 0.05) * uMotionScale;
-    uv *= rot(uFlow * (uGlobA.x - 0.5) * 0.12 + twist) * (0.85 + uGlobA.y * 0.4) * breathe;
+    uv *= rot(uFlow * (uGlobA.x - 0.5) * 0.12 + twist) * (0.85 + uGlobA.y * 0.4) * breathe * inhale;
     if (uGlobA.z > 0.75) uv.x = abs(uv.x);
     vec2 pShift = uAim * 0.032 * uMotionScale;
     vec3 col = renderLayer(uLA[0], uv);
@@ -584,8 +586,9 @@ vec3 renderGenomeA(vec2 uv) {
 
 vec3 renderGenomeB(vec2 uv) {
     float breathe = 1.0 - clamp((uKick * 0.085 + uDown * 0.055 + uDrop * 0.09 + uOverdrive * 0.065) * uMotionScale, 0.0, 0.24);
+    float inhale = 1.0 + clamp(uAnticipation * 0.075 * uMotionScale, 0.0, 0.12);
     float twist = (uSnare * 0.055 - uKick * 0.025 + sin(uFlow * 0.7) * uOverdrive * 0.05) * uMotionScale;
-    uv *= rot(uFlow * (uGlobB.x - 0.5) * 0.12 + twist) * (0.85 + uGlobB.y * 0.4) * breathe;
+    uv *= rot(uFlow * (uGlobB.x - 0.5) * 0.12 + twist) * (0.85 + uGlobB.y * 0.4) * breathe * inhale;
     if (uGlobB.z > 0.75) uv.x = abs(uv.x);
     vec2 pShift = uAim * 0.032 * uMotionScale;
     vec3 col = renderLayer(uLB[0], uv);
@@ -612,11 +615,16 @@ void main() {
     // beat-synced harmonic sonar wave: selectively ignites existing pattern ridges without washing out bullets
     float waveR = fract(uFlow * 0.38 + uDown * 0.25);
     float sonar = exp(-abs(r - waveR * 1.45) * 16.0) * clamp(uKick * 0.45 + uSnare * 0.40 + uDrop * 0.65 + uOverdrive * 0.45, 0.0, 1.35);
+    // lookahead pre-drop tension ring contracting inward toward center as a drop approaches playback
+    float pullR = (1.0 - uAnticipation * 0.78) * 1.15;
+    float tensionRing = exp(-abs(r - pullR) * 18.0) * uAnticipation;
+    vec3 tensionCol = vec3(0.58, 0.42, 1.0) * (0.35 + 0.65 * uAnticipation);
     // drifting coloured fog under everything: sparse line generators float in deep atmosphere
     float fog = fbm3(uv * 1.3 + vec2(uFlow * 0.05, -uFlow * 0.04));
     vec3 ambient = mix(pal(0.15 + fog * 0.5 + uv.y * 0.2), pal(0.65 + fog * 0.4 - uv.x * 0.1), fog);
     float lum = dot(col, vec3(0.299, 0.587, 0.114));
     col += pow(clamp(rawCol, 0.0, 2.0), vec3(1.35)) * sonar * 0.75 + pal(r * 0.4 + uFlow * 0.08) * sonar * 0.07;
+    col += (pow(clamp(rawCol, 0.0, 2.0), vec3(1.3)) * 0.55 + tensionCol * 0.14) * tensionRing;
     col += ambient * (0.08 + fog * 0.08 + min(uKick, 1.5) * 0.025 + min(uSnare, 1.5) * 0.02) * clamp(1.0 - lum * 3.2, 0.0, 1.0);
     float aimWash = 0.5 + 0.5 * dot(normalize(uv + vec2(0.0001)), normalize(vec2(uAim.x, -uAim.y) + vec2(0.0001)));
     col += mix(uColB, uPrim * 0.28, 0.35) * length(uAim) * aimWash * 0.05 * (0.4 + uEnergy * 0.6 + uOverdrive * 0.25);
@@ -642,7 +650,7 @@ void main() {
         vec3 voidBase = vec3(0.003, 0.004, 0.010) + ambient * (0.010 + fog * 0.012);
         vec3 ridgeCol = pow(clamp(max(rawCol - vec3(0.22), 0.0), 0.0, 2.4), vec3(1.95));
         vec3 sharpPat = ridgeCol * pulseGate * 0.65;
-        vec3 sonarPat = ridgeCol * sonar * 0.75 + pal(r * 0.4 + uFlow * 0.08) * sonar * 0.035;
+        vec3 sonarPat = ridgeCol * sonar * 0.75 + pal(r * 0.4 + uFlow * 0.08) * sonar * 0.035 + (ridgeCol * 0.65 + tensionCol * 0.10) * tensionRing;
         vec3 litPat = max(rawCol - vec3(0.10), 0.0) * localLight * 1.15 + ridgeCol * localLight * 0.85 + localLight * 0.02;
         vec3 abyssal = voidBase + sharpPat + sonarPat + litPat;
         abyssal += mix(uColB, uPrim * 0.25, 0.35) * length(uAim) * aimWash * 0.02 * (0.4 + uEnergy * 0.6);

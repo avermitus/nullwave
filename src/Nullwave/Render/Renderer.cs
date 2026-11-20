@@ -390,6 +390,8 @@ public sealed class Renderer : IDisposable
         _background.SetFloat("uHat", punchHat);
         _background.SetFloat("uOverdrive", overdriveEff);
         _background.SetFloat("uMotionScale", motionScale);
+        float anticipation = float.IsFinite(audio.DropAnticipation) ? Math.Clamp(audio.DropAnticipation, 0f, 1f) : 0f;
+        _background.SetFloat("uAnticipation", settings.ReduceFlashing ? anticipation * 0.35f : anticipation);
         _background.SetFloat("uBass", audio.Bass);
         _background.SetFloat("uLowMid", audio.LowMid);
         _background.SetFloat("uMid", audio.Mid);
