@@ -176,6 +176,7 @@ internal static class Program
             "title" => 4,
             "archive" => 4,
             "boss" => 24,
+            "songboss" => 200,
             "laser" => 12,
             "combat" => 24,
             "attune" => 4,

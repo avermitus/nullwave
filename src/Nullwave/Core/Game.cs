@@ -318,6 +318,18 @@ public sealed class Game : IDisposable
             _world.Player.PhaseSyncFlash = 0.85f;
             return;
         }
+        if (scenario == "songboss")
+        {
+            // THE DROP, fought with the Lead ship, for screenshots and reels
+            _meta.SelectedShip = "Lead";
+            StartRun(0x5EEDC0DEUL, false);
+            _autoPilot = true;
+            _world!.Player.InvincibleDemo = true;
+            _world.BeginWave(4);
+            _world.ClearSpawnQueueForCapture();
+            _world.SpawnSongBoss();
+            return;
+        }
         if (scenario == "edm")
         {
             // a scripted build-up into a drop, for reels of the EDM show

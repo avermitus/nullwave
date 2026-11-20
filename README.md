@@ -4,6 +4,25 @@ A native Windows twin-stick bullet hell in pure C# (OpenGL via Silk.NET, audio v
 
 ![NULLWAVE Combat](docs/screenshots/latest_combat.png)
 
+## What's new
+
+| The EDM show: build-up into the drop | THE DROP: a boss built from the song |
+|---|---|
+| ![EDM show](docs/media/edm_show.gif) | ![THE DROP](docs/media/the_drop.gif) |
+| [Watch in HD (MP4)](docs/media/edm_show.mp4) | [Watch in HD (MP4)](docs/media/the_drop.mp4) |
+
+![Build-up kaleidoscope, background only](docs/media/edm_backdrop.gif)
+
+*The background alone: the world folds into a kaleidoscope through the build-up, then the drop dives in ([MP4](docs/media/edm_backdrop.mp4)).*
+
+- **Setlist runs:** play a set of songs; each new track is a stage with an upgrade, and the last one ends with THE DROP.
+- **Song records:** best score and an S–C rank for every song you play.
+- **Instrument ships:** DRUMS fires on drum hits, BASS lobs heavy orbs on the beat, LEAD fires a beam that bends with the melody.
+- **In-key guns:** kills and hits play notes from the current chord, on the beat.
+- **THE DROP:** rings on the kick, fans on the snare, a laser that follows the melody, a new phase every song section.
+- **EDM show:** stage lasers, a build-up kaleidoscope and letterbox, a drop that dives, rocks and colour-steps on the beat, and a kick bounce (`CAMERA FX` setting; flash-rate limited, `REDUCE FLASHING` respected).
+- **Also:** music understanding (drums vs. melody, chords, key, song sections), a 0.75 s Spotify buffer, organic map-anchored 3D worlds, bass gravity wells, melody rails, a run recap with highlight clips, a first-run tutorial and controller rumble. See the [CHANGELOG](CHANGELOG.md).
+
 ## Features
 
 - **Music-Driven Combat & Laser Choreography:** Real-time log-spectral-flux beat tracking and song-structure analysis (`MusicDirector`) detect tempo, downbeats, builds, breakdowns, and drops — locking enemy volleys to the beat, surging projectile motion, triggering drop shockwaves, and firing 4-layer HDR **Song Lasers** (`STARBURST`, `SCAN`, `LASER GATE`, `LASER CROSS`, `PRISM CAGE`) with travelling directional chevrons.
@@ -41,6 +60,7 @@ powershell -ExecutionPolicy Bypass -File tools/dotnet-install.ps1 -Channel 8.0 -
 ./run.cmd --selftest      # headless assertion suite
 ./run.cmd --beatbench     # beat tracker accuracy on synthetic songs
 ./run.cmd --sfxdump       # render every sound effect to capture/sfx/*.wav
+./run.cmd --capture edm --reel 10 --out edm.mp4   # scripted build-up into a drop
 
 # optional smoke / video capture overrides
 ./run.cmd --smoke 5 --mods hard --attune synergy --theme abyssal
@@ -68,6 +88,10 @@ powershell -ExecutionPolicy Bypass -File tools/dotnet-install.ps1 -Channel 8.0 -
 | ![Archive](docs/screenshots/latest_archive.png) | ![Pause](docs/screenshots/latest_pause.png) |
 | **Signal Lost & Personal Bests** | **Full Enemy Roster** |
 | ![Game Over](docs/screenshots/latest_gameover.png) | ![Roster](docs/screenshots/v9_roster.png) |
+| **Title — Setlist & Ship Select** | **THE DROP vs. the Lead Ship** |
+| ![Setlist and ship select](docs/screenshots/setlist_title.png) | ![THE DROP](docs/screenshots/the_drop_boss.png) |
+| **The EDM Show — build-up, drop, after** | **Music-Shaped 3D Worlds** |
+| ![EDM show](docs/screenshots/edm_show.png) | ![Music worlds](docs/screenshots/music_worlds.png) |
 
 ## Documentation
 
