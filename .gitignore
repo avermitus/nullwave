@@ -12,6 +12,7 @@ build/
 capture/*.mp4
 capture/*.wav
 *.mp4
+!docs/media/*.mp4
 *.mkv
 *.wav
 # local backups and app metadata
