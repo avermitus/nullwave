@@ -20,6 +20,7 @@ public sealed class Renderer : IDisposable
     private readonly Batch _uiAlpha;
     private readonly Batch _uiGlow;
     private readonly Shader _meshShader;
+    private readonly AtlasAssets _atlas;
     private readonly MeshBatch _backdropMeshes;
     private readonly MeshBatch _worldMeshes;
     private Matrix4x4 _backdropViewProj = Matrix4x4.Identity;
@@ -45,6 +46,7 @@ public sealed class Renderer : IDisposable
     public Vector2 Camera => _camera;
     public Vector2 ViewExtents => _view;
     public float Zoom => _zoom;
+    public float EmissiveIntensity { get; set; } = 2.4f;
     public MeshBatch Backdrop => _backdropMeshes;
     public MeshBatch Meshes => _worldMeshes;
     public float BackdropBrightness { get; set; } = 0.5f;
@@ -470,6 +472,7 @@ public sealed class Renderer : IDisposable
         _uiAlpha = new Batch(_gl, 65536);
         _uiGlow = new Batch(_gl, 32768);
         _meshShader = new Shader(_gl, Shaders.MeshVert, Shaders.MeshFrag, "mesh");
+        _atlas = new AtlasAssets(_gl);
         _backdropMeshes = new MeshBatch(_gl, 196608);
         _worldMeshes = new MeshBatch(_gl, 196608);
         _fullscreenVao = _gl.GenVertexArray();
@@ -706,6 +709,7 @@ public sealed class Renderer : IDisposable
             _gl.Enable(EnableCap.DepthTest);
             _gl.DepthFunc(DepthFunction.Less);
             _meshShader.Use();
+            _atlas.Bind(_meshShader, EmissiveIntensity);
             _meshShader.SetMatrix("uViewProj", _backdropViewProj);
             _meshShader.SetInt("uPerspective", 1);
             _meshShader.SetVec3("uEye", _backdropEye);
@@ -735,6 +739,7 @@ public sealed class Renderer : IDisposable
             _gl.Enable(EnableCap.DepthTest);
             _gl.DepthFunc(DepthFunction.Less);
             _meshShader.Use();
+            _atlas.Bind(_meshShader, EmissiveIntensity);
             _meshShader.SetMatrix("uViewProj", WorldMeshMatrix());
             _meshShader.SetInt("uPerspective", 0);
             _meshShader.SetVec3("uLightDir", new Vector3(-0.45f, -0.6f, 0.85f));
@@ -1075,6 +1080,7 @@ public sealed class Renderer : IDisposable
         _worldShader.Dispose();
         _uiShader.Dispose();
         _background.Dispose();
+        _atlas.Dispose();
         _meshShader.Dispose();
         _backdropMeshes.Dispose();
         _worldMeshes.Dispose();

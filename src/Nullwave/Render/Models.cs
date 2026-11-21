@@ -5,13 +5,13 @@ using Nullwave.World;
 namespace Nullwave.Render;
 
 /// <summary>
-/// Procedural model library. Everything is built from code at startup: no model assets.
+/// Procedural model library. The player and pylon use the shared material atlas.
 /// Model space: +x forward, +y right wing, +z up toward the camera.
 /// Enemy models are unit-radius and scaled by the enemy's collision radius at draw time.
 /// </summary>
 public static class Models
 {
-    public static readonly Mesh Player = BuildPlayer();
+    public static readonly Mesh Player = AtlasAssets.LoadMesh("player");
     public static readonly Mesh PlayerThruster = BuildThruster();
     public static readonly Mesh Drifter = BuildDrifter();
     public static readonly Mesh Orbiter = BuildOrbiter();
@@ -28,7 +28,7 @@ public static class Models
     public static readonly Mesh BossHalo = BuildBossHalo();
     public static readonly Mesh BossShard = BuildBossShard();
     public static readonly Mesh EliteRing = BuildEliteRing();
-    public static readonly Mesh Pylon = BuildPylon();
+    public static readonly Mesh Pylon = AtlasAssets.LoadMesh("pylon");
     public static readonly Mesh Crystal = BuildCrystal();
     public static readonly Mesh Column = BuildColumn();
     public static readonly Mesh Ico = BuildIco();
@@ -54,55 +54,6 @@ public static class Models
     };
 
     // ---------------------------------------------------------------- player
-
-    private static Mesh BuildPlayer()
-    {
-        var b = new MeshBuilder();
-        // fuselage: x, half width, half height, z offset
-        b.Loft(new Vector4[]
-        {
-            new(-15f, 3.6f, 2.4f, 1.0f),
-            new(-8f, 5.4f, 4.2f, 1.8f),
-            new(4f, 4.8f, 4.6f, 2.4f),
-            new(14f, 2.6f, 2.6f, 1.6f),
-            new(24f, 0.5f, 0.5f, 0.8f),
-        }, 6, Mat.Hull, Mat.Trim, Mat.Glow);
-        // canopy
-        b.At(new Vector3(3.5f, 0, 5.4f));
-        b.Octahedron(6.5f, 2.6f, 2.4f, Mat.Glow, Mat.Core);
-        b.Reset();
-        // swept wings (mirrored)
-        for (int side = -1; side <= 1; side += 2)
-        {
-            float s = side;
-            b.At(new Vector3(0, 0, 1.2f), 0, 0, s * -0.12f);
-            b.Slab(side > 0
-                ? new Vector2[] { new(7f, 3f), new(-6f, 21f), new(-12.5f, 22.5f), new(-11f, 3.5f) }
-                : new Vector2[] { new(-11f, -3.5f), new(-12.5f, -22.5f), new(-6f, -21f), new(7f, -3f) },
-                1.7f, Mat.Trim, Mat.Hull);
-            // wingtip emitters
-            b.At(new Vector3(-9.5f, s * 21.5f, 1.4f));
-            b.Box(new Vector3(6.5f, 1.6f, 2.2f), Mat.Glow, Mat.Core);
-            // engine pods
-            b.At(new Vector3(0, s * 8.2f, 1.8f));
-            b.Loft(new Vector4[]
-            {
-                new(-17f, 2.9f, 2.9f, 0f),
-                new(-12f, 3.4f, 3.4f, 0f),
-                new(-2f, 3.0f, 3.0f, 0f),
-                new(3f, 1.6f, 1.6f, 0f),
-            }, 8, Mat.Hull, Mat.Trim, Mat.Core);
-            // tail fins
-            b.At(new Vector3(-10f, s * 4.2f, 4f), 0, 0, s * 0.35f);
-            b.Slab(new Vector2[] { new(-1f, 0f), new(-7f, 0f), new(-9.5f, 0.01f), new(-5f, 0.02f) }, 0.1f, Mat.Trim, Mat.Trim);
-            b.At(new Vector3(-10f, s * 4.2f, 4f), 0, MathF.PI * 0.5f, s * 0.35f);
-            b.Slab(new Vector2[] { new(2f, -0.5f), new(-6f, -0.5f), new(-7f, 7.5f), new(-3f, 7.5f) }, 1.0f, Mat.Trim, Mat.Hull);
-        }
-        // spine strip
-        b.At(new Vector3(-2f, 0, 6.6f));
-        b.Box(new Vector3(14f, 0.9f, 0.8f), Mat.Glow, Mat.Glow);
-        return b.Build();
-    }
 
     private static Mesh BuildThruster()
     {
@@ -368,21 +319,6 @@ public static class Models
     // ---------------------------------------------------------------- environment
 
     /// <summary>Unit-height border pylon; height is driven by the spectrum.</summary>
-    private static Mesh BuildPylon()
-    {
-        var b = new MeshBuilder();
-        b.Frustum(6, 14f, 10f, 0f, 0.82f, Mat.Hull, Mat.Trim, Mat.Hull);
-        b.At(new Vector3(0, 0, 0.82f));
-        b.Frustum(6, 10f, 7f, 0f, 0.1f, Mat.Glow, Mat.Core, Mat.Hull);
-        b.Reset();
-        for (int i = 0; i < 3; i++)
-        {
-            b.At(new Vector3(0, 0, 0.18f + i * 0.2f));
-            b.Frustum(6, 15.5f, 15.5f, 0f, 0.025f, Mat.Glow, Mat.Glow, Mat.Glow);
-        }
-        return b.Build();
-    }
-
     private static Mesh BuildCrystal()
     {
         var b = new MeshBuilder();

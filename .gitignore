@@ -20,3 +20,4 @@ _backup/
 .freebuff/
 *.user
 *.log
+.env

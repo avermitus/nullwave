@@ -23,6 +23,7 @@ public struct Vertex3D
     public Vector3 Normal;
     public Vector4 Color;
     public float Glow;
+    public Vector2 UV;
 }
 
 public struct MaterialSet
@@ -70,10 +71,12 @@ public sealed class Mesh
     public readonly Vector3[] Positions;
     public readonly Vector3[] Normals;
     public readonly Mat[] Materials;
+    public readonly Vector2[]? UV;
     public int VertexCount => Positions.Length;
 
-    public Mesh(Vector3[] positions, Vector3[] normals, Mat[] materials)
+    public Mesh(Vector3[] positions, Vector3[] normals, Mat[] materials, Vector2[]? uv = null)
     {
+        UV = uv;
         Positions = positions;
         Normals = normals;
         Materials = materials;
@@ -330,8 +333,9 @@ public sealed class MeshBatch : IDisposable
             _gl.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, stride, (void*)(3 * sizeof(float)));
             _gl.VertexAttribPointer(2, 4, VertexAttribPointerType.Float, false, stride, (void*)(6 * sizeof(float)));
             _gl.VertexAttribPointer(3, 1, VertexAttribPointerType.Float, false, stride, (void*)(10 * sizeof(float)));
+            _gl.VertexAttribPointer(4, 2, VertexAttribPointerType.Float, false, stride, (void*)(11 * sizeof(float)));
         }
-        for (uint i = 0; i < 4; i++) _gl.EnableVertexAttribArray(i);
+        for (uint i = 0; i < 5; i++) _gl.EnableVertexAttribArray(i);
         _gl.BindVertexArray(0);
     }
 
@@ -362,6 +366,7 @@ public sealed class MeshBatch : IDisposable
             v.Normal = l > 1e-6f ? nn / l : Vector3.UnitZ;
             v.Color = colors[m];
             v.Glow = glows[m];
+            v.UV = mesh.UV == null ? new Vector2(-1f) : mesh.UV[i];
         }
     }
 

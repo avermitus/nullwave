@@ -833,6 +833,8 @@ layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec3 aNormal;
 layout(location = 2) in vec4 aColor;
 layout(location = 3) in float aGlow;
+layout(location = 4) in vec2 aUV;
+out vec2 vUV;
 uniform mat4 uViewProj;
 out vec3 vNormal;
 out vec4 vColor;
@@ -843,6 +845,7 @@ void main() {
     vNormal = aNormal;
     vColor = aColor;
     vGlow = aGlow;
+    vUV = aUV;
     vWorld = aPos;
 }
 """;
@@ -852,6 +855,9 @@ void main() {
 in vec3 vNormal;
 in vec4 vColor;
 in float vGlow;
+in vec2 vUV;
+uniform sampler2D uAlbedoMap, uNormalMap, uRoughnessMap, uEmissiveMap;
+uniform float uEmissiveIntensity;
 in vec3 vWorld;
 out vec4 fragColor;
 uniform vec3 uLightDir;
@@ -868,26 +874,47 @@ uniform float uFogNear;
 uniform float uFogFar;
 uniform float uDarkTheme;
 void main() {
+    bool mapped = vUV.x >= 0.0;
     vec3 n = normalize(vNormal);
+    float roughness = 0.5;
+    vec3 emission = vec3(0);
+    vec3 base = vColor.rgb;
+    if (mapped) {
+        vec3 dx = dFdx(vWorld), dy = dFdy(vWorld);
+        vec2 ux = dFdx(vUV), uy = dFdy(vUV);
+        float det = ux.x * uy.y - ux.y * uy.x;
+        if (abs(det) > 1e-12) {
+            vec3 tangent = (dx * uy.y - dy * ux.y) / det;
+            tangent = normalize(tangent - n * dot(n, tangent));
+            // Assimp flips V for top-down image rows; normal maps retain +Y in OBJ space.
+            vec3 bitangent = normalize(cross(n, tangent));
+            vec3 dv = (dy * ux.x - dx * uy.x) / det;
+            bitangent *= -sign(dot(bitangent, dv));
+            vec3 detail = texture(uNormalMap, vUV).xyz * 2.0 - 1.0;
+            n = normalize(mat3(tangent, bitangent, n) * detail);
+        }
+        base = mix(texture(uAlbedoMap, vUV).rgb, vec3(1), clamp(vGlow, 0.0, 1.0));
+        roughness = texture(uRoughnessMap, vUV).r;
+        emission = texture(uEmissiveMap, vUV).rgb * uEmissiveIntensity;
+    }
     vec3 V = uPerspective == 1 ? normalize(uEye - vWorld) : normalize(uViewDir);
     vec3 L = normalize(uLightDir);
     float diff = max(dot(n, L), 0.0);
     float back = max(dot(n, -L), 0.0);
     float hemi = mix(0.16, 0.42, clamp(n.z * 0.5 + 0.5, 0.0, 1.0));
     vec3 h = normalize(L + V);
-    float spec = pow(max(dot(n, h), 0.0), 36.0);
+    float spec = pow(max(dot(n, h), 0.0), (mapped ? mix(84.0, 5.0, roughness) : 36.0));
     float fres = pow(1.0 - clamp(dot(n, V), 0.0, 1.0), 3.0);
-    vec3 base = vColor.rgb;
     float darkHemi = mix(hemi, hemi * 0.32, uDarkTheme);
     float darkDiff = mix(diff, diff * 0.55, uDarkTheme);
     float fillScale = mix(0.35, 0.14, uDarkTheme);
     float rimBoost = mix(1.0, 2.15, uDarkTheme);
     float glowBoost = mix(1.0, 1.25, uDarkTheme);
     vec3 col = base * (darkHemi + darkDiff * 0.95) + uFill * back * fillScale * base;
-    col += vec3(spec) * 0.55 * (0.3 + diff);
+    col += vec3(spec) * (mapped ? mix(0.85, 0.08, roughness) : 0.55) * (0.3 + diff);
     col += uRimColor * fres * uRim * rimBoost;
     col *= uBrightness;
-    col += base * vGlow * uGlowScale * glowBoost;
+    col += (base * vGlow + emission) * uGlowScale * glowBoost;
     float alpha = vColor.a;
     if (uPerspective == 1) {
         float d = length(uEye - vWorld);
