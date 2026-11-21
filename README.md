@@ -56,9 +56,15 @@ It's written in pure C#: OpenGL through Silk.NET and audio through NAudio, with 
 | **Pause / Back** | `P` / `Esc` | `Start` / `B` |
 | **Diagnostics / Fullscreen / Audio Source** | `F1` / `F2` / `F3` | — |
 
-## Install and play
+## Download and play
 
-Requires Windows 10 (build 20348+) or Windows 11. You need the .NET 8 SDK to build the game, but not to play it.
+**[Download the latest release](https://github.com/avermitus/nullwave/releases/latest)**: grab `NULLWAVE-…-win-x64.zip`, unzip it anywhere and run `Nullwave.exe`. Nothing else to install, because the .NET runtime is included. Windows may warn that the game isn't code-signed; click **More info → Run anyway**.
+
+Requires Windows 10 (build 20348+) or Windows 11 and an OpenGL 4.1 graphics card.
+
+## Install from source
+
+You need the .NET 8 SDK to build the game, but not to play it.
 
 ```powershell
 git clone https://github.com/avermitus/nullwave.git
