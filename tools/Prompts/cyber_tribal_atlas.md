@@ -31,3 +31,7 @@ python tools/generate_cyber_tribal_atlas.py --surface path/to/sogni-surface.png 
 ```
 
 The first command regenerates the bundled baseline; the second produces a separate variant from a local input. All maps are 1024 × 1024 PNG: RGB albedo and emissive (sRGB color), RGB tangent-space normal (linear, OpenGL +Y), and grayscale roughness (linear, white = rough). The flat neon normal is (128,128,255). Use linear sampling for normal and roughness, sRGB for albedo and emissive. The procedural normal derives from the same height detail used for the non-emissive surfaces. No credentials or network access are needed.
+
+## Bundled surface provenance
+
+The committed maps use local Sogni surface `wf_durable_workflow_0c05e78b-47f8-4765-84e3-3b2171060d20.png` (SHA-256: `766bae5e24466371ab62ce382271a77883f6a8886c3de53a8460035ffe3bfebb`). Reproduce them by supplying that exact image with `--surface`. The no-argument command produces the original procedural baseline, not the committed surface-derived variant. Roughness and emissive are intentionally independent of the source image.
