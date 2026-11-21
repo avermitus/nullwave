@@ -1,0 +1,43 @@
+{
+  "axes": {
+    "forward": "+X",
+    "right": "+Y",
+    "up": "+Z"
+  },
+  "atlas": {
+    "width": 1024,
+    "height": 1024,
+    "uv_origin": "bottom-left",
+    "v_bands": {
+      "dark_plating": [0.0, 0.5],
+      "bone_and_bronze": [0.5, 0.75],
+      "neon_sigils": [0.75, 1.0]
+    },
+    "maps": {
+      "albedo": "Assets/Textures/Albedo.png",
+      "normal": "Assets/Textures/Normal.png",
+      "roughness": "Assets/Textures/Roughness.png",
+      "emissive": "Assets/Textures/Emissive.png"
+    }
+  },
+  "models": {
+    "player": {
+      "path": "Assets/Models/player.obj",
+      "dimensions": { "x": 41.0, "y": 44.8799, "z": 13.337412 },
+      "bounds": {
+        "min": [-17.0, -22.43995, -2.337412],
+        "max": [24.0, 22.43995, 11.0]
+      },
+      "u_range": [0.0, 0.5]
+    },
+    "pylon": {
+      "path": "Assets/Models/pylon.obj",
+      "dimensions": { "x": 31.0, "y": 26.846788, "z": 0.92 },
+      "bounds": {
+        "min": [-15.5, -13.423394, 0.0],
+        "max": [15.5, 13.423394, 0.92]
+      },
+      "u_range": [0.5, 1.0]
+    }
+  }
+}
