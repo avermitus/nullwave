@@ -9,7 +9,7 @@ namespace Nullwave.UI;
 
 public static class Screens
 {
-    private static readonly string[] TitleItems = ["NEW SIGNAL", "SETLIST", "DAILY SIGNAL", "ARCHIVE", "SETTINGS", "QUIT"];
+    private static readonly string[] TitleItems = ["NEW SIGNAL", "DAILY SIGNAL", "ARCHIVE", "SETTINGS", "QUIT"];
     private static readonly string[] PauseItems = ["RESUME", "ARCHIVE", "SETTINGS", "ABANDON SIGNAL"];
     // Only the first three IDs and count affect the displayed caption. The list itself is mutable.
     private static int _captionCount = -1;
@@ -194,8 +194,8 @@ public static class Screens
         r.UiText(sub, bx + 12f, by + 32f, 1.22f, subCol);
     }
 
-    /// <summary>Title: the instrument ship (left / right) and what SETLIST means.</summary>
-    public static void DrawShipSelect(Renderer r, Palette p, ShipKind ship, int setlistTracks, int menuIndex)
+    /// <summary>Title: the instrument ship (left / right).</summary>
+    public static void DrawShipSelect(Renderer r, Palette p, ShipKind ship)
     {
         r.UiLine(74, 624, 554, 624, 1f, M.WithAlpha(p.Primary, 0.55f));
         r.UiText("SHIP", 76, 646, 1.4f, M.WithAlpha(p.Text, 0.8f));
@@ -205,8 +205,6 @@ public static class Screens
         r.UiTextCentered(Ships.Name(ship), 218, TitleShipY + 5, 2.1f, p.Text, true);
         r.UiTextCentered(">", TitleShipRightX + TitleShipButtonWidth / 2, TitleShipY + 5, 2f, p.Accent, true);
         r.UiText(Ships.Blurb(ship), 76, 701, 1.45f, M.WithAlpha(p.Text, 0.85f));
-        if (menuIndex == 1)
-            r.UiText("SETLIST // " + Math.Clamp(setlistTracks, 2, 8) + " TRACKS", 76, 735, 1.4f, M.WithAlpha(p.Accent, 0.95f));
         r.UiText("UP / DOWN SELECT   LEFT / RIGHT SHIP   ENTER / A CONFIRM", 76, 770, 1.25f, M.WithAlpha(p.Text, 0.75f));
     }
 
@@ -294,16 +292,11 @@ public static class Screens
         }
     }
 
-    /// <summary>HUD: setlist stage and how this song is going against your record.</summary>
+    /// <summary>HUD: the ship and how this song is going against your record.</summary>
     private static void DrawStageAndSong(Renderer r, GameWorld w, Palette p, MetaProgress meta, float time)
     {
         float y = 214;
-        if (w.IsSetlist)
-        {
-            r.UiText((w.FinalStage ? "FINAL TRACK" : "STAGE " + w.Stage + " / " + w.SetlistLength) + "  //  SHIP " + Ships.Name(w.Ship), 58, y, 1.55f, M.WithAlpha(p.Accent, 0.9f), true);
-            y += 22;
-        }
-        else if (w.Ship != ShipKind.Classic)
+        if (w.Ship != ShipKind.Classic)
         {
             r.UiText("SHIP " + Ships.Name(w.Ship), 58, y, 1.4f, M.WithAlpha(p.Accent, 0.8f));
             y += 22;
@@ -738,14 +731,13 @@ public static class Screens
         r.UiRect(0, 0, 1600, 900, PanelFill(new Vector4(0.002f, 0.003f, 0.010f, 0.80f), 0.88f));
         DrawCard(r, p, 280, 94, 1040, 728, M.WithAlpha(p.Danger, 0.7f));
         var s = w.Summary;
-        bool victory = s?.SetComplete == true;
-        r.UiTextCentered(victory ? "SET COMPLETE" : "SIGNAL LOST", 800, 132, 6.5f, victory ? p.Accent : p.Text, true);
+        r.UiTextCentered("SIGNAL LOST", 800, 132, 6.5f, p.Text, true);
         if (s != null)
         {
-            string mode = s.Daily ? "DAILY SIGNAL" : s.SetlistLength > 0 ? "SETLIST " + Math.Min(s.Stages, s.SetlistLength) + " / " + s.SetlistLength : "ENDLESS SIGNAL";
+            string mode = s.Daily ? "DAILY SIGNAL" : "ENDLESS SIGNAL";
             r.UiTextCentered("SEED " + SeedCode.ToCode(s.Seed) + "  //  " + mode + "  //  SHIP " + Ships.Name(s.Ship) + "  //  " + (int)s.Duration + "S", 800, 214, 1.7f, M.WithAlpha(p.Dim, 0.9f));
         }
-        r.UiLine(340, 250, 1260, 250, 1f, M.WithAlpha(victory ? p.Accent : p.Danger, 0.3f));
+        r.UiLine(340, 250, 1260, 250, 1f, M.WithAlpha(p.Danger, 0.3f));
         float pulse = 0.72f + 0.28f * MathF.Sin(time * 5.5f);
         if (s != null)
         {
@@ -780,7 +772,7 @@ public static class Screens
             var rec = t.IsSong ? meta.GetSong(t.Title) : null;
             bool best = rec != null && rec.BestScore == t.Score && t.Score > 0;
             string right = FormatScore(t.Score) + "   RANK " + t.Rank + (best ? "   SONG BEST" : "");
-            r.UiText((s.SetlistLength > 0 ? "STAGE " + t.Stage + "  " : "") + title, 360, y, 1.45f, M.WithAlpha(p.Text, 0.9f));
+            r.UiText(title, 360, y, 1.45f, M.WithAlpha(p.Text, 0.9f));
             r.UiTextRight(right, 1240, y, 1.45f, best ? p.Accent : M.WithAlpha(p.Dim, 0.95f), best);
             y += 22;
         }

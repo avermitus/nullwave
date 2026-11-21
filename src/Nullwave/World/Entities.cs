@@ -178,6 +178,8 @@ public sealed class Enemy
     public bool SongBoss;
     /// <summary>Per-enemy phase (0..1): handedness and offset of its movement style.</summary>
     public float MovePhase;
+    /// <summary>1 on the enemy's own part of the beat, decaying to 0 (drives its movement surge and glow).</summary>
+    public float Groove;
     public bool IsBoss => Boss;
 
     public float HealthFrac => MaxHp <= 0 ? 0 : M.Clamp01(Hp / MaxHp);

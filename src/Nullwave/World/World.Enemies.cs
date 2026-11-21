@@ -243,6 +243,9 @@ public sealed partial class World
     /// <summary>
     /// Every enemy hunts you, each in its own style. The further away it is, the harder it
     /// chases (up to ~3.5x its close-range speed), so nothing is ever left behind when you race off.
+    /// Each role also moves on its own part of the bar (see <see cref="Pocket"/>): the Juggernaut
+    /// lurches on the downbeat, the Pouncer lunges on the backbeat, the Hunter darts on the off-beats,
+    /// the Pack skitters on the sixteenths, and so on, so a crowded wave reads like a drum pattern.
     /// </summary>
     private void UpdateEnemyBrain(Enemy e, float dt, AudioState audio)
     {
@@ -256,36 +259,47 @@ public sealed partial class World
         float pursuit = ChaseBoost(dist);
         float spin = e.MovePhase < 0.5f ? 1f : -1f;
         float t = e.Age + e.MovePhase * 10f;
+        int beatInBar = Math.Clamp((int)BarPos, 0, 3);
         Vector2 desired = Vector2.Zero;
         bool direct = false;
+        float surge = 1f;
+        float groove;
 
         switch (e.Role)
         {
             case EnemyRole.Drifter:
             {
-                // HUNTER: homes in on where you are about to be
+                // HUNTER (off-beats): homes in on where you are about to be, darting on every "and"
                 Vector2 lead = Player.Pos + Player.Vel * MathF.Min(0.45f, dist / 1400f);
                 desired = M.SafeNorm(lead - e.Pos) * speed * 1.3f * pursuit;
+                surge = PocketSurge(dt, Pocket.OffBeats, 1.8f, 7f, out groove);
                 break;
             }
             case EnemyRole.Orbiter:
-                // SPIRALLER: corkscrews inward around you, then whips past and spirals in again
+                // SPIRALLER (pickups): corkscrews in around you and whips round on the "a" before each beat
                 desired = (dir * (dist > 190f ? 0.6f : 0.15f) + perp * spin * 0.85f) * speed * 1.45f * pursuit;
+                surge = PocketSurge(dt, Pocket.Pickups, 2.0f, 9f, out groove);
                 break;
             case EnemyRole.Sniper:
-                // STALKER: stays on your tail at rifle range, strafing, never falling behind
-                desired = dir * (dist > 430f ? speed * 1.35f * pursuit : dist < 300f ? -speed * 0.7f : 0f) + perp * spin * speed * 0.75f;
+            {
+                // STALKER (the "and" of 4): holds its aim through the bar, then jumps to your
+                // other side on the pickup into the next bar
+                float side = (BarIndex & 1) == 0 ? spin : -spin;
+                desired = dir * (dist > 430f ? speed * 1.35f * pursuit : dist < 300f ? -speed * 0.7f : 0f) + perp * side * speed * 0.75f;
+                surge = PocketSurge(dt, Pocket.AndOfFour, 6f, 3f, out groove);
                 break;
+            }
             case EnemyRole.Dasher:
-                // POUNCER: chases with a side-to-side sway, braces, then lunges straight at you
+                // POUNCER (backbeat): chases with a side-to-side sway, braces, then lunges on 2 or 4
                 e.StateTimer -= dt;
+                surge = PocketSurge(dt, Pocket.Backbeat, 1.2f, 4f, out groove);
                 if (e.State == 0)
                 {
                     desired = (dir * pursuit + perp * MathF.Sin(t * 3f) * 0.6f) * speed * 1.15f;
                     if (e.StateTimer <= 0 && dist < 640f)
                     {
                         e.State = 1;
-                        e.StateTimer = 0.42f;
+                        e.StateTimer = 0.2f;
                         e.Angle = M.AngleOf(dir);
                         e.AngleVel = 0;
                     }
@@ -294,7 +308,7 @@ public sealed partial class World
                 {
                     desired = Vector2.Zero;
                     e.DashDir = dir;
-                    if (e.StateTimer <= 0 && EighthTick)
+                    if (e.StateTimer <= 0 && BeatTick && (beatInBar == 1 || beatInBar == 3))
                     {
                         e.State = 2;
                         e.StateTimer = 0.36f;
@@ -305,6 +319,7 @@ public sealed partial class World
                 {
                     desired = e.DashDir * 1300f;
                     e.Vel = desired;
+                    surge = 1f;
                     if (e.StateTimer <= 0) { e.State = 3; e.StateTimer = 0.5f; }
                 }
                 else
@@ -314,40 +329,48 @@ public sealed partial class World
                 }
                 break;
             case EnemyRole.Turret:
-                // HOPPER: leaps at you on every beat, skids to a stop in between
+                // HOPPER (every beat): leaps at you on each beat, skids to a stop in between
                 if (BeatTick) e.Vel = dir * (420f + MathF.Min(dist, 1500f) * 0.9f) * GetDifficultySpeedScale() * Mods.EnemySpeed;
                 else e.Vel *= MathF.Exp(-dt * 4.5f);
                 direct = true;
                 e.Angle += dt * 0.4f;
+                PocketSurge(dt, Pocket.Beats, 0f, 6f, out groove);
                 break;
             case EnemyRole.Splitter:
-                // JUGGERNAUT: slow, relentless, surges forward on the downbeat
-                desired = dir * speed * (1.0f + (EighthInBar < 2 ? 0.6f : 0f)) * pursuit;
+                // JUGGERNAUT (downbeat): slow and relentless, with one heavy lurch on beat 1
+                desired = dir * speed * 1.15f * pursuit;
+                surge = PocketSurge(dt, Pocket.Downbeat, 4f, 1.6f, out groove);
                 break;
             case EnemyRole.Swarm:
-                // PACK: fast, each member closing in from its own side so the pack surrounds you
-                {
-                    Vector2 target = Player.Pos + M.FromAngle(e.MovePhase * M.Tau + Time * 0.6f * spin, MathF.Min(140f, dist * 0.4f));
-                    desired = M.SafeNorm(target - e.Pos) * speed * 1.9f * pursuit;
-                }
+            {
+                // PACK (sixteenths): skitters in short steps, each member closing in from its own side
+                Vector2 target = Player.Pos + M.FromAngle(e.MovePhase * M.Tau + Time * 0.6f * spin, MathF.Min(140f, dist * 0.4f));
+                desired = M.SafeNorm(target - e.Pos) * speed * 1.9f * pursuit;
+                surge = PocketSurge(dt, Pocket.Sixteenths, 1.6f, 16f, out groove);
                 break;
+            }
             case EnemyRole.Weaver:
             {
-                // SERPENT: weaves toward you in a wide S
-                // weaves hard up close, straightens out to run you down from far away
-                float wiggle = MathF.Sin(t * 3.2f) * 1.3f * M.Clamp(1f - (dist - 400f) / 700f, 0.15f, 1f);
+                // SERPENT (beat to beat): its S-curve crosses your line on every beat and swings
+                // widest on the "and"; it weaves hard up close and straightens out from far away
+                float swing = MathF.Sin(BarPos * MathF.PI) * spin;
+                float wiggle = swing * 1.3f * M.Clamp(1f - (dist - 400f) / 700f, 0.15f, 1f);
                 desired = M.SafeNorm(dir + perp * wiggle) * speed * 1.25f * pursuit;
+                PocketSurge(dt, Pocket.Beats, 0f, 5f, out groove);
                 break;
             }
             case EnemyRole.Mortar:
-                // SIEGE: advances fast for half a bar, plants for half a bar to fire
-                desired = EighthInBar < 4 ? dir * speed * 1.7f * pursuit : Vector2.Zero;
+                // SIEGE (half bar): marches on beats 1 and 2, plants on 3 and 4 to fire
+                desired = BarPos < 2f ? dir * speed * 1.7f * pursuit : Vector2.Zero;
+                PocketSurge(dt, Pocket.HalfNotes, 0f, 2f, out groove);
+                if (BarPos >= 2f) groove *= 0.3f;
                 break;
             case EnemyRole.Phantom:
             {
-                // BLINKER: drifts in, and every other beat blinks to a flank closer to you
+                // BLINKER (half notes): drifts in, and blinks to a flank closer to you on beats 1 and 3
                 desired = (dir * pursuit + perp * 0.4f) * speed * 0.9f;
-                if (BeatTick && (++e.State % 2 == 0))
+                PocketSurge(dt, Pocket.HalfNotes, 0f, 4f, out groove);
+                if (BeatTick && (beatInBar == 0 || beatInBar == 2))
                 {
                     Vector2 from = e.Pos;
                     float side = Rng.Chance(0.5f) ? 1f : -1f;
@@ -365,13 +388,20 @@ public sealed partial class World
             }
             case EnemyRole.Prism:
             {
-                // SENTINEL: circles you at range, sweeping round as you move
-                Vector2 target = Player.Pos + M.FromAngle(t * 0.35f * spin + e.MovePhase * M.Tau, 340f);
+                // SENTINEL (the bar): circles you at range, a quarter turn per bar, easing into each downbeat
+                float bar = BarPos / 4f;
+                float turn = (BarIndex & 3) + bar * bar * (3f - 2f * bar);
+                Vector2 target = Player.Pos + M.FromAngle(turn * MathF.PI * 0.5f * spin + e.MovePhase * M.Tau, 340f);
                 desired = M.SafeNorm(target - e.Pos) * speed * 1.2f * pursuit;
                 e.Angle += dt * 0.8f;
+                PocketSurge(dt, Pocket.Downbeat, 0f, 1.5f, out groove);
                 break;
             }
+            default:
+                groove = 0f;
+                break;
         }
+        e.Groove = groove;
 
         if (!direct)
         {
@@ -387,8 +417,8 @@ public sealed partial class World
             if (e.Role != EnemyRole.Dasher || e.State != 2)
                 e.Vel = M.Lerp(e.Vel, desired, 1f - MathF.Exp(-dt * 4f));
         }
-        // enemies stride with the music: a push on each beat, then coast
-        e.Pos += e.Vel * dt * BeatSurge(1.5f);
+        // each role strides on its own part of the bar: a push on its hit, then a coast
+        e.Pos += e.Vel * dt * surge;
     }
 
     /// <summary>Speed scale for the opening waves: 0.72 on wave 1 rising to 1 by wave 5.</summary>

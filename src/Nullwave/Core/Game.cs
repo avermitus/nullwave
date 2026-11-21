@@ -84,9 +84,8 @@ public sealed class Game : IDisposable
         float high = (a.SnarePulse * 0.35f + a.HatPulse * 0.12f + hurt * 0.5f) * s;
         return (Math.Clamp(low, 0f, 1f), Math.Clamp(high, 0f, 1f));
     }
-    private int _setlist;
     private int _recordedTracks;
-    public const int TitleItemCount = 6;
+    public const int TitleItemCount = 5;
     private int _pauseIndex;
     private int _archiveIndex;
     private int _attuneHover;
@@ -531,11 +530,10 @@ public sealed class Game : IDisposable
         StartDemo();
     }
 
-    public void StartRun(ulong seed, bool daily, HashSet<string>? modifierOverride = null, int setlist = 0)
+    public void StartRun(ulong seed, bool daily, HashSet<string>? modifierOverride = null)
     {
         _seed = seed;
         _daily = daily;
-        _setlist = setlist;
         _recordedTracks = 0;
         _playerActions = default;
         _world = new GameWorld(new RunConfig
@@ -545,7 +543,6 @@ public sealed class Game : IDisposable
             Sfx = _audio.Sfx,
             SelectedModifiers = new HashSet<string>(modifierOverride ?? _meta.SelectedModifiers),
             UnlockedAttunements = new HashSet<string>(_meta.UnlockedAttunements),
-            Setlist = setlist,
             Ship = Ships.Parse(_meta.SelectedShip),
         });
         _state = AppState.Playing;
@@ -799,20 +796,17 @@ public sealed class Game : IDisposable
                     StartRun(SeedCode.NewSeed(), false);
                     break;
                 case 1:
-                    StartRun(SeedCode.NewSeed(), false, null, Math.Clamp(GameSettings.Current.SetlistTracks, 2, 8));
-                    break;
-                case 2:
                     StartRun(SeedCode.DailySeed(DateTime.Now), true);
                     break;
-                case 3:
+                case 2:
                     _archiveReturn = AppState.Title;
                     _archiveIndex = 0;
                     _state = AppState.Archive;
                     break;
-                case 4:
+                case 3:
                     OpenSettings(AppState.Title);
                     break;
-                case 5:
+                case 4:
                     _window.Close();
                     break;
             }
@@ -929,7 +923,7 @@ public sealed class Game : IDisposable
         if (_input.BackPressed || _input.TabPressed)
         {
             _state = _archiveReturn;
-            if (_state == AppState.Title) _menuIndex = 3;
+            if (_state == AppState.Title) _menuIndex = 2;
             _audio.Sfx.Trigger(SfxType.Menu, 0.25f);
             return;
         }
@@ -1264,12 +1258,12 @@ public sealed class Game : IDisposable
         if (_input == null) return;
         if (_input.RPressed)
         {
-            StartRun(_seed, _daily, null, _setlist);
+            StartRun(_seed, _daily);
             return;
         }
         if (_input.NPressed)
         {
-            StartRun(SeedCode.NewSeed(), false, null, _setlist);
+            StartRun(SeedCode.NewSeed(), false);
             return;
         }
         if (_input.CPressed && _clipSave == null)
@@ -1399,7 +1393,7 @@ public sealed class Game : IDisposable
         {
             case AppState.Title:
                 Screens.DrawTitle(_renderer, _palette, _meta, world.Seed, false, _menuIndex, _elapsed, _audio.State);
-                Screens.DrawShipSelect(_renderer, _palette, Ships.Parse(_meta.SelectedShip), GameSettings.Current.SetlistTracks, _menuIndex);
+                Screens.DrawShipSelect(_renderer, _palette, Ships.Parse(_meta.SelectedShip));
                 break;
             case AppState.Archive:
                 Screens.DrawArchive(_renderer, _palette, _meta, _archiveIndex, _elapsed, _archiveReturn == AppState.Paused, _archiveReturn == AppState.GameOver, SelectedSeedCode, IsEditingSeed, SeedEditBuffer);

@@ -13,6 +13,7 @@ Put on any song: Spotify, a YouTube tab, a local file or anything else your PC i
 You fly a fast, momentum-heavy interceptor through an open arena, dashing through bullet patterns and chaining kills to build **Flow**, the score multiplier. Everything around you comes from the song:
 
 - **The beat is the rhythm of the fight.** Enemy volleys and lasers land on the beat grid. Dash on the beat for a **Phase Sync**; three in a row ignite **Sync Overdrive**.
+- **Every enemy plays its own part of the beat.** A crowded wave moves like a drum pattern: the Juggernaut lurches on the downbeat, the Pouncer lunges on the backbeat, the Hunter darts on the off-beats, the Pack skitters on the sixteenths, the Hopper leaps on every beat, and the Blinker teleports on 1 and 3. Each one pulses as it hits its part, so you can read the rhythm and dodge to it.
 - **The music becomes the arena.** A sustained bass note opens a **gravity well** that bends bullets and lets you **slingshot** off it. A melody draws a **rail** across the map that boosts your speed while you ride it. On the drop, every well detonates.
 - **The song's structure shapes the run.** Build-ups, breakdowns and drops are detected live. A drop triggers **Drop Overdrive**, and every song section gets its own 3D world beneath the arena, which comes back when the chorus does.
 - **Your guns play along.** Kills and hits play notes from the current chord, timed to the beat.
@@ -26,11 +27,10 @@ You fly a fast, momentum-heavy interceptor through an open arena, dashing throug
 ## What's in it
 
 - **4 instrument ships:** CLASSIC (steady auto-fire), DRUMS (fires on drum hits), BASS (heavy orbs on the beat) and LEAD (a beam that bends with the melody).
-- **11 enemy types,** each hunting you its own way, and **2 bosses**.
-- **Setlist runs:** play a set of songs, where every new track is a new stage and the last one ends in THE DROP.
+- **11 enemy types,** each hunting you its own way on its own part of the beat, and **2 bosses**.
 - **Song records:** best score and an S–C rank for every song you play.
 - **12 stackable Attunements** with 4 **Harmonic Overclock** evolutions, 16 unlockable **Archive** modifiers, Daily Signals and shareable 8-character seeds.
-- **Six music-shaped 3D worlds** (sea, molten crust, dunes, gyroid cavern, storm nebula, aurora) that move with the spectrum, plus an EDM light show of stage lasers, kaleidoscope build-ups and diving drops.
+- **Six music-shaped 3D worlds** (sea, molten crust, dunes, gyroid cavern, storm nebula, aurora) that move with the spectrum, plus an EDM show: the world folds into a kaleidoscope through the build-up, and the camera dives on the drop.
 - **Any audio source:** the whole system mix, a single app (`F3`), Spotify with a 0.75 s lookahead buffer, a local file with the same lookahead, or a built-in generative score when nothing is playing.
 - **Run recap** with a timeline of your run, and one-key MP4 highlight clips of your best moment.
 - First-run tutorial, controller support with rumble, an **Abyssal** dark theme, and photosensitivity options (`REDUCE FLASHING`, `CAMERA FX`, `MUSIC FX`).
@@ -79,7 +79,7 @@ powershell -ExecutionPolicy Bypass -File tools/dotnet-install.ps1 -Channel 8.0 -
 
 # How far it has come
 
-NULLWAVE started in mid-November 2026 as a flat 2D twin-stick shooter that pulsed to whatever was playing. About a week and 13 milestones later, it reads a song's drums, bass, melody, chords and structure and builds the whole fight from them.
+NULLWAVE started in mid-November 2026 as a flat 2D twin-stick shooter that pulsed to whatever was playing. About a week and 14 milestones later, it reads a song's drums, bass, melody, chords and structure and builds the whole fight from them.
 
 | Day one: V1 foundation | Today |
 |---|---|
@@ -101,6 +101,7 @@ NULLWAVE started in mid-November 2026 as a flat 2D twin-stick shooter that pulse
 | 10 | Nov 18–19 | **Overdrive & Abyssal** | Generative backdrops, the Abyssal dark theme, Harmonic Overclock evolutions, Drop Overdrive, hit-stop, local-file playback, and the 0.75 s lookahead that lets the game see every hit before you hear it. | <img src="docs/screenshots/abyssal_combat.png" width="200"> |
 | 11 | Nov 20 | **The game understands music** | Drums vs. melody, chords, key and song sections; gravity wells, melody rails, enemies that hunt you; 3D worlds shaped by the spectrum; the Spotify lookahead buffer. | <img src="docs/screenshots/music_worlds.png" width="200"> |
 | 12 | Nov 20 | **The EDM show** | Setlist runs, song records, instrument ships, in-key guns, THE DROP boss, run recap and highlight clips, a tutorial, rumble, and the stage-laser light show. | <img src="docs/screenshots/edm_show.png" width="200"> |
+| 14 | Nov 21 | **Enemies on the beat** | Every enemy type moves on its own part of the bar (downbeat, backbeat, off-beats, sixteenths, pickups, half notes, the "and" of 4) and pulses as it hits. Setlist runs and the stage-laser light show were removed to keep the focus on the fight. | <img src="docs/screenshots/beat_pockets_roster.png" width="200"> |
 | 13 | Nov 21 | **Cyber-tribal & polish** | A textured 3D ship and pylons with a generated material atlas, dash and Cascade taps that are never dropped, a dash meter and chain timer, a new title screen, and a lighting pass. | <img src="docs/screenshots/cyber_tribal_atlas.png" width="200"> |
 
 ## By the numbers
@@ -112,10 +113,10 @@ NULLWAVE started in mid-November 2026 as a flat 2D twin-stick shooter that pulse
 | What it hears from the music | Loudness, spectrum bands, rough beat guesses | Beat grid, drums vs. melody, bass, melody pitch, chords, key, song sections, build-ups and drops |
 | Audio sources | System mix | System mix, single app, Spotify (with lookahead), local files, built-in score |
 | Look | Flat 2D vector shapes | Lit 3D models over six raymarched 3D worlds shaped by the spectrum, plus the EDM show |
-| Automated checks | — | 72,849 self-test assertions |
+| Automated checks | — | 76,136 self-test assertions |
 
 ## What's next
 
-Everything so far has been verified with automated tests and scripted captures. The next step is real human playtesting: ship feel and balance, THE DROP's difficulty, setlist pacing on a real playlist, the EDM show at full camera effects, and rumble on a real controller.
+Everything so far has been verified with automated tests and scripted captures. The next step is real human playtesting: ship feel and balance, THE DROP's difficulty, how readable the enemies' beat-by-beat movement is in a crowded wave, the EDM show at full camera effects, and rumble on a real controller.
 
 The full history, with every change and screenshot, is in the [CHANGELOG](CHANGELOG.md). Architecture and engineering notes are in [HANDOFF.md](HANDOFF.md).

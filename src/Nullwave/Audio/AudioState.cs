@@ -90,7 +90,7 @@ public sealed class AudioState
     /// <summary>One-frame: the melody moved to a new note.</summary>
     public bool MelodyNoteChanged;
     /// <summary>
-    /// The current "track" for setlists and song records: the Spotify title, the local track (each
+    /// The current "track" for song records and the run recap: the Spotify title, the local track (each
     /// loop counts as a new play), or for the built-in score and untitled system audio a 3-minute chapter.
     /// </summary>
     public string TrackTitle = "";

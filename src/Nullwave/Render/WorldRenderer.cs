@@ -482,8 +482,9 @@ public static class WorldRenderer
 
     private static void DrawEnemyModel(Renderer r, GameWorld w, Enemy e, Vector4 hue, float scale, float flash, float time, AudioState audio)
     {
-        float R = e.Radius * scale * 1.4f;
-        float glow = 0.8f + e.Telegraph * 1.6f + e.Muzzle * 1.4f + w.BeatPulse * 0.25f;
+        // each enemy swells and brightens on its own part of the beat (World.Pocket)
+        float R = e.Radius * scale * 1.4f * (1f + e.Groove * 0.09f);
+        float glow = 0.8f + e.Telegraph * 1.6f + e.Muzzle * 1.4f + w.BeatPulse * 0.1f + e.Groove * 0.7f;
         var mats = MaterialSet.ForHue(hue, glow, flash);
         // lit, hue-tinted bodies instead of near-black ones, so silhouettes read on any backdrop
         mats.Hull = Vector4.Lerp(new Vector4(hue.X * 0.38f + 0.1f, hue.Y * 0.38f + 0.1f, hue.Z * 0.38f + 0.12f, 1f), Vector4.One, flash);

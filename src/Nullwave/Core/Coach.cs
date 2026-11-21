@@ -8,7 +8,7 @@ namespace Nullwave.Core;
 /// <summary>
 /// First-run tutorial and one-time tips. Six short steps teach the core loop (move, fire, dash,
 /// Flow, Phase Sync, Cascade), each finishing when you actually do it; tips explain wells, rails,
-/// bosses, Overdrive and stages the first time they appear. Tab skips the tutorial.
+/// bosses, Overdrive and ships the first time they appear. Tab skips the tutorial.
 /// </summary>
 public sealed class Coach
 {
@@ -115,7 +115,6 @@ public sealed class Coach
             Tip("choir", w.BossEnemy is { Dead: false, SongBoss: false }, "THE CHOIR", "A BOSS. IT CHANGES PHASE AS IT LOSES HEALTH; EACH PHASE BREAK CLEARS ITS BULLETS.");
             Tip("drop", w.BossEnemy is { Dead: false, SongBoss: true }, "THE DROP", "THIS BOSS PLAYS THE SONG: RINGS ON THE KICK, FANS ON THE SNARE, A LASER THAT FOLLOWS THE MELODY. EACH SONG SECTION IS A NEW PHASE.");
             Tip("overdrive", w.IsDropOverdrive, "DROP OVERDRIVE", "THE DROP HIT: FASTER FIRE, MORE DAMAGE AND MORE SCORE FOR A FEW SECONDS.");
-            Tip("stage", w.IsSetlist && w.Stage > 1, "STAGE CLEAR", "A NEW TRACK STARTED: THE FLOOR IS CLEARED AND YOU PICK AN UPGRADE. THE LAST TRACK ENDS WITH THE DROP.");
             Tip("ship_" + w.Ship, w.Ship != World.ShipKind.Classic && w.SessionTime > 1f, World.Ships.Name(w.Ship) + " SHIP", World.Ships.Blurb(w.Ship) + ". HOLD FIRE AND LET THE MUSIC PULL THE TRIGGER.");
         }
         if (_tipTimer > 0f) _tipTimer -= dt;

@@ -15,7 +15,6 @@ public sealed partial class World
     private float _songBossCenter = 64f;
     private double _songBossAudioClock = -1;
     private int _songBossHat;
-    private bool _songBossFinal;
 
     /// <summary>Boss bar title for whichever boss is up.</summary>
     public string BossTitle(Enemy boss, int phases)
@@ -32,8 +31,8 @@ public sealed partial class World
         1 => "I", 2 => "II", 3 => "III", 4 => "IV", 5 => "V", 6 => "VI", 7 => "VII", 8 => "VIII", _ => n.ToString(),
     };
 
-    /// <summary>Spawns THE DROP near the player (wave boss, or the setlist's final boss).</summary>
-    public void SpawnSongBoss(bool final = false)
+    /// <summary>Spawns THE DROP near the player (the boss on every 10th wave).</summary>
+    public void SpawnSongBoss()
     {
         if (BossEnemy is { Dead: false }) return;
         Vector2 pos = ClampToArena(Player.Pos + new Vector2(0f, -520f), 300f);
@@ -41,11 +40,10 @@ public sealed partial class World
         var e = Enemies[^1];
         e.SongBoss = true;
         e.Hue = 0.86f;
-        e.Hp *= final ? 1.15f : 0.9f;
+        e.Hp *= 0.9f;
         e.MaxHp = e.Hp;
-        _songBossFinal = final;
         _songBossHat = 0;
-        EmitEvent(final ? "FINAL BOSS // THE DROP" : "THE DROP // IT PLAYS THE SONG", 3.0f);
+        EmitEvent("THE DROP // IT PLAYS THE SONG", 3.0f);
     }
 
     private void UpdateSongBoss(Enemy e, float dt, AudioState audio)
@@ -137,7 +135,7 @@ public sealed partial class World
         e.Telegraph = 0.4f + audio.PercLow * 0.6f;
     }
 
-    /// <summary>Called when a boss dies: the song boss ends a setlist in victory.</summary>
+    /// <summary>Called when THE DROP dies: its melody laser stops.</summary>
     private void OnSongBossKilled(Enemy e)
     {
         if (_melodyLaser != null)
@@ -146,6 +144,5 @@ public sealed partial class World
             _melodyLaser = null;
         }
         EmitEvent("THE DROP // SILENCED", 3.0f);
-        if (_songBossFinal && FinalStage) CompleteSet();
     }
 }

@@ -12,8 +12,6 @@ public sealed class RunConfig
     public HashSet<string> SelectedModifiers = new();
     public HashSet<string> UnlockedAttunements = new();
     public SoundBank? Sfx;
-    /// <summary>Setlist run: number of tracks (0 = endless).</summary>
-    public int Setlist;
     /// <summary>The instrument ship for this run.</summary>
     public ShipKind Ship;
 }
@@ -34,10 +32,6 @@ public sealed class RunSummary
     public int NoHitWaves;
     public int Movement;
     public string MovementName = "";
-    /// <summary>Setlist runs: the final boss went down.</summary>
-    public bool SetComplete;
-    public int Stages = 1;
-    public int SetlistLength;
     public ShipKind Ship;
     /// <summary>Every track played this run.</summary>
     public List<TrackStat> Tracks = new();
@@ -174,6 +168,10 @@ public sealed partial class World
     public int EighthInBar;
     /// <summary>Phase within the current beat, 0..1.</summary>
     public float BeatPhase;
+    /// <summary>Position within the bar in beats, 0..4 (0 = the downbeat).</summary>
+    public float BarPos;
+    /// <summary>Bars counted on the beat clock (used for movement that spans several bars).</summary>
+    public long BarIndex;
     private int _lastBeatIndex = -1;
     private long _lastEighth = -1;
     private double _beatPos;
@@ -311,7 +309,7 @@ public sealed partial class World
 
         UpdatePlayer(dt, input, audio);
         UpdateRails(dt, audio);
-        UpdateSetlist(dt, audio);
+        UpdateTracks(dt, audio);
         if (Phase != GamePhase.Playing) return;   // a new stage opened its upgrade pick
         Timeline.Sample(this, audio, dt);
         CacheHarmony(audio);
@@ -388,6 +386,7 @@ public sealed partial class World
         if (EighthTick) _lastEighth = eighth;
         EighthInBar = (int)((((eighth - DownbeatOffset * 2) % 8) + 8) % 8);
         BeatPhase = (float)(pos - Math.Floor(pos));
+        SetBarPos(pos);
         float target = Player.Health;
         Player.HealthDisplay = Player.HealthDisplay > target
             ? MathF.Max(target, Player.HealthDisplay - dt * 1.4f)
@@ -406,6 +405,78 @@ public sealed partial class World
     }
 
     private float _beatConfidence = 1f;
+
+    private void SetBarPos(double pos)
+    {
+        double bars = (pos - DownbeatOffset) / 4.0;
+        BarIndex = (long)Math.Floor(bars);
+        BarPos = (float)((bars - Math.Floor(bars)) * 4.0);
+    }
+
+    /// <summary>
+    /// Like <see cref="BeatSurge"/>, but for one part of the bar. <paramref name="pocket"/> is a
+    /// 16-bit mask of the sixteenth notes the motion hits on (bit 0 = the downbeat). The surge
+    /// is sharpest right after each hit and relaxes until the next. Each gap between hits averages
+    /// exactly 1, so an enemy covers the same ground as before, just in the rhythm of its pocket.
+    /// <paramref name="envelope"/> returns 1 on the hit, falling to 0.
+    /// The surge is integrated over the step (<paramref name="dt"/>), splitting it at a hit it crosses,
+    /// so even a sharp sixteenth-note pulse averages exactly 1 at the 60 Hz tick.
+    /// </summary>
+    public float PocketSurge(float dt, ushort pocket, float amplitude, float decayPerBeat, out float envelope)
+    {
+        envelope = 0f;
+        if (pocket == 0) return 1f;
+        var (since, gap) = PocketPhase(pocket, BarPos * 4f);
+        envelope = MathF.Exp(-decayPerBeat * since);
+        float h = MathF.Max(1e-4f, dt * MathF.Max(30f, Bpm) / 60f);
+        float toNext = gap - since;
+        float area;
+        if (h <= toNext)
+        {
+            area = PulseArea(decayPerBeat, gap, since, since + h);
+        }
+        else
+        {
+            float nextS16 = ((BarPos + toNext) * 4f + 0.001f) % 16f;
+            float nextGap = PocketPhase(pocket, nextS16).Gap;
+            area = PulseArea(decayPerBeat, gap, since, gap) +
+                   PulseArea(decayPerBeat, nextGap, 0f, MathF.Min(h - toNext, nextGap));
+        }
+        float a = amplitude * GameSettings.Current.BeatMotion / 100f * _beatConfidence;
+        return MathF.Max(0.08f, 1f + a * area / h);
+    }
+
+    /// <summary>Beats since the pocket's last hit, and the gap (beats) from that hit to the next.</summary>
+    private static (float Since, float Gap) PocketPhase(ushort pocket, float s16)
+    {
+        int cur = Math.Clamp((int)s16, 0, 15);
+        int last = cur;
+        while ((pocket & (1 << last)) == 0) last = (last + 15) % 16;
+        int next = (cur + 1) % 16;
+        while ((pocket & (1 << next)) == 0) next = (next + 1) % 16;
+        return ((s16 - last + 16f) % 16f / 4f, ((next - last + 15) % 16 + 1) / 4f);
+    }
+
+    /// <summary>The integral of (pulse - its mean over the gap) from s0 to s1 beats after a hit.</summary>
+    private static float PulseArea(float decay, float gap, float s0, float s1)
+    {
+        float k = decay * gap;
+        float mean = (1f - MathF.Exp(-k)) / k;
+        return (MathF.Exp(-decay * s0) - MathF.Exp(-decay * s1)) / decay - mean * (s1 - s0);
+    }
+
+    /// <summary>The parts of the bar enemies move on, as sixteenth-note masks (bit 0 = beat 1).</summary>
+    public static class Pocket
+    {
+        public const ushort Downbeat = 0x0001;   // 1
+        public const ushort HalfNotes = 0x0101;  // 1 and 3
+        public const ushort Beats = 0x1111;      // every beat
+        public const ushort Backbeat = 0x1010;   // 2 and 4
+        public const ushort OffBeats = 0x4444;   // every "and"
+        public const ushort Pickups = 0x8888;    // the "a" just before each beat
+        public const ushort Sixteenths = 0xFFFF; // every sixteenth
+        public const ushort AndOfFour = 0x4000;  // the "and" of 4, leading into the bar
+    }
 
     public const float PhaseSyncWindowMs = 65f;
     public const float PhaseSyncMaxPhase = 0.18f;
@@ -428,6 +499,7 @@ public sealed partial class World
         _beatPos = beatPos;
         Bpm = bpm;
         BeatPhase = (float)(beatPos - Math.Floor(beatPos));
+        SetBarPos(beatPos);
         _lastBeatIndex = (int)Math.Floor(beatPos);
         _lastEighth = (long)Math.Floor(beatPos * 2.0);
     }
@@ -445,7 +517,7 @@ public sealed partial class World
         _cueIntensity = intensity;
         _cueBuild = build;
         _cueBreakdown = breakdown;
-        if (drop) { _cueDrop = true; _setlistDropCue = true; Timeline.AddDrop(SessionTime); }
+        if (drop) { _cueDrop = true; Timeline.AddDrop(SessionTime); }
     }
 
     /// <summary>
@@ -944,8 +1016,6 @@ public sealed partial class World
         Timeline.Finish(SessionTime, Score);
         return new RunSummary
         {
-            SetlistLength = SetlistLength,
-            Stages = Stage,
             Ship = Ship,
             Tracks = new List<TrackStat>(Tracks),
             Timeline = Timeline,

@@ -9,7 +9,7 @@ using GameWorld = Nullwave.World.World;
 namespace Nullwave.Tools;
 
 /// <summary>
-/// Self tests for setlist runs, song records, instrument ships, in-key guns, THE DROP, the run recap,
+/// Self tests for song records, instrument ships, in-key guns, THE DROP, the run recap,
 /// rumble, the tutorial and the EDM show.
 /// </summary>
 public static partial class SelfTest
@@ -18,9 +18,9 @@ public static partial class SelfTest
     private static readonly InputFrame FireRight = new(Vector2.Zero, new Vector2(1f, 0f), true, false, false, false);
 
     /// <summary>A world in play, with one enemy far away keeping the wave open.</summary>
-    private static GameWorld LiveWorld(ulong seed, ShipKind ship = ShipKind.Classic, int setlist = 0)
+    private static GameWorld LiveWorld(ulong seed, ShipKind ship = ShipKind.Classic)
     {
-        var w = new GameWorld(new RunConfig { Seed = seed, Ship = ship, Setlist = setlist });
+        var w = new GameWorld(new RunConfig { Seed = seed, Ship = ship });
         w.StartGrace = 0f;
         w.Player.InvincibleDemo = true;
         w.BeginWave(1);
@@ -43,34 +43,162 @@ public static partial class SelfTest
     private static void KillForTest(GameWorld w, Enemy e) =>
         typeof(GameWorld).GetMethod("KillEnemy", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(w, [e]);
 
-    /// <summary>Setlists: each new track is a stage with an upgrade; the last one ends with THE DROP; beating it wins.</summary>
-    private static void TestSetlistRuns()
+    /// <summary>Each enemy role moves on its own part of the bar, and the rhythm never changes its average speed.</summary>
+    private static void TestBeatPockets()
     {
-        var w = LiveWorld(0x5E71UL, setlist: 2);
-        var a = new AudioState { Bpm = 120f, TrackTitle = "ARTIST - FIRST", TrackIsSong = true, TrackIndex = 1 };
-        Play(w, a, 30, InputFrame.Empty);
-        Check(w.IsSetlist && w.Stage == 1 && !w.FinalStage, "a setlist starts on stage 1");
-        Check(w.Tracks.Count == 1 && w.CurrentTrack!.Title == "ARTIST - FIRST", "the first track is followed");
-        a.TrackIndex = 2;
-        a.TrackTitle = "ARTIST - SECOND";
-        Play(w, a, 2, InputFrame.Empty);
-        Check(w.Stage == 2 && w.FinalStage, "a new track is the next stage");
-        Check(w.Tracks.Count == 2 && w.Tracks[0].Complete && w.CompletedTrackVersion == 1, "the finished track is closed for its record");
-        Check(w.Phase == GamePhase.Attuning, "clearing a stage offers an upgrade");
-        w.ChooseAttunement(0);
-        for (int i = 0; i < 1200 && w.Phase != GamePhase.Playing; i++) Play(w, a, 1, InputFrame.Empty);
-        Check(w.Phase == GamePhase.Playing, "play resumes after the pick");
-        Check(w.BossEnemy is not { Dead: false }, "no final boss before the drop");
-        w.SetMusicCue(0.95f, 0f, 0f, true);
-        Play(w, a, 2, InputFrame.Empty);
-        var boss = w.BossEnemy;
-        Check(boss is { SongBoss: true, Dead: false }, "the final track's drop brings THE DROP");
-        RunSummary? summary = null;
-        w.RunEnded += s => summary = s;
-        KillForTest(w, boss!);
-        Check(w.SetComplete && w.Phase == GamePhase.Dead, "beating the final boss ends the run in victory");
-        Check(summary is { SetComplete: true } && summary.Tracks.Count == 2 && summary.Stages == 2, "the summary lists the set");
-        Console.WriteLine($"  setlist: stage {w.Stage}/{w.SetlistLength}, tracks={w.Tracks.Count}, set complete={w.SetComplete}");
+        int savedMotion = GameSettings.Current.BeatMotion;
+        GameSettings.Current.BeatMotion = 100;
+        try
+        {
+            // the surge itself: averages 1 over the bar and peaks on the pocket's own sixteenths
+            var clock = new GameWorld(new RunConfig { Seed = 0xB0C7UL });
+            var pockets = new (string Name, ushort Mask, float Amp, float Decay)[]
+            {
+                ("downbeat", GameWorld.Pocket.Downbeat, 4f, 1.6f), ("off-beats", GameWorld.Pocket.OffBeats, 1.8f, 7f),
+                ("pickups", GameWorld.Pocket.Pickups, 2f, 9f), ("backbeat", GameWorld.Pocket.Backbeat, 1.2f, 4f),
+                ("and of 4", GameWorld.Pocket.AndOfFour, 6f, 3f), ("sixteenths", GameWorld.Pocket.Sixteenths, 1.6f, 16f),
+            };
+            foreach (var (name, mask, amp, decay) in pockets)
+            {
+                double sum = 0;
+                float best = 0f;
+                int bestSixteenth = -1;
+                const int steps = 4 * 4 * 30; // the game's 60 Hz tick at 120 BPM: 1/30 beat per step
+                for (int i = 0; i < steps; i++)
+                {
+                    clock.SetBeatClockForTest(8.0 + i / 30.0);
+                    float s = clock.PocketSurge(Dt, mask, amp, decay, out float env);
+                    sum += s;
+                    if (s > best) { best = s; bestSixteenth = StepSixteenth(clock.BarPos); }
+                    Check(env >= 0f && env <= 1f && float.IsFinite(s) && s > 0f, "the " + name + " surge stays positive");
+                }
+                Check(Math.Abs(sum / steps - 1.0) < 0.01, "the " + name + " surge keeps the average speed");
+                Check((mask & (1 << bestSixteenth)) != 0, "the " + name + " surge peaks on its own sixteenth");
+            }
+            clock.SetBeatClockForTest(8.5);
+            Check(clock.PocketSurge(Dt, 0, 3f, 4f, out _) == 1f, "no pocket, no surge");
+
+            // in play: how fast each role covers ground through the bar
+            var roleTests = new (EnemyRole Role, ushort Mask)[]
+            {
+                (EnemyRole.Splitter, GameWorld.Pocket.Downbeat), (EnemyRole.Drifter, GameWorld.Pocket.OffBeats),
+                (EnemyRole.Orbiter, GameWorld.Pocket.Pickups), (EnemyRole.Sniper, GameWorld.Pocket.AndOfFour),
+            };
+            var peaks = new List<string>();
+            foreach (var (role, mask) in roleTests)
+            {
+                var (w, e, a) = PocketWorld(role, 1100f);
+                var bucket = new double[16];
+                var count = new int[16];
+                for (int i = 0; i < 60 * 6; i++)
+                {
+                    Vector2 before = e.Pos;
+                    StepPocket(w, a);
+                    float moved = (e.Pos - before).Length();
+                    float vel = e.Vel.Length();
+                    if (e.Dead || vel < 20f || moved > 120f || M.Dist(e.Pos, w.Player.Pos) < 200f) continue;
+                    int k = StepSixteenth(w.BarPos);
+                    bucket[k] += moved / (vel * Dt);
+                    count[k]++;
+                }
+                int top = 0;
+                for (int k = 1; k < 16; k++)
+                    if (count[k] > 0 && (count[top] == 0 || bucket[k] / count[k] > bucket[top] / count[top])) top = k;
+                Check(count[top] > 0 && (mask & (1 << top)) != 0, role + " moves hardest on its own part of the bar");
+                peaks.Add(role + "@" + top);
+            }
+
+            // POUNCER lunges only on 2 and 4
+            {
+                var (w, e, a) = PocketWorld(EnemyRole.Dasher, 520f);
+                int lunges = 0, offBeat = 0, last = e.State;
+                for (int i = 0; i < 60 * 8; i++)
+                {
+                    StepPocket(w, a);
+                    if (e.State == 2 && last != 2)
+                    {
+                        lunges++;
+                        int beat = (int)w.BarPos;
+                        if ((beat != 1 && beat != 3) || w.BarPos - beat > 0.25f) offBeat++;
+                    }
+                    last = e.State;
+                }
+                Check(lunges >= 2 && offBeat == 0, "POUNCER lunges on the backbeat");
+            }
+            // BLINKER teleports only on 1 and 3
+            {
+                var (w, e, a) = PocketWorld(EnemyRole.Phantom, 900f);
+                int blinks = 0, wrong = 0;
+                for (int i = 0; i < 60 * 8; i++)
+                {
+                    Vector2 before = e.Pos;
+                    StepPocket(w, a);
+                    if ((e.Pos - before).Length() < 150f) continue;
+                    blinks++;
+                    int beat = (int)w.BarPos;
+                    if ((beat != 0 && beat != 2) || w.BarPos - beat > 0.25f) wrong++;
+                }
+                Check(blinks >= 4 && wrong == 0, "BLINKER blinks on beats 1 and 3");
+            }
+            // HOPPER leaps on every beat
+            {
+                var (w, e, a) = PocketWorld(EnemyRole.Turret, 1300f);
+                int leaps = 0, wrong = 0;
+                for (int i = 0; i < 60 * 6; i++)
+                {
+                    float v0 = e.Vel.Length();
+                    StepPocket(w, a);
+                    if (e.Vel.Length() < v0 + 150f) continue;
+                    leaps++;
+                    if (w.BarPos - MathF.Floor(w.BarPos) > 0.25f) wrong++;
+                }
+                Check(leaps >= 8 && wrong == 0, "HOPPER leaps on each beat");
+            }
+            // SIEGE marches on 1 and 2 and plants on 3 and 4
+            {
+                var (w, e, a) = PocketWorld(EnemyRole.Mortar, 1500f);
+                double march = 0, plant = 0;
+                for (int i = 0; i < 60 * 8; i++)
+                {
+                    Vector2 before = e.Pos;
+                    StepPocket(w, a);
+                    float moved = (e.Pos - before).Length();
+                    int beat = (int)w.BarPos;
+                    if (beat == 1) march += moved;
+                    else if (beat == 3) plant += moved;
+                }
+                Check(march > plant * 3.0 && march > 0, "SIEGE marches in the first half of the bar and plants in the second");
+            }
+            Console.WriteLine("  beat pockets: surges average 1.00, peaks " + string.Join(" ", peaks) + ", lunges on 2/4, blinks on 1/3, leaps on beats");
+        }
+        finally
+        {
+            GameSettings.Current.BeatMotion = savedMotion;
+        }
+    }
+
+    /// <summary>A quiet world at 120 BPM with one enemy of <paramref name="role"/> placed away from the player.</summary>
+    private static (GameWorld World, Enemy Enemy, AudioState Audio) PocketWorld(EnemyRole role, float distance)
+    {
+        var w = new GameWorld(new RunConfig { Seed = 0x9A0C7UL });
+        w.StartGrace = 0f;
+        w.Player.InvincibleDemo = true;
+        w.BeginWave(1);
+        w.ClearSpawnQueueForCapture();
+        w.SpawnForCapture(role, w.Player.Pos + new Vector2(distance, 0f));
+        var e = w.Enemies[^1];
+        return (w, e, new AudioState { Bpm = 120f });
+    }
+
+    /// <summary>The sixteenth a 60 Hz step at 120 BPM ends in: the surge covers the whole step, so a step
+    /// that crosses a hit carries that hit's push.</summary>
+    private static int StepSixteenth(float barPos) => (int)((barPos + 1f / 30f) * 4f) % 16;
+
+    private static void StepPocket(GameWorld w, AudioState a)
+    {
+        a.Time += Dt;
+        a.BeatPosition += Dt * a.Bpm / 60.0;
+        w.Step(Dt, a, InputFrame.Empty);
     }
 
     /// <summary>Song records: ranks, bests across plays, and only real songs played long enough count.</summary>
@@ -220,9 +348,10 @@ public static partial class SelfTest
         a.KickHit = true; Play(w, a, 1, InputFrame.Empty); a.KickHit = false;
         Check(w.EnemyBullets.Count <= n0, "it holds fire while the phase breaks");
         Play(w, a, 75, InputFrame.Empty);
-        n0 = w.EnemyBullets.Count;
+        // count only what this kick fires: older bullets expiring in the same step would hide some
+        for (int i = w.EnemyBullets.Count - 1; i >= 0; i--) w.ReturnBullet(w.EnemyBullets, i);
         a.KickHit = true; Play(w, a, 1, InputFrame.Empty); a.KickHit = false;
-        int denser = w.EnemyBullets.Count - n0;
+        int denser = w.EnemyBullets.Count;
         Check(denser >= 16, "later phases fire denser rings");
         int lasers = w.Lasers.Count;
         a.MelodyConfidence = 0.9f; a.MelodyPitch = 67f;
@@ -295,25 +424,23 @@ public static partial class SelfTest
     /// <summary>The EDM show: build-up and drop effects, settings, flashing limits, and aim under the camera roll.</summary>
     private static void TestEdmShow()
     {
-        var off = Renderer.EdmFxFor(0f, 0.0, 1f, 1f, 0f, 1f, 0.01f, 0f, 0f, false);
-        Check(off.Laser == 0f && off.Kaleido == 0f && off.HueStep == 0f && off.Pump == 0f && off.Strobe == 0f, "MUSIC FX 0% turns the show off");
+        var off = Renderer.EdmFxFor(0f, 0.0, 1f, 1f, 0.01f, 0f, 0f, false);
+        Check(off.Kaleido == 0f && off.HueStep == 0f && off.Pump == 0f && off.Strobe == 0f, "MUSIC FX 0% turns the show off");
         Check(off.Vertigo == 0f && off.Dive == 0f && off.CamKick == 0f && off.Roll == 0f && off.Letterbox == 0f, "CAMERA FX 0% keeps the camera still");
 
-        var calm = Renderer.EdmFxFor(1000f, 10.5, 0.5f, 0f, 0f, 0f, 0f, 1f, 1f, false);
-        var build = Renderer.EdmFxFor(1000f, 10.5, 0.5f, 0.95f, 0f, 0f, 0f, 1f, 1f, false);
+        var calm = Renderer.EdmFxFor(1000f, 10.5, 0f, 0f, 0f, 1f, 1f, false);
+        var build = Renderer.EdmFxFor(1000f, 10.5, 0.95f, 0f, 0f, 1f, 1f, false);
         Check(calm.Kaleido == 0f && calm.Letterbox == 0f && calm.Vertigo == 0f, "no build-up, no build-up effects");
         Check(build.Kaleido > 0.7f && build.Letterbox > 0.05f && build.Vertigo > 0.9f, "a build-up folds the world, lifts the camera and closes the bars");
 
-        var hit = Renderer.EdmFxFor(0.02f, 64.02, 0.8f, 0f, 0f, 0f, 0f, 1f, 1f, false);
-        var later = Renderer.EdmFxFor(3f, 67.0, 0.8f, 0f, 0f, 0f, 0f, 1f, 1f, false);
-        var gone = Renderer.EdmFxFor(20f, 84.0, 0.8f, 0f, 0f, 0f, 0f, 1f, 1f, false);
+        var hit = Renderer.EdmFxFor(0.02f, 64.02, 0f, 0f, 0f, 1f, 1f, false);
+        var later = Renderer.EdmFxFor(3f, 67.0, 0f, 0f, 0f, 1f, 1f, false);
+        var gone = Renderer.EdmFxFor(20f, 84.0, 0f, 0f, 0f, 1f, 1f, false);
         Check(hit.Dive > 0.35f && later.Dive < 0.05f, "the drop slams the camera in and it eases back");
         Check(hit.Strobe > 0f && gone.Strobe == 0f, "the drop pulses only in its first bar");
-        Check(Renderer.EdmFxFor(0.5f, 64.5, 0.8f, 0f, 0f, 0f, 0f, 1f, 1f, false).Strobe == 0f, "the pulse sits on the beat");
+        Check(Renderer.EdmFxFor(0.5f, 64.5, 0f, 0f, 0f, 1f, 1f, false).Strobe == 0f, "the pulse sits on the beat");
         Check(hit.Pump > 0.8f && gone.Pump == 0f && gone.HueStep == 0f, "pump and hue steps last four bars");
-        Check(hit.Laser >= later.Laser && hit.Laser > gone.Laser, "lasers flare on the drop");
         Check(MathF.Abs(hit.Roll) > 0.03f && MathF.Abs(gone.Roll) < 0.001f, "the drop rocks the frame, then it settles");
-        Check(Renderer.EdmFxFor(1000f, 1.0, 0.9f, 0f, 1f, 0f, 0f, 1f, 1f, false).Laser == 0f, "breakdowns turn the lasers off");
 
         // photosensitivity: at 174 BPM the drop pulses at most 4 times, under 3 per second
         int pulses = 0, firstSecond = 0;
@@ -321,16 +448,16 @@ public static partial class SelfTest
         for (int i = 0; i < 480; i++)
         {
             double beats = i / 240.0 * 174.0 / 60.0;
-            bool s = Renderer.EdmFxFor((float)beats, 100.0 + beats, 0.8f, 0f, 0f, 0f, 0f, 1.4f, 1.5f, false).Strobe > 0f;
+            bool s = Renderer.EdmFxFor((float)beats, 100.0 + beats, 0f, 0f, 0f, 1.4f, 1.5f, false).Strobe > 0f;
             if (s && !on) { pulses++; if (i < 240) firstSecond++; }
             on = s;
         }
         Check(pulses <= 4 && firstSecond <= 3, "the drop never strobes faster than 3 Hz");
-        var safe = Renderer.EdmFxFor(0.02f, 64.02, 0.8f, 0.95f, 0f, 0f, 0f, 1f, 1f, true);
+        var safe = Renderer.EdmFxFor(0.02f, 64.02, 0.95f, 0f, 0f, 1f, 1f, true);
         Check(safe.Strobe == 0f && safe.HueStep == 0f && safe.Kaleido < build.Kaleido, "REDUCE FLASHING drops the pulse and hue steps and softens the rest");
 
-        var nan = Renderer.EdmFxFor(float.NaN, double.NaN, float.NaN, float.NaN, float.NaN, float.NaN, float.NaN, float.NaN, float.NaN, false);
-        Check(float.IsFinite(nan.Laser + nan.Kaleido + nan.Vertigo + nan.Dive + nan.CamKick + nan.HueStep + nan.Pump + nan.Strobe + nan.Roll + nan.Letterbox),
+        var nan = Renderer.EdmFxFor(float.NaN, double.NaN, float.NaN, float.NaN, float.NaN, float.NaN, float.NaN, false);
+        Check(float.IsFinite(nan.Kaleido + nan.Vertigo + nan.Dive + nan.CamKick + nan.HueStep + nan.Pump + nan.Strobe + nan.Roll + nan.Letterbox),
             "bad input stays finite");
 
         // aim under the roll: the mouse maps through the same transform the composite uses

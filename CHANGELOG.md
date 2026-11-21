@@ -4,7 +4,37 @@ All notable gameplay, rendering, audio-intelligence, and UI updates to **NULLWAV
 
 ---
 
-## Latest Updates — Cyber-Tribal Ship & Pylons, Reliable Dash Taps, Dash Meter, Chain Timer & New Title Screen
+## Latest Updates — Enemies on the Beat; Setlist Runs and Stage Lasers Removed
+
+### Gameplay
+- **Every enemy moves on its own part of the beat.** Each role has a rhythmic "pocket", and its movement surges on that part of the bar and coasts in between:
+  - **Juggernaut** (splitter): the downbeat, one heavy lurch per bar.
+  - **Blinker** (phantom): half notes, teleporting on beats 1 and 3.
+  - **Hopper** (turret): every beat, leaping.
+  - **Pouncer** (dasher): the backbeat, lunging on 2 or 4 after it braces.
+  - **Hunter** (drifter): the off-beats, darting on every "and".
+  - **Spiraller** (orbiter): the pickups, whipping round on the "a" before each beat.
+  - **Pack** (swarm): sixteenths, skittering in short steps.
+  - **Stalker** (sniper): the "and" of 4, holding its aim through the bar and jumping to your other side on the pickup into the next.
+  - **Siege** (mortar): the half bar, marching on 1–2 and planting on 3–4.
+  - **Serpent** (weaver): beat to beat, its S-curve crossing your line on every beat and swinging widest on the "and".
+  - **Sentinel** (prism): the bar, a quarter turn around you per bar that eases into each downbeat.
+- Enemies swell and brighten slightly on their own hits, so the pattern is readable in a crowded wave.
+- Each pocket's surge averages exactly 1 over the bar (integrated over every 60 Hz step), so chase speeds and difficulty are unchanged. `BEAT MOTION` still scales the effect, and 0 % turns it off.
+- **Setlist runs removed:** the `SETLIST` title entry, `SETTINGS > AUDIO > SETLIST LENGTH`, stages, stage bonuses, the final-boss victory and the stage tip are gone. THE DROP still arrives as the boss on every 10th wave, and song records and the run recap still track each song you play.
+
+### Rendering
+- **Stage lasers removed** from the EDM show: the fans of beams under the map are gone. The build-up kaleidoscope, letterbox, camera dive, drop pulse, hue steps and pump remain, and the in-arena Song Lasers (STARBURST, SCAN, GATE, CROSS) are unchanged.
+
+### Tools & Tests
+- New beat-pocket self-test: every surge averages 1 at the game's tick and peaks on its own sixteenth. In play, the Juggernaut, Hunter, Spiraller and Stalker move hardest on their own part of the bar, Pouncers lunge only on 2 and 4, Blinkers teleport only on 1 and 3, Hoppers leap on each beat, and Siege marches then plants. The song-boss ring test now counts only the ring it fires. **76,136 assertions**.
+- New boss, EDM show and THE DROP reels in `docs/media`.
+
+![Every enemy type in the roster capture](docs/screenshots/beat_pockets_roster.png)
+
+---
+
+## Cyber-Tribal Ship & Pylons, Reliable Dash Taps, Dash Meter, Chain Timer & New Title Screen
 
 ### Rendering — cyber-tribal models
 - **Atlas-mapped player ship and pylons:** the ship and pylons are now UV-mapped OBJ models (`Assets/Models/player.obj`, `pylon.obj`, described in `model_manifest.json`) that share one 1024×1024 material atlas: **albedo, normal, roughness and emissive** maps in three bands (dark carbon/titanium plating, bone and bronze, neon sigils in cyan, amber and magenta). Every other model is still built in code.

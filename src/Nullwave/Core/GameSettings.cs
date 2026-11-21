@@ -26,8 +26,6 @@ public sealed class GameSettings
     public bool BufferSpotify { get; set; } = true;
     /// <summary>Kills and hits play notes in the song's key.</summary>
     public bool InKeySounds { get; set; } = true;
-    /// <summary>Tracks in a setlist run.</summary>
-    public int SetlistTracks { get; set; } = 4;
     /// <summary>Gamepad rumble on the kick and bass (percent).</summary>
     public int Rumble { get; set; } = 80;
     /// <summary>Keep the last seconds of play so the best moment can be saved as a clip.</summary>

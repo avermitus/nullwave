@@ -109,9 +109,8 @@ uniform vec3 uPerc;
 uniform vec3 uHarm;
 uniform float uChordShift;
 uniform float uBright;
-// EDM show (Renderer.EdmFxFor): stage lasers, kaleidoscope through build-ups, the camera lifting
-// away through a build and slamming down on the drop, beat-stepped hue, a beat-locked pump, strobe
-uniform float uLaserShow;
+// EDM show (Renderer.EdmFxFor): kaleidoscope through build-ups, the camera lifting away through a
+// build and slamming down on the drop, beat-stepped hue, a beat-locked pump, strobe
 uniform float uKaleido;
 uniform float uVertigo;
 uniform float uDive;
@@ -460,43 +459,6 @@ vec3 atmosphere(int kind, vec3 ro, vec3 rd, float tHit) {
     return acc;
 }
 
-// ================================================================ stage lasers
-// A festival rig under the map: emitters on a jittered grid fixed to the world fire fans of thin
-// beams up out of the depths. Every beat a new random set lights up and the fans snap to new angles.
-// The beams fade out well before the arena plane, so they stay behind the fight.
-vec3 stageLasers(vec3 ro, vec3 rd, float tHit) {
-    vec3 acc = vec3(0.0);
-    const float cell = 9.0;
-    vec2 base = floor(ro.xy / cell);
-    for (int cx = -1; cx <= 1; cx++)
-    for (int cy = -1; cy <= 1; cy++) {
-        vec2 id = base + vec2(float(cx), float(cy));
-        if (hash21(id + vec2(BEAT_I * 0.37, BEAT_I * 0.71)) < 0.25) continue;
-        vec3 E = vec3((id + 0.2 + 0.6 * hash22(id + 23.1)) * cell, -2.6);
-        float h = hash21(id * 1.7);
-        float baseAng = h * 6.2832 + SNAP * 0.7854 * (h > 0.5 ? 1.0 : -1.0);
-        float spread = 0.22 + 0.12 * sin(uFlow * 0.5 + h * 7.0);
-        vec3 beamCol = pal(h * 0.6 + 0.1);
-        vec3 w0 = ro - E;
-        for (int k = 0; k < 4; k++) {
-            float ang = baseAng + (float(k) - 1.5) * spread;
-            vec3 D = normalize(vec3(cos(ang) * 0.55, sin(ang) * 0.55, 1.0));
-            // closest approach between the view ray (up to the world surface) and the beam
-            float bb = dot(rd, D), dd = dot(rd, w0), ee = dot(D, w0);
-            float den = max(1.0 - bb * bb, 1e-4);
-            float len = (-0.2 - E.z) / D.z;
-            float s = clamp((bb * ee - dd) / den, 0.0, tHit);
-            float t = clamp((ee - bb * dd) / den, 0.0, len);
-            vec3 q = ro + rd * s - (E + D * t);
-            float d2 = dot(q, q);
-            float z = E.z + D.z * t;
-            float fade = smoothstep(0.0, 0.05 * len, t) * (1.0 - smoothstep(-1.4, -0.15, z));
-            acc += beamCol * (exp(-d2 * 500.0) * 1.1 + exp(-d2 * 24.0) * 0.07) * fade;
-        }
-    }
-    return acc * (0.55 + HOP * 0.8 + PERC.z * 0.3);
-}
-
 vec3 renderWorld(int g, int atmo, vec4 a, vec4 b, vec3 po, vec3 pf, vec4 glob, vec3 ro, vec3 rd) {
     PO = po; PF = pf; GA = a; GB = b; GG = glob;
     vec3 fogC = vec3(0.018, 0.033, 0.067) + pal(0.7 + GB.w) * (0.022 + SB * 0.042 + uDrop * 0.05);
@@ -527,7 +489,6 @@ vec3 renderWorld(int g, int atmo, vec4 a, vec4 b, vec3 po, vec3 pf, vec4 glob, v
         }
     }
     col += atmosphere(atmo, ro, rd, t);
-    if (uLaserShow > 0.01) col += stageLasers(ro, rd, t) * uLaserShow;
     return col;
 }
 

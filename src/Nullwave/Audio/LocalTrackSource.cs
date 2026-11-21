@@ -18,7 +18,7 @@ public sealed class LocalTrackSource : ISampleProvider, IDisposable
 
     public string FilePath { get; }
     public string TrackName { get; }
-    /// <summary>How many times the track has wrapped around (each loop is a new "track" for setlists).</summary>
+    /// <summary>How many times the track has wrapped around (each loop is a new "track" for song records).</summary>
     public volatile int LoopCount;
     public WaveFormat WaveFormat => _format;
 

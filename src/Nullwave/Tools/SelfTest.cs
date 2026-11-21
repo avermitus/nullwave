@@ -59,11 +59,11 @@ public static partial class SelfTest
             TestMusicAnalysis();
             TestMusicToWorlds();
             TestEnemiesChase();
+            TestBeatPockets();
             TestMelodyPitch();
             TestGravityWells();
             TestMelodyRails();
             TestLiveStreamBuffer();
-            TestSetlistRuns();
             TestSongRecords();
             TestInstrumentShips();
             TestInKeyNotes();

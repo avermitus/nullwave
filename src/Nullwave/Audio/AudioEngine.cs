@@ -276,7 +276,7 @@ public sealed class AudioEngine : IDisposable
         UpdateTrack(Math.Clamp(dt, 0.0005f, 0.1f));
     }
 
-    /// <summary>Works out which track is playing and flags a new one (setlists, song records).</summary>
+    /// <summary>Works out which track is playing and flags a new one (song records, run recap).</summary>
     private void UpdateTrack(float dt)
     {
         string title, key;

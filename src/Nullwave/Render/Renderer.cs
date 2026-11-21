@@ -144,19 +144,19 @@ public sealed class Renderer : IDisposable
     /// <summary>Frames rendered so far (captures start their scripts on the first one).</summary>
     public long RenderedFrames { get; private set; }
 
-    /// <summary>What the EDM show does this frame: background lasers, kaleidoscope, camera lift and dive,
-    /// kick dip, hue steps, pump and strobe; camera roll and letterbox in the composite.</summary>
-    public readonly record struct EdmFx(float Laser, float Kaleido, float Vertigo, float Dive, float CamKick,
+    /// <summary>What the EDM show does this frame: kaleidoscope, camera lift and dive, kick dip, hue steps,
+    /// pump and strobe; camera roll and letterbox in the composite.</summary>
+    public readonly record struct EdmFx(float Kaleido, float Vertigo, float Dive, float CamKick,
         float HueStep, float Pump, float Strobe, float Roll, float Letterbox);
 
     /// <summary>
     /// The EDM show for a frame. <paramref name="dropBeats"/> is beats since the last drop. Build-ups fold the
     /// world into a kaleidoscope, lift the camera away and close letterbox bars; the drop slams the camera
     /// down, pulses its first bar on the beat, steps the hue every beat and pumps for four bars.
-    /// Lasers follow the loudness and go dark in breakdowns. musicFx scales the show, camFx the camera
-    /// moves; reduceFlashing removes the strobe and hue steps and halves the rest.
+    /// musicFx scales the show, camFx the camera moves; reduceFlashing removes the strobe and hue steps
+    /// and halves the rest.
     /// </summary>
-    public static EdmFx EdmFxFor(float dropBeats, double beatPos, float energy, float build, float breakdown,
+    public static EdmFx EdmFxFor(float dropBeats, double beatPos, float build,
         float overdrive, float snareRoll, float musicFx, float camFx, bool reduceFlashing)
     {
         static float Fin(float v, float fallback) => float.IsFinite(v) ? v : fallback;
@@ -170,12 +170,10 @@ public sealed class Renderer : IDisposable
         float since = Math.Clamp(Fin(dropBeats, 1000f), 0f, 1000f);
         if (!double.IsFinite(beatPos)) beatPos = 0.0;
         float window = since < 16f ? 1f - since / 16f : 0f;   // the drop's first four bars
-        float calm = 1f - Math.Clamp(Fin(breakdown, 0f), 0f, 1f);
         float b = Math.Clamp(Fin(build, 0f), 0f, 1f);
         float od = Math.Clamp(Fin(overdrive, 0f), 0f, 1f);
         float safe = reduceFlashing ? 0.5f : 1f;
 
-        float laser = Math.Clamp((Fin(energy, 0f) - 0.35f) * 1.6f + window * 0.9f + od * 0.6f, 0f, 1.2f) * show * calm;
         float kaleido = Ss(0.25f, 0.85f, b) * 0.85f * showC * safe;
         float vertigo = Ss(0.1f, 1f, b) * camC;
         float dive = 0.42f * MathF.Exp(-since * 1.1f) * camC;
@@ -190,7 +188,7 @@ public sealed class Renderer : IDisposable
         // the drop rocks the frame left and right on the beat, settling over a couple of bars
         float roll = (0.05f * MathF.Exp(-since * 0.8f) * MathF.Cos(since * MathF.PI) + Fin(snareRoll, 0f)) * cam * safe;
         float letterbox = Ss(0.2f, 0.9f, b) * 0.06f * camC;
-        return new EdmFx(laser, kaleido, vertigo, dive, camKick, hue, pump, strobe, roll, letterbox);
+        return new EdmFx(kaleido, vertigo, dive, camKick, hue, pump, strobe, roll, letterbox);
     }
 
     /// <summary>Where the composite samples the scene for a screen point (0..1, y down): undoes the camera roll.</summary>
@@ -660,8 +658,8 @@ public sealed class Renderer : IDisposable
         // a slam, strobe, hue steps and pump on drops; snares nudge the roll left and right
         if (audio.SnareHit) _snareRoll = _snareRoll > 0f ? -0.01f : 0.01f;
         _snareRoll *= MathF.Exp(-frameDt * 6f);
-        var edm = EdmFxFor((float)Math.Min(1000.0, beatPos - _dropBeat), beatPos, audio.Energy, mood?.Build ?? 0f,
-            mood?.Breakdown ?? 0f, overdriveEff, _snareRoll, fx, settings.CameraFx / 100f, settings.ReduceFlashing);
+        var edm = EdmFxFor((float)Math.Min(1000.0, beatPos - _dropBeat), beatPos, mood?.Build ?? 0f,
+            overdriveEff, _snareRoll, fx, settings.CameraFx / 100f, settings.ReduceFlashing);
         LastEdmFx = edm;
         int live = 0;
         for (int i = 0; i < _waveCount; i++)
@@ -686,7 +684,6 @@ public sealed class Renderer : IDisposable
         _chordShift = M.ExpSmooth(_chordShift, chordTarget, 3.5f, frameDt);
         _background.SetFloat("uChordShift", _chordShift);
         _background.SetFloat("uBright", audio.Brightness);
-        _background.SetFloat("uLaserShow", edm.Laser);
         _background.SetFloat("uKaleido", edm.Kaleido);
         _background.SetFloat("uVertigo", edm.Vertigo);
         _background.SetFloat("uDive", edm.Dive);

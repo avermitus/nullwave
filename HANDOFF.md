@@ -56,6 +56,7 @@ Pre-change sources are backed up at `_backup/Nullwave-pre-v2/` (there is still n
 | Music understanding (V13) | `Audio/MusicAnalyzer.cs`: HPSS (drums vs. melody, `PercLow..High`/`HarmLow..High`), chroma → chord (`ChordRoot/Minor`) and key (`Key`), timbre (`Brightness`, `TextureChanged`), beat-synchronous structure (`SectionChanged/Label/Repeat`, per `SongEpoch`). Renderer: `uPerc`/`uHarm`/`uChordShift`/`uBright`; `SectionWorldMemory` brings a section's world back when it repeats. Sections: first-beat nearest-twin novelty on a kick-aligned grid; buffered sources run a second `MusicAnalyzer` on `LookaheadAudioBuffer.CopyAheadWindow` and fire at the boundary's audio frame. Galaga arrivals / screen-holding enemies were reverted (owner: unplayable). See `.game-studio/tasks/TASK-017.md`. | `Audio/MusicAnalyzer.cs`, `Audio/AudioEngine.cs`, `Render/SectionWorldMemory.cs` |
 | Music-shaped 3D worlds + Spotify buffer (V12) | Backdrop = raymarched organic world under the arena seen through the game camera (`uCam`/`uView`/`uOblique`): 6 worlds × 4 atmospheres, geometry driven by `uSpec[16]` (Renderer.ComputeBackdropSpectrum), `uBeatPos`, world-anchored `uWaves`; readability pools `uFocus[16]` under ship/enemies. Spotify buffer: `AppAudioRouter` (undocumented AudioPolicyConfig, as EarTrumpet) routes Spotify to a silent output, `LiveStreamSource` feeds the 0.75 s `LookaheadAudioBuffer`; routing undone on switch/exit/crash. See `.game-studio/tasks/TASK-015.md`, `TASK-016.md`. | `Shaders.BackgroundFrag`, `Audio/AppAudioRouter.cs`, `Audio/AudioEngine.cs` |
 | Atlas models + polish pass (V15) | Player and pylon load from `Assets/Models/*.obj` via Silk.NET.Assimp (`AtlasAssets.LoadMesh`) with a shared 1024² atlas (`Assets/Textures/{Albedo,Normal,Roughness,Emissive}.png`, StbImageSharp, copied to the output by the csproj). Mesh vertices carry UVs; `vUV.x < 0` means untextured, so procedural meshes are unaffected. `MeshFrag` builds tangents from derivatives and folds roughness/emissive into the polish pass's key/fill lighting. Atlas recipe: `tools/generate_cyber_tribal_atlas.py`, `tools/Prompts/`, Sogni client in `tools/AssetPipeline`. Input: `PlayerActionBuffer` holds dash/burst edges until a tick that updates the player (`Game.StepPlaying`, `World.WillUpdatePlayer`), cleared on any phase change. HUD: dash meter, chain drain bar (`World.ComboDuration` = 4.1 s), cached modifier caption, redesigned title with mouse hover/click. | `Render/AtlasAssets.cs`, `Render/Models.cs`, `Shaders.MeshFrag`, `Core/InputState.cs`, `Core/Game.cs`, `UI/Screens.cs` |
+| Beat pockets (V16) | `World.BarPos`/`BarIndex` (bar position on the beat clock, downbeat-aligned). `World.PocketSurge(dt, mask, amp, decay, out envelope)`: a speed multiplier that surges on the sixteenths in a 16-bit `Pocket` mask and relaxes until the next hit. It is integrated exactly over each step (split at a hit it crosses), so each gap averages 1 and chase speed is unchanged. Roles in `UpdateEnemyBrain`: Juggernaut `Downbeat`, Hunter `OffBeats`, Spiraller `Pickups`, Stalker `AndOfFour` (also flips side each bar), Pouncer `Backbeat` (lunge waits for a `BeatTick` on 2/4), Pack `Sixteenths`, Hopper every beat, Blinker beats 1/3, Siege half bar, Serpent `sin(pi*BarPos)` swing, Sentinel quarter turn per bar. `Enemy.Groove` (the envelope) swells and brightens the model. Setlist runs (`World.Setlist.cs` → `World.Tracks.cs`, per-track stats only) and the EDM stage lasers were removed. Test: `TestBeatPockets`. | `World/World.cs`, `World/World.Enemies.cs`, `Render/WorldRenderer.cs` |
 | Tests | New suites: model mesh validity, beat-grid firing (0 off-grid volleys), layouts, health display. New capture scenario `hurt`. | `Tools/SelfTest.cs` |
 
 Re-measured after V2/V3 (V3 also: `--audiotest --app self` PASS; `--audiotest --app <silent app>` correctly FAILs with external=False, which proves isolation): `--selftest` PASS (58054 assertions), `--smoke 15` 64 fps, 0 warnings.
@@ -73,13 +74,13 @@ See `.game-studio/tasks/TASK-020.md` for the details and `CHANGELOG.md` for the 
 
 | feature | where |
 |---|---|
-| track detection, setlist stages, song records | `Audio/AudioEngine.cs` (`UpdateTrack`), `World/World.Setlist.cs`, `World/Meta.cs` |
+| track detection, song records (setlist stages were removed in V16) | `Audio/AudioEngine.cs` (`UpdateTrack`), `World/World.Tracks.cs`, `World/Meta.cs` |
 | instrument ships | `World/World.Ships.cs` (`ShipKind`, `ShotStyle`, `FireWeapon`) |
 | in-key notes | `World/World.Notes.cs`, `Audio/SoundBank.cs` (`PlayNote`) |
 | THE DROP | `World/World.SongBoss.cs` |
 | run recap, highlight clips | `World/RunTimeline.cs`, `Render/ClipRecorder.cs`, `UI/Screens.cs` (`DrawRecap`) |
 | tutorial & tips, rumble | `Core/Coach.cs`, `Core/Game.cs` (`RumbleFor`), `Core/InputState.cs` (`SetRumble`) |
-| EDM show | `Render/Renderer.cs` (`EdmFxFor`, `UnrollScreen`), `Render/Shaders.cs` (`stageLasers`, kaleidoscope, roll, letterbox) |
+| EDM show (stage lasers removed in V16) | `Render/Renderer.cs` (`EdmFxFor`, `UnrollScreen`), `Render/Shaders.cs` (kaleidoscope, roll, letterbox) |
 
 Release builds while the game is running: build to another folder (`-p:OutDir=...`), because the running
 game locks `bin/Release`.
@@ -226,7 +227,7 @@ ffmpeg -v error -i capture/take_mux.mp4 -f null -        # must be silent, exit 
 
 1. **Human playtest is unverified.** Mouse aim, controller input, and a real external-app loopback
    test (outside the browser) have never been exercised by a person. Round 7 adds: ship feel and
-   balance, THE DROP's difficulty, setlist pacing on a real playlist, the EDM show at full CAMERA FX,
+   balance, THE DROP's difficulty, how readable the beat pockets are in a crowded wave, the EDM show at full CAMERA FX,
    rumble on a real pad, and clip saving with ffmpeg.
 2. **No version control.** Consider `git init` and an initial commit before further changes. `.gitignore`
    currently covers `.dotnet/`, `bin/`, `obj/`, `build/`, `screenshots/`, `*.user`, `*.log`, `tools/nuget/`
