@@ -165,8 +165,9 @@ public sealed class Renderer : IDisposable
             float u = Math.Clamp((x - e0) / (e1 - e0), 0f, 1f);
             return u * u * (3f - 2f * u);
         }
-        float show = Math.Clamp(Fin(musicFx, 0f), 0f, 1.4f), showC = MathF.Min(1f, show);
-        float cam = Math.Clamp(Fin(camFx, 0f), 0f, 1.5f), camC = MathF.Min(1f, cam);
+        // above 100 % the moves and the pump grow; the strobe and hue steps stay at their 100 % level
+        float show = Math.Clamp(Fin(musicFx, 0f), 0f, 3f), showC = MathF.Min(1f, show);
+        float cam = Math.Clamp(Fin(camFx, 0f), 0f, 3f), camC = MathF.Min(1f, cam);
         float since = Math.Clamp(Fin(dropBeats, 1000f), 0f, 1000f);
         if (!double.IsFinite(beatPos)) beatPos = 0.0;
         float window = since < 16f ? 1f - since / 16f : 0f;   // the drop's first four bars
@@ -175,12 +176,12 @@ public sealed class Renderer : IDisposable
         float safe = reduceFlashing ? 0.5f : 1f;
 
         float kaleido = Ss(0.25f, 0.85f, b) * 0.85f * showC * safe;
-        float vertigo = Ss(0.1f, 1f, b) * camC;
-        float dive = 0.42f * MathF.Exp(-since * 1.1f) * camC;
-        float camKick = 0.07f * MathF.Min(1.2f, cam);
+        float vertigo = Ss(0.1f, 1f, b) * cam;
+        float dive = 0.42f * MathF.Exp(-since * 1.1f) * cam;
+        float camKick = 0.07f * cam;
         double step = Math.Floor(beatPos) * 0.13;
         float hue = !reduceFlashing && window > 0f ? (float)(step - Math.Floor(step)) * showC : 0f;
-        float pump = (window * 0.9f + od * 0.3f) * showC * safe;
+        float pump = (window * 0.9f + od * 0.3f) * MathF.Min(show, 2f) * safe;
         // a tinted pulse on each beat of the drop's first bar: at most four, and under 3 a second even
         // at 174 BPM (photosensitivity guidance), never a full white-out
         double frac = beatPos - Math.Floor(beatPos);
@@ -310,7 +311,7 @@ public sealed class Renderer : IDisposable
     public static float EffectiveShockwaveStrength(float strength, bool reduceFlashing, int screenShakePercent)
     {
         if (reduceFlashing || screenShakePercent <= 0 || !float.IsFinite(strength) || strength <= 0f) return 0f;
-        return Math.Clamp(strength * (Math.Clamp(screenShakePercent, 0, 150) / 100f), 0f, 1.5f);
+        return Math.Clamp(strength * (Math.Clamp(screenShakePercent, 0, GameSettings.MaxScreenShake) / 100f), 0f, 2.5f);
     }
 
     public void AddScreenShockwave(Vector2 worldPos, float radiusWorld, float strength)

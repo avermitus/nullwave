@@ -382,7 +382,12 @@ public sealed class Camera
         ShakeOffset = amp <= 0.01f ? Vector2.Zero : new Vector2(_rng.Signed(), _rng.Signed()) * amp;
     }
 
-    public void AddShake(float amount) => Shake = MathF.Min(28f, Shake + amount * Nullwave.Core.GameSettings.Current.ScreenShake / 100f);
+    public void AddShake(float amount)
+    {
+        float scale = Nullwave.Core.GameSettings.Current.ScreenShake / 100f;
+        // the cap grows with SCREEN SHAKE above 150 % so big hits keep getting bigger
+        Shake = MathF.Min(28f * MathF.Max(1f, scale / 1.5f), Shake + amount * scale);
+    }
 
     public void Snap(Vector2 target) => Position = target;
 }

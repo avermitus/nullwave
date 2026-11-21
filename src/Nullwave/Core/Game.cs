@@ -119,6 +119,8 @@ public sealed class Game : IDisposable
     public GameWorld? ActiveWorld => _world;
     public GameWorld? DemoWorld => _demo;
     public float Fps => _fps;
+    /// <summary>--max-fx: captures render with every motion and effect setting at its maximum.</summary>
+    public static bool MaxFx;
 #if DEBUG
     /// <summary>NULLWAVE_PLAYTEST=1: automated playtest (no Spotify rerouting, score muted, save copy).</summary>
     public static bool Playtest => Environment.GetEnvironmentVariable("NULLWAVE_PLAYTEST") == "1";
@@ -203,6 +205,7 @@ public sealed class Game : IDisposable
         _meta.Settings ??= new GameSettings();
         _meta.Settings.Sanitize();
         GameSettings.Current = capture ? new GameSettings() : _meta.Settings;
+        if (capture && MaxFx) GameSettings.Current.SetMaxMotionAndFx();
         if (ThemeOverride is { } forcedTheme)
         {
             GameSettings.Current = GameSettings.Current.Clone();
@@ -1376,7 +1379,7 @@ public sealed class Game : IDisposable
         fx *= _renderer.HypeScale;
         // EDM camera: a bounce on every kick, a slow pull back through a build, a slam in on the drop
         float edmCam = GameSettings.Current.CameraFx / 100f;
-        float punch = 1f + fx * edmCam * (_director.Kick * 0.035f - _director.Build * 0.05f + _director.DropPulse * 0.06f);
+        float punch = Math.Clamp(1f + fx * edmCam * (_director.Kick * 0.035f - _director.Build * 0.05f + _director.DropPulse * 0.06f), 0.6f, 1.6f);
         _renderer.AimTilt = _aimTilt;
         _renderer.BeginWorld(world.Cam.Position + world.Cam.ShakeOffset, world.Cam.Zoom * punch);
         if (BackdropOnly)

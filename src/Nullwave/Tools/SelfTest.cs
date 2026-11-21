@@ -446,7 +446,7 @@ public static partial class SelfTest
         var loaded = MetaProgress.Load(path);
         Check(loaded.Settings.MusicVolume == 0 && loaded.Settings.BeatOffsetMs == 90 && !loaded.Settings.Minimap, "settings persisted");
         loaded.Settings.Sanitize();
-        Check(loaded.Settings.Bloom == 150, "settings clamped on load");
+        Check(loaded.Settings.Bloom == GameSettings.MaxBloom, "settings clamped on load");
         Check(!File.ReadAllText(path).Contains("\"Master\""), "computed volumes not serialised");
 
         // beat offset delays the grid: with +250ms the first downbeat tick arrives later

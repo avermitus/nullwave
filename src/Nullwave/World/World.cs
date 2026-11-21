@@ -399,8 +399,9 @@ public sealed partial class World
     /// </summary>
     public float BeatSurge(float amplitude)
     {
-        float s = amplitude * GameSettings.Current.BeatMotion / 100f * _beatConfidence;
         const float mean = 0.16625f; // average of exp(-6x) over [0,1]
+        // capped where the coast would hit the 0.12 floor, so the average stays exactly 1
+        float s = MathF.Min(amplitude * GameSettings.Current.BeatMotion / 100f * _beatConfidence, 0.88f / mean);
         return MathF.Max(0.12f, 1f + s * (MathF.Exp(-BeatPhase * 6f) - mean));
     }
 
@@ -442,7 +443,10 @@ public sealed partial class World
             area = PulseArea(decayPerBeat, gap, since, gap) +
                    PulseArea(decayPerBeat, nextGap, 0f, MathF.Min(h - toNext, nextGap));
         }
-        float a = amplitude * GameSettings.Current.BeatMotion / 100f * _beatConfidence;
+        // at high BEAT MOTION the coast nearly stops; capped there so the average stays exactly 1
+        float k = decayPerBeat * gap;
+        float maxA = 0.9f * k / (1f - MathF.Exp(-k));
+        float a = MathF.Min(amplitude * GameSettings.Current.BeatMotion / 100f * _beatConfidence, maxA);
         return MathF.Max(0.08f, 1f + a * area / h);
     }
 
@@ -683,15 +687,18 @@ public sealed partial class World
     {
         if (Phase == GamePhase.Dead) return;
         strength = MathF.Max(0.2f, strength);
+        // MUSIC FX above 150 % makes the drop look and feel bigger, not hit harder
+        float reach = MathF.Min(strength, 1.5f);
         Vector4 hot = new(1f, 0.55f, 0.95f, 1f);
-        AddShockwave(Player.Pos, 1400f * strength, 1.4f, 22f * strength, hot, filled: true, heavy: true);
-        AddShockwave(Player.Pos, 820f * strength, 0.9f, 8f, new Vector4(0.6f, 1f, 1f, 1f));
-        BurstParticles(Player.Pos, new Vector4(1f, 0.7f, 1f, 0.85f), (int)(140 * strength), 900f, 3.4f, 1.1f, ParticleKind.Spark);
-        CollapseWells(strength);
+        AddShockwave(Player.Pos, 1400f * reach, 1.4f, 22f * strength, hot, filled: true, heavy: true);
+        AddShockwave(Player.Pos, 820f * reach, 0.9f, 8f, new Vector4(0.6f, 1f, 1f, 1f));
+        BurstParticles(Player.Pos, new Vector4(1f, 0.7f, 1f, 0.85f), (int)(140 * MathF.Min(strength, 3f)), 900f, 3.4f, 1.1f, ParticleKind.Spark);
+        CollapseWells(reach);
         foreach (var e in Enemies) if (!e.Dead) e.HitFlash = MathF.Max(e.HitFlash, 0.6f);
         foreach (var o in Obstacles) if (!o.Dead) o.HitFlash = MathF.Max(o.HitFlash, 0.5f);
         Cam.AddShake(12f * strength);
-        Flash = MathF.Max(Flash, reduceFlashing ? 0.12f : 0.55f * strength);
+        // the flash never passes its 150 % level (photosensitivity)
+        Flash = MathF.Max(Flash, reduceFlashing ? 0.12f : 0.55f * reach);
         if (Phase == GamePhase.Playing)
         {
             Player.Resonance = MathF.Min(Player.ResonanceMax, Player.Resonance + 20f * OverdriveResonanceScale);

@@ -14,6 +14,16 @@ public sealed class GameSettings
 {
     public static GameSettings Current { get; set; } = new();
 
+    // slider caps for the motion and effect settings (percent)
+    public const int MaxBeatMotion = 300;
+    public const int MaxCameraFx = 300;
+    public const int MaxMusicFx = 300;
+    public const int MaxBackgroundIntensity = 250;
+    public const int MaxBackgroundMotion = 400;
+    public const int MaxBloom = 300;
+    public const int MaxScreenShake = 300;
+    public const int MaxAberration = 250;
+
     // audio
     public int MasterVolume { get; set; } = 80;
     public int MusicVolume { get; set; } = 70;
@@ -88,6 +98,19 @@ public sealed class GameSettings
 
     public GameSettings Clone() => (GameSettings)MemberwiseClone();
 
+    /// <summary>Every motion and effect slider at its maximum.</summary>
+    public void SetMaxMotionAndFx()
+    {
+        BeatMotion = MaxBeatMotion;
+        CameraFx = MaxCameraFx;
+        MusicFx = MaxMusicFx;
+        BackgroundIntensity = MaxBackgroundIntensity;
+        BackgroundMotion = MaxBackgroundMotion;
+        Bloom = MaxBloom;
+        ScreenShake = MaxScreenShake;
+        Aberration = MaxAberration;
+    }
+
     /// <summary>Clamps values loaded from disk into their menu ranges.</summary>
     public void Sanitize()
     {
@@ -96,13 +119,14 @@ public sealed class GameSettings
         MusicVolume = Math.Clamp(MusicVolume, 0, 100);
         SfxVolume = Math.Clamp(SfxVolume, 0, 100);
         BeatOffsetMs = Math.Clamp(BeatOffsetMs, -200, 200);
-        BeatMotion = Math.Clamp(BeatMotion, 0, 150);
-        BackgroundIntensity = Math.Clamp(BackgroundIntensity, 0, 150);
-        BackgroundMotion = Math.Clamp(BackgroundMotion, 0, 200);
-        Bloom = Math.Clamp(Bloom, 0, 150);
-        ScreenShake = Math.Clamp(ScreenShake, 0, 150);
-        Aberration = Math.Clamp(Aberration, 0, 100);
+        BeatMotion = Math.Clamp(BeatMotion, 0, MaxBeatMotion);
+        CameraFx = Math.Clamp(CameraFx, 0, MaxCameraFx);
+        BackgroundIntensity = Math.Clamp(BackgroundIntensity, 0, MaxBackgroundIntensity);
+        BackgroundMotion = Math.Clamp(BackgroundMotion, 0, MaxBackgroundMotion);
+        Bloom = Math.Clamp(Bloom, 0, MaxBloom);
+        ScreenShake = Math.Clamp(ScreenShake, 0, MaxScreenShake);
+        Aberration = Math.Clamp(Aberration, 0, MaxAberration);
         CrosshairSize = Math.Clamp(CrosshairSize, 50, 200);
-        MusicFx = Math.Clamp(MusicFx, 0, 150);
+        MusicFx = Math.Clamp(MusicFx, 0, MaxMusicFx);
     }
 }

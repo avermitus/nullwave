@@ -4,7 +4,23 @@ All notable gameplay, rendering, audio-intelligence, and UI updates to **NULLWAV
 
 ---
 
-## Latest Updates — Enemies on the Beat; Setlist Runs and Stage Lasers Removed
+## Latest Updates — Higher Motion & Effect Settings, Installer
+
+### Settings
+- **Every motion and effect slider goes higher:** `BEAT MOTION` 150 → **300 %**, `CAMERA FX` 150 → **300 %**, `MUSIC FX` 150 → **300 %**, `BACKGROUND INTENSITY` 150 → **250 %**, `BACKGROUND MOTION` 200 → **400 %**, `BLOOM` 150 → **300 %**, `SCREEN SHAKE` 150 → **300 %**, `CHROMATIC ABERRATION` 100 → **250 %**.
+- The internal limits that capped the old ranges now follow the sliders: the drop's camera dive, build-up pull-back, kick bounce, roll and light pump scale with CAMERA FX and MUSIC FX; the shake cap and the shockwave refraction grow with SCREEN SHAKE.
+- **What doesn't grow:** the drop strobe and hue steps stay at their 100 % level, the drop flash at its 150 % level (photosensitivity limits unchanged), drop shockwave damage stays at its 150 % level, and the letterbox stays thin. At any BEAT MOTION, enemies and bullets average the same speed: the coast between hits nearly stops instead of going below zero.
+- `--max-fx` renders a capture with every motion and effect setting at its maximum.
+
+### Install
+- `tools/install.ps1` builds a self-contained copy, installs it to `%LOCALAPPDATA%\Programs\NULLWAVE` and adds Start Menu and Desktop shortcuts (`-Uninstall` removes it and keeps saves).
+
+### Tests
+- Beat-pocket and bullet beat-surge averages are checked at 300 % BEAT MOTION, and the strobe limit at the new CAMERA FX and MUSIC FX maximums: **79,029 assertions**.
+
+---
+
+## Enemies on the Beat; Setlist Runs and Stage Lasers Removed
 
 ### Gameplay
 - **Every enemy moves on its own part of the beat.** Each role has a rhythmic "pocket", and its movement surges on that part of the bar and coasts in between:

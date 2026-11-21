@@ -58,8 +58,10 @@ public static partial class SelfTest
                 ("pickups", GameWorld.Pocket.Pickups, 2f, 9f), ("backbeat", GameWorld.Pocket.Backbeat, 1.2f, 4f),
                 ("and of 4", GameWorld.Pocket.AndOfFour, 6f, 3f), ("sixteenths", GameWorld.Pocket.Sixteenths, 1.6f, 16f),
             };
+            foreach (int motion in new[] { 100, GameSettings.MaxBeatMotion })
             foreach (var (name, mask, amp, decay) in pockets)
             {
+                GameSettings.Current.BeatMotion = motion;
                 double sum = 0;
                 float best = 0f;
                 int bestSixteenth = -1;
@@ -72,9 +74,15 @@ public static partial class SelfTest
                     if (s > best) { best = s; bestSixteenth = StepSixteenth(clock.BarPos); }
                     Check(env >= 0f && env <= 1f && float.IsFinite(s) && s > 0f, "the " + name + " surge stays positive");
                 }
-                Check(Math.Abs(sum / steps - 1.0) < 0.01, "the " + name + " surge keeps the average speed");
+                Check(Math.Abs(sum / steps - 1.0) < 0.01, "the " + name + " surge keeps the average speed at " + motion + " % BEAT MOTION");
                 Check((mask & (1 << bestSixteenth)) != 0, "the " + name + " surge peaks on its own sixteenth");
             }
+            // the shared beat surge (bullets) keeps its average at full BEAT MOTION too
+            GameSettings.Current.BeatMotion = GameSettings.MaxBeatMotion;
+            double beatSum = 0;
+            for (int i = 0; i < 480; i++) { clock.SetBeatClockForTest(8.0 + i / 480.0); beatSum += clock.BeatSurge(1.4f); }
+            Check(Math.Abs(beatSum / 480 - 1.0) < 0.02, "bullet beat surge keeps its average at full BEAT MOTION");
+            GameSettings.Current.BeatMotion = 100;
             clock.SetBeatClockForTest(8.5);
             Check(clock.PocketSurge(Dt, 0, 3f, 4f, out _) == 1f, "no pocket, no surge");
 
@@ -448,7 +456,7 @@ public static partial class SelfTest
         for (int i = 0; i < 480; i++)
         {
             double beats = i / 240.0 * 174.0 / 60.0;
-            bool s = Renderer.EdmFxFor((float)beats, 100.0 + beats, 0f, 0f, 0f, 1.4f, 1.5f, false).Strobe > 0f;
+            bool s = Renderer.EdmFxFor((float)beats, 100.0 + beats, 0f, 0f, 0f, GameSettings.MaxMusicFx / 100f, GameSettings.MaxCameraFx / 100f, false).Strobe > 0f;
             if (s && !on) { pulses++; if (i < 240) firstSecond++; }
             on = s;
         }
