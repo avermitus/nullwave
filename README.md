@@ -1,49 +1,47 @@
 # NULLWAVE
 
-A native Windows twin-stick bullet hell in pure C# (OpenGL via Silk.NET, audio via NAudio, no game engine; the ship and pylons are UV-mapped OBJ models on a shared cyber-tribal texture atlas, and everything else is built in code) that listens to the music on your PC — the whole system mix or a single app you pick — and builds the fight, the visuals, and the pacing from it.
+**A twin-stick bullet hell that is built from the music you're playing.**
 
-![NULLWAVE Combat](docs/screenshots/polish_combat.png)
+Put on any song: Spotify, a YouTube tab, a local file or anything else your PC is playing. NULLWAVE listens to it and turns it into the fight. Enemies fire on the beat, bass notes open gravity wells, the melody draws rails you can ride, the build-up folds the world into a kaleidoscope, and the drop hits like a drop.
 
-## What's new
+![THE CHOIR boss fight](docs/media/boss_fight.gif)
 
-![THE CHOIR boss fight through to SIGNAL CLEARED](docs/media/boss_fight.gif)
+*THE CHOIR, from phase II to SIGNAL CLEARED ([HD MP4](docs/media/boss_fight.mp4)).*
 
-*THE CHOIR, from phase II to SIGNAL CLEARED, with the new dash indicator and chain timer in the HUD ([MP4](docs/media/boss_fight.mp4)).*
+## How it plays
 
-- **Cyber-tribal ship and pylons:** the player ship and the pylons are now UV-mapped OBJ models sharing one 1024² material atlas (albedo, normal, roughness and emissive maps) in dark carbon and titanium, bone and bronze, and neon sigils. The atlas is generated reproducibly by `tools/generate_cyber_tribal_atlas.py`, and its surface can be generated with Sogni (`tools/AssetPipeline`).
-- **Taps you can trust:** dash and Resonance Cascade presses are no longer dropped on frames that run no simulation tick or during hit-stop. A press now fires exactly once on the next tick and is cleared on pause, death, menus and restart.
-- **Readable status:** a `DASH // READY` / `RECHARGING` meter (text as well as colour), and the kill chain now drains a bar so you can see when it will run out.
-- **Cleaner light:** a cooler key light and highlights kept for emitters on ships and enemies, and brighter, more legible sea, crust, dune and cavern worlds, nebula and aurora.
-- **New title screen:** a single panel with the menu, ship select, best run, controls and the current track. Hover and click work with the mouse.
+You fly a fast, momentum-heavy interceptor through an open arena, dashing through bullet patterns and chaining kills to build **Flow**, the score multiplier. Everything around you comes from the song:
 
-![Cyber-tribal texture atlas: albedo, normal, roughness, emissive](docs/screenshots/cyber_tribal_atlas.png)
+- **The beat is the rhythm of the fight.** Enemy volleys and lasers land on the beat grid. Dash on the beat for a **Phase Sync**; three in a row ignite **Sync Overdrive**.
+- **The music becomes the arena.** A sustained bass note opens a **gravity well** that bends bullets and lets you **slingshot** off it. A melody draws a **rail** across the map that boosts your speed while you ride it. On the drop, every well detonates.
+- **The song's structure shapes the run.** Build-ups, breakdowns and drops are detected live. A drop triggers **Drop Overdrive**, and every song section gets its own 3D world beneath the arena, which comes back when the chorus does.
+- **Your guns play along.** Kills and hits play notes from the current chord, timed to the beat.
+- **The song can be the boss.** **THE DROP** is built from the track itself: rings on the kick, fans on the snare, needles on the hats, a laser that follows the melody, and a new phase every section. **THE CHOIR** is the other boss.
 
-### Previously: the EDM show and THE DROP
-
-| The EDM show: build-up into the drop | THE DROP: a boss built from the song |
+| The build-up and the drop | THE DROP, the boss made from the song |
 |---|---|
 | ![EDM show](docs/media/edm_show.gif) | ![THE DROP](docs/media/the_drop.gif) |
-| [Watch in HD (MP4)](docs/media/edm_show.mp4) | [Watch in HD (MP4)](docs/media/the_drop.mp4) |
+| [HD MP4](docs/media/edm_show.mp4) | [HD MP4](docs/media/the_drop.mp4) |
 
-![Build-up kaleidoscope, background only](docs/media/edm_backdrop.gif)
+## What's in it
 
-*The background alone: the world folds into a kaleidoscope through the build-up, then the drop dives in ([MP4](docs/media/edm_backdrop.mp4)).*
-
-- **Setlist runs:** play a set of songs; each new track is a stage with an upgrade, and the last one ends with THE DROP.
+- **4 instrument ships:** CLASSIC (steady auto-fire), DRUMS (fires on drum hits), BASS (heavy orbs on the beat) and LEAD (a beam that bends with the melody).
+- **11 enemy types,** each hunting you its own way, and **2 bosses**.
+- **Setlist runs:** play a set of songs, where every new track is a new stage and the last one ends in THE DROP.
 - **Song records:** best score and an S–C rank for every song you play.
-- **Instrument ships:** DRUMS fires on drum hits, BASS lobs heavy orbs on the beat, LEAD fires a beam that bends with the melody.
-- **In-key guns:** kills and hits play notes from the current chord, on the beat.
-- **THE DROP:** rings on the kick, fans on the snare, a laser that follows the melody, a new phase every song section.
-- **EDM show:** stage lasers, a build-up kaleidoscope and letterbox, a drop that dives, rocks and colour-steps on the beat, and a kick bounce (`CAMERA FX` setting; flash-rate limited, `REDUCE FLASHING` respected).
-- **Also:** music understanding (drums vs. melody, chords, key, song sections), a 0.75 s Spotify buffer, organic map-anchored 3D worlds, bass gravity wells, melody rails, a run recap with highlight clips, a first-run tutorial and controller rumble. See the [CHANGELOG](CHANGELOG.md).
+- **12 stackable Attunements** with 4 **Harmonic Overclock** evolutions, 16 unlockable **Archive** modifiers, Daily Signals and shareable 8-character seeds.
+- **Six music-shaped 3D worlds** (sea, molten crust, dunes, gyroid cavern, storm nebula, aurora) that move with the spectrum, plus an EDM light show of stage lasers, kaleidoscope build-ups and diving drops.
+- **Any audio source:** the whole system mix, a single app (`F3`), Spotify with a 0.75 s lookahead buffer, a local file with the same lookahead, or a built-in generative score when nothing is playing.
+- **Run recap** with a timeline of your run, and one-key MP4 highlight clips of your best moment.
+- First-run tutorial, controller support with rumble, an **Abyssal** dark theme, and photosensitivity options (`REDUCE FLASHING`, `CAMERA FX`, `MUSIC FX`).
 
-## Features
+It's written in pure C#: OpenGL through Silk.NET and audio through NAudio, with no game engine. The ship and pylons are textured 3D models; everything else (enemies, worlds, effects and sound) is generated in code.
 
-- **Music-Driven Combat & Laser Choreography:** Real-time log-spectral-flux beat tracking and song-structure analysis (`MusicDirector`) detect tempo, downbeats, builds, breakdowns, and drops — locking enemy volleys to the beat, surging projectile motion, triggering drop shockwaves, and firing 4-layer HDR **Song Lasers** (`STARBURST`, `SCAN`, `LASER GATE`, `LASER CROSS`, `PRISM CAGE`) with travelling directional chevrons.
-- **Per-App Loopback, Local Track Player (`+0.75s` Lookahead) & Spotify Now-Playing:** Captures system mix or isolates a single application's audio session via Windows WASAPI process loopback (`F3` in game or `--app <name>`), automatically detects live Spotify desktop/Web Player `Artist - Title` playback, or plays local `.mp3`/`.wav`/`.m4a`/`.aiff` files directly (`--track <path>` or drag-and-drop onto the executable) with a **`0.75s` sample-accurate lookahead buffer** (zero-latency combat SFX, exact-frame beat alignment, and pre-drop tension cues ahead of beat 1), falling back to the built-in generative synth score when silent.
-- **Stationary 3D-Only Reactive Backdrops, Shockwave Refraction & Abyssal Theme:** Lit procedural 3D vector-mesh ships, 11 enemy roles, extruded monoliths, and **THE CHOIR** boss rendered over **5 rock-steady, true 3D raymarched & perspective backdrops** (`LIQUID 3D`, `CYBER TUNNEL 3D`, `VOID HORIZON 3D`, `CATHEDRAL 3D`, `ORBITAL GYROID 3D`) that stay stationary relative to the ship while pulsing their 3D lighting and Fresnel rims strictly below the bloom threshold for effortless bullet readability — paired with **GPU radial shockwave refraction rings** on heavy impacts and an optional **ABYSSAL / VOID NOIR** dark theme (`--theme abyssal`) with OLED-black valleys and dynamic combat light pools.
-- **Racer Flow, Drop Overdrive, 3× Phase-Sync Overdrive & Micro-Hitstop:** Momentum-based interceptor handling with **FLOW** multipliers (`// FLOW STATE //`), **Drop Overdrive** (`4.0s` musical drop surge granting `+25%` cadence, `+18%` damage, `1.5x` Flow gain, and `+0.50x` score), **Phase Sync** on-beat dashing (`±65 ms`) whose **3× consecutive streak** ignites **`SYNC OVERDRIVE`** (`5.0s` of `+30%` Resonance, `+15%` cadence, and `+0.35x` score without penalizing off-beat dodges), and crisp **micro-hitstop** on Elite kills, Cascades, and Boss phase breaks.
-- **Harmonic Overclock & Endless Replayability:** 12 stackable **Attunements** with a live HUD/Pause loadout strip and 4 **Harmonic Overclock** Synergy Evolutions (`SEEKER SALVO`, `PRISM LANCE`, `RAIL CADENCE`, `VOID PHANTOM`) that awaken when complementary Attunement pairs reach Stack 2+, plus 16 unlockable **Archive** modifiers, Daily Signals, **NEW BEST** personal-best callouts, a rolling 8-run flight recorder, and interactive 8-character **Seed Replay / Custom Seed Entry**.
+| Title & ship select | Mid-run: dash meter, chain timer, Flow |
+|---|---|
+| ![Title](docs/screenshots/polish_title.png) | ![Combat](docs/screenshots/polish_combat.png) |
+| **The enemy roster** | **Music-shaped 3D worlds** |
+| ![Roster](docs/screenshots/cyber_tribal_roster.png) | ![Worlds](docs/screenshots/music_worlds.png) |
 
 ## Controls
 
@@ -66,52 +64,58 @@ Requires Windows 10 (build 20348+) or Windows 11 and the .NET 8 SDK.
 # either use a system-wide .NET 8 SDK, or install a private copy into .dotnet/
 powershell -ExecutionPolicy Bypass -File tools/dotnet-install.ps1 -Channel 8.0 -InstallDir .dotnet
 
-./run.cmd                 # play
-./run.cmd --theme abyssal # launch in Abyssal / Void Noir dark theme
-./run.cmd --track song.mp3 # play a local audio file with +0.75s lookahead sync
-./run.cmd --app spotify   # drive the game from one app's audio
-./run.cmd --list-apps     # list active audio sessions
-./run.cmd --selftest      # headless assertion suite
-./run.cmd --beatbench     # beat tracker accuracy on synthetic songs
-./run.cmd --sfxdump       # render every sound effect to capture/sfx/*.wav
+./run.cmd                   # play
+./run.cmd --track song.mp3  # play a local audio file with 0.75 s lookahead
+./run.cmd --app spotify     # drive the game from one app's audio
+./run.cmd --list-apps       # list active audio sessions
+./run.cmd --theme abyssal   # start in the Abyssal dark theme
+./run.cmd --selftest        # headless assertion suite
 ./run.cmd --capture edm --reel 10 --out edm.mp4   # scripted build-up into a drop
-
-# optional smoke / video capture overrides
-./run.cmd --smoke 5 --mods hard --attune synergy --theme abyssal
-./run.cmd --record 30 --wave 4 --mods hard --attune showcase --app spotify --theme abyssal
 ```
 
 `run.cmd` expects the SDK at `.dotnet/dotnet.exe`; with a system SDK use `dotnet run --project src/Nullwave/Nullwave.csproj -c Release -- <args>`.
 
-## Screenshots
+---
 
-![Generative Animated Backdrops](docs/screenshots/generative_backdrops.png)
+# How far it has come
 
-| Stationary 3D Backdrop — Cyber Tunnel 3D (Abyssal) | Stationary 3D Backdrop — Void Horizon 3D (Standard) |
+NULLWAVE started in mid-November 2026 as a flat 2D twin-stick shooter that pulsed to whatever was playing. About a week and 13 milestones later, it reads a song's drums, bass, melody, chords and structure and builds the whole fight from them.
+
+| Day one: V1 foundation | Today |
 |---|---|
-| ![Drop Overdrive Abyssal](docs/screenshots/drop_overdrive.png) | ![Reactive Backdrop Standard](docs/screenshots/reactive_backdrop_standard.png) |
-| **Harmonic Overclock — Synergy Evolutions** | **Abyssal Dark Theme — Dynamic Lighting** |
-| ![Harmonic Overclock](docs/screenshots/synergy_overclock.png) | ![Abyssal Combat](docs/screenshots/abyssal_combat.png) |
-| **Abyssal Dark Theme — Choir Boss** | **Abyssal Dark Theme — Starburst Lasers** |
-| ![Abyssal Boss](docs/screenshots/abyssal_boss.png) | ![Abyssal Song Lasers](docs/screenshots/abyssal_songlasers.png) |
-| **Title Screen** | **Standard Theme — Combat & Loadout** |
-| ![Title](docs/screenshots/latest_title.png) | ![Combat](docs/screenshots/latest_combat.png) |
-| **HDR Song Lasers & Starburst** | **Phase Sync & Flow State** |
-| ![Song Lasers](docs/screenshots/latest_songlasers.png) | ![Speed](docs/screenshots/latest_speed.png) |
-| **Archive Seed Decoder & History** | **Signal Held Pause Overlay** |
-| ![Archive](docs/screenshots/latest_archive.png) | ![Pause](docs/screenshots/latest_pause.png) |
-| **Signal Lost & Personal Bests** | **Full Enemy Roster** |
-| ![Game Over](docs/screenshots/latest_gameover.png) | ![Roster](docs/screenshots/v9_roster.png) |
-| **Title — Setlist & Ship Select** | **THE DROP vs. the Lead Ship** |
-| ![Setlist and ship select](docs/screenshots/setlist_title.png) | ![THE DROP](docs/screenshots/the_drop_boss.png) |
-| **The EDM Show — build-up, drop, after** | **Music-Shaped 3D Worlds** |
-| ![EDM show](docs/screenshots/edm_show.png) | ![Music worlds](docs/screenshots/music_worlds.png) |
-| **New Title Screen** | **Dash Meter & Chain Timer** |
-| ![New title](docs/screenshots/polish_title.png) | ![Speed and dash meter](docs/screenshots/polish_speed.png) |
-| **THE CHOIR — Phase II with Atlas Pylons** | **Full Roster with the Cyber-Tribal Ship** |
-| ![Boss](docs/screenshots/polish_boss.png) | ![Roster](docs/screenshots/cyber_tribal_roster.png) |
+| ![V1](docs/screenshots/v1_combat.png) | ![Today](docs/screenshots/polish_boss.png) |
 
-## Documentation
+## Milestones
 
-- [CHANGELOG.md](CHANGELOG.md) — Complete version history from V1 through the latest updates with visual comparisons.
-- [HANDOFF.md](HANDOFF.md) — Engineering architecture, audio/rendering pipeline details, recorder usage, and technical notes.
+| # | When | Milestone | What it added | |
+|---|---|---|---|---|
+| 1 | ≤ Nov 17 | **V1 Foundation** | The core loop: 60 Hz twin-stick combat, system audio capture with a fallback synth score, 2D vector visuals, Attunements, Archive modifiers, Daily Signals. | <img src="docs/screenshots/v1_combat.png" width="200"> |
+| 2 | Nov 17 | **V2 Into 3D** | A procedural 3D mesh renderer (banking ship, 7 enemy models, THE CHOIR boss), arenas almost 3× larger in 5 layouts, a new HUD, and capturing a single app's audio. | <img src="docs/screenshots/v2_boss.png" width="200"> |
+| 3 | Nov 17–18 | **V3 Liquid nebula** | A flowing, music-driven nebula and liquid-metal backdrop. | <img src="docs/screenshots/v3_boss.png" width="200"> |
+| 4 | Nov 17–18 | **V4 Settings** | A full settings menu for audio, video and interface, with keyboard, pad and mouse. | <img src="docs/screenshots/v4_settings.png" width="200"> |
+| 5 | Nov 17–18 | **V5 Real beat tracking** | A proper beat tracker (tempo, phase, downbeats); enemies fire only on the beat. | <img src="docs/screenshots/v5_combat.png" width="200"> |
+| 6 | Nov 17–18 | **V6 Music director** | Live detection of build-ups, breakdowns and drops, driving colour, camera and arena shockwaves. | <img src="docs/screenshots/v6_drop.png" width="200"> |
+| 7 | Nov 17–18 | **V7 Speed** | A racer-style ship (top speed 312 → 560), the Flow multiplier, and six procedural backdrop styles. | <img src="docs/screenshots/v7_speed.png" width="200"> |
+| 8 | Nov 17–18 | **V8 Readability** | Clearer enemies and bullets against busy backdrops. | <img src="docs/screenshots/v8_compare.png" width="200"> |
+| 9 | Nov 17–18 | **V9 Song lasers** | 4 new enemies (11 total), drum-aware audio analysis, layered synth sound effects, the Hype meter, and lasers fired by the song. | <img src="docs/screenshots/v9_roster.png" width="200"> |
+| 10 | Nov 18–19 | **Overdrive & Abyssal** | Generative backdrops, the Abyssal dark theme, Harmonic Overclock evolutions, Drop Overdrive, hit-stop, local-file playback, and the 0.75 s lookahead that lets the game see every hit before you hear it. | <img src="docs/screenshots/abyssal_combat.png" width="200"> |
+| 11 | Nov 20 | **The game understands music** | Drums vs. melody, chords, key and song sections; gravity wells, melody rails, enemies that hunt you; 3D worlds shaped by the spectrum; the Spotify lookahead buffer. | <img src="docs/screenshots/music_worlds.png" width="200"> |
+| 12 | Nov 20 | **The EDM show** | Setlist runs, song records, instrument ships, in-key guns, THE DROP boss, run recap and highlight clips, a tutorial, rumble, and the stage-laser light show. | <img src="docs/screenshots/edm_show.png" width="200"> |
+| 13 | Nov 21 | **Cyber-tribal & polish** | A textured 3D ship and pylons with a generated material atlas, dash and Cascade taps that are never dropped, a dash meter and chain timer, a new title screen, and a lighting pass. | <img src="docs/screenshots/cyber_tribal_atlas.png" width="200"> |
+
+## By the numbers
+
+| | V1 | Today |
+|---|---|---|
+| Enemy types | 7 (by V2) | 11 + 2 bosses |
+| Ships | 1 | 4 instrument ships |
+| What it hears from the music | Loudness, spectrum bands, rough beat guesses | Beat grid, drums vs. melody, bass, melody pitch, chords, key, song sections, build-ups and drops |
+| Audio sources | System mix | System mix, single app, Spotify (with lookahead), local files, built-in score |
+| Look | Flat 2D vector shapes | Lit 3D models over six raymarched 3D worlds shaped by the spectrum, plus the EDM show |
+| Automated checks | — | 72,849 self-test assertions |
+
+## What's next
+
+Everything so far has been verified with automated tests and scripted captures. The next step is real human playtesting: ship feel and balance, THE DROP's difficulty, setlist pacing on a real playlist, the EDM show at full camera effects, and rumble on a real controller.
+
+The full history, with every change and screenshot, is in the [CHANGELOG](CHANGELOG.md). Architecture and engineering notes are in [HANDOFF.md](HANDOFF.md).
