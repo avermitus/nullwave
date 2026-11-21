@@ -109,6 +109,7 @@ public sealed class MovementRules
 
 public sealed partial class World
 {
+    public const float ComboDuration = 4.1f;
     public const float BaseArenaW = 5600f;
     public const float BaseArenaH = 3600f;
 
@@ -243,6 +244,9 @@ public sealed partial class World
             Player.Health = Player.MaxHealth = 3;
         }
     }
+
+    // Hit-stop skips the player update even on the tick that brings its timer to zero.
+    internal bool WillUpdatePlayer => Phase == GamePhase.Playing && HitStop <= 0f;
 
     public void Step(float dt, AudioState audio, InputFrame input)
     {
@@ -565,7 +569,7 @@ public sealed partial class World
     public void AddCombo(int amount)
     {
         Combo = Math.Min(999, Combo + amount);
-        ComboTimer = 4.1f;
+        ComboTimer = ComboDuration;
         MaxCombo = Math.Max(MaxCombo, Combo);
     }
 

@@ -296,11 +296,13 @@ vec3 shadeScene(int g, vec3 p, vec3 n, vec3 rd) {
         float sp = pow(max(dot(refl, L), 0.0), 70.0);
         vec3 sky = mix(pal(0.15 + hs), pal(0.55 + hs), clamp(refl.x * 0.6 + refl.y * 0.6 + 0.5, 0.0, 1.0));
         float crest = smoothstep(0.25, 0.85, MID);
-        float trough = smoothstep(0.1, -0.6, MID);
-        col = pal(0.6 + hs) * 0.03 + sky * (0.05 + pow(1.0 - clamp(dot(n, -rd), 0.0, 1.0), 4.0) * 0.55) + vec3(1.0) * sp * (0.35 + SH * 0.8);
-        // crests catch the highs, troughs glow with the bass from below
-        col += pal(0.3 + MID * 0.4 + hs) * crest * (0.10 + SH * 0.7 + uSnare * 0.4);
-        col += pal(0.75 + hs) * trough * (0.03 + SB * 0.35 + uKick * 0.15);
+        float trough = 1.0 - smoothstep(-0.6, 0.1, MID);
+        vec3 water = mix(vec3(0.05, 0.12, 0.26), pal(0.62 + MID * 0.18 + hs), 0.40);
+        col = water * (0.15 + 0.35 * dif) + sky * (0.035 + fres * 0.25);
+        col += mix(vec3(0.36, 0.55, 0.78), sky, 0.42) * sp * (0.18 + SH * 0.44);
+        // Treble catches the crests while bass lights the water from below.
+        col += pal(0.3 + MID * 0.4 + hs) * crest * (0.08 + SH * 0.45 + uSnare * 0.27);
+        col += water * trough * (0.09 + SB * 0.30 + uKick * 0.12);
     } else if (g == 1) {
         float n0 = MID, vein = MID2;
         // each fissure listens to its own band, so the cracks flicker in the shape of the song
@@ -308,21 +310,25 @@ vec3 shadeScene(int g, vec3 p, vec3 n, vec3 rd) {
         float heat = 0.15 + spec(band) * 1.1 + PERC.x * 0.7 + HARM.x * 0.25 + uDrop * 0.4;
         vec3 rock = pal(0.55 + n0 * 0.3 + hs) * 0.6 + vec3(0.05);
         vec3 magma = mix(pal(0.05 + hs), vec3(1.0, 0.55, 0.2), 0.35);
-        col = rock * (0.05 + dif * 0.24) + rock * fres * 0.2 + spc * 0.10;
-        col += magma * vein * heat;
-        col += magma * smoothstep(0.42, 0.5, n0) * smoothstep(0.58, 0.5, n0) * (0.04 + SB * 0.18);
+        col = rock * (0.10 + dif * 0.32 + fres * 0.14) + rock * spc * 0.12;
+        col += magma * vein * heat * (0.38 + fres * 0.18);
+        col += magma * (1.0 - smoothstep(0.0, 0.08, abs(n0 - 0.5))) * (0.05 + SB * 0.17);
     } else if (g == 2) {
         float h = MID;
         vec3 tone = pal(h * 0.35 + hs);
         vec3 tone2 = pal(h * 0.35 + 0.5 + hs);
         float cz = p.z * (0.7 + GB.z * 0.8) - SNAP * 0.25;
-        float line = 1.0 - smoothstep(0.0, 0.035, abs(fract(cz + 0.5) - 0.5));
-        // each contour line takes the band of its height: low lines bass, high lines treble
-        float lineBand = spec(clamp(fract(floor(cz + 0.5) * 0.173 + GB.w), 0.0, 1.0));
+        float contour = floor(cz + 0.5);
+        float major = 1.0 - step(0.5, mod(contour, 3.0));
+        float line = 1.0 - smoothstep(0.0, mix(0.025, 0.04, major), abs(cz - contour));
+        // Every contour still listens to its own band. Key light and elevation set its prominence.
+        float lineBand = spec(fract(contour * 0.173 + GB.w));
         float peak = smoothstep(0.9, 1.5, h);
-        col = tone * (0.05 + dif * 0.28) + tone2 * fres * 0.18;
-        col += tone2 * line * (0.08 + lineBand * 0.8 + PERC.y * 0.6);
-        col += tone2 * peak * (0.05 + SH * 0.6);
+        vec3 sand = mix(vec3(0.07, 0.14, 0.28), tone, 0.58);
+        col = sand * (0.12 + dif * 0.36) + tone2 * fres * 0.10;
+        col += mix(sand, tone2, 0.55) * line * mix(0.35, 0.82, major)
+             * (0.22 + 0.60 * dif + 0.18 * peak) * (0.05 + lineBand * 0.46 + PERC.y * 0.35);
+        col += tone2 * peak * (0.035 + SH * 0.35);
     } else {
         float s = 0.75 + GA.x * 0.7;
         vec3 q2 = p * s * 2.1 + vec3(vnoise(p.xy * 0.3) * 4.0, 0.0, uFlow * 0.4);
@@ -332,8 +338,10 @@ vec3 shadeScene(int g, vec3 p, vec3 n, vec3 rd) {
         float side = step(0.0, MID);
         vec3 tone = pal(0.15 + side * 0.3 + hs);
         vec3 tone2 = pal(0.6 + side * 0.2 + hs);
-        col = tone * (0.04 + dif * 0.20) + tone2 * fres * 0.30 + spc * 0.2;
-        col += tone2 * vein * (0.06 + SH * 0.4 + PERC.z * 0.7 + climb * (0.2 + HARM.x * 0.8));
+        vec3 stone = mix(vec3(0.06, 0.12, 0.25), tone, 0.55);
+        col = stone * (0.12 + dif * 0.38) + tone2 * fres * 0.16 + stone * spc * 0.18;
+        col += tone2 * vein * (0.36 + 0.38 * dif + 0.26 * fres)
+             * (0.045 + SH * 0.30 + PERC.z * 0.48 + climb * (0.13 + HARM.x * 0.60));
     }
     col += pal(0.5 + hs) * waveField(p.xy) * 0.5;
     return col;
@@ -364,7 +372,7 @@ vec3 renderNebula(vec3 ro, vec3 rd, vec3 fogC) {
             float e = spec(1.0 - band);
             // bright rims where the cloud thins, dark cores: reads as sculpted cloud, not blur
             float rim = 1.0 - smoothstep(th + 0.02, th + 0.16, n);
-            vec3 c = pal(band * 0.6 + n * 0.3 + GB.w) * (0.015 + rim * (0.06 + e * 0.55));
+            vec3 c = mix(fogC, pal(band * 0.6 + n * 0.3 + GB.w) * (0.09 + e * 0.37), 0.30 + rim * 0.70);
             float bd = length(p.xy - boltC);
             c += vec3(0.75, 0.85, 1.0) * max(uSnare, PERC.y) * exp(-bd * bd * 0.12) * 0.9;
             float a = 1.0 - exp(-dens * dt * 2.2);
@@ -390,13 +398,13 @@ vec3 renderAurora(vec3 ro, vec3 rd, vec3 fogC) {
         vec2 w = q * (0.09 + GA.x * 0.06) + vec2(fk * 7.3, GA.z * 20.0);
         float v = vnoise(w + vec2(uFlow * 0.03, 0.0)) + vnoise(w * 2.1 + 4.1) * 0.35;
         float s = fract(v * (2.5 + GB.x * 2.0) + fk * 0.37);
-        // one-sided falloff reads as a hanging sheet seen from above
-        float sheet = exp(-s * 14.0) + exp(-(1.0 - s) * 60.0) * 0.6;
+        // A broad curtain body grades into a narrow, softer backlit edge.
+        float sheet = exp(-s * 9.0) * 0.72 + exp(-(1.0 - s) * 40.0) * 0.29;
         float x = fk / 6.0;
         float e = spec(x);
         float melody = x < 0.34 ? HARM.z : x < 0.67 ? HARM.y : HARM.x;
         vec3 c = pal(x * 0.7 + v * 0.2 + GB.w);
-        float depthFade = exp(-fk * 0.12);
+        float depthFade = exp(-fk * 0.19);
         acc += c * sheet * (0.02 + e * 0.35 + melody * 0.35 + PERC.x * 0.08) * depthFade;
         acc += c * waveField(q) * 0.06;
     }
@@ -491,7 +499,7 @@ vec3 stageLasers(vec3 ro, vec3 rd, float tHit) {
 
 vec3 renderWorld(int g, int atmo, vec4 a, vec4 b, vec3 po, vec3 pf, vec4 glob, vec3 ro, vec3 rd) {
     PO = po; PF = pf; GA = a; GB = b; GG = glob;
-    vec3 fogC = vec3(0.008, 0.010, 0.022) + pal(0.7 + GB.w) * (0.035 + SB * 0.05 + uDrop * 0.06);
+    vec3 fogC = vec3(0.018, 0.033, 0.067) + pal(0.7 + GB.w) * (0.022 + SB * 0.042 + uDrop * 0.05);
     float tMax = (-12.0 - ro.z) / rd.z;
     vec3 col;
     float t = tMax;
@@ -608,8 +616,9 @@ void main() {
         focus *= 1.0 - f.w * exp(-d * d * 1.6);
     }
     col *= mix(0.22, 1.0, focus);
-    // calm shoulder: the world stays a backdrop; only hits push it toward the bloom
-    col = col * 0.95 / (1.0 + col * 1.25);
+    // Use a shared shoulder so bright terrain keeps its palette colour.
+    float peak = max(col.r, max(col.g, col.b));
+    col *= 0.95 / (1.0 + peak * 1.35);
     // the drop's first bar pulses on the beat (tinted, and kept dim under the ship and enemies)
     col += (pal(0.15) * 0.6 + 0.25) * clamp(uStrobe, 0.0, 0.5) * mix(0.12, 1.0, focus);
     col += 0.003 * hash21(vUv * uResolution + uTime);
@@ -623,10 +632,12 @@ void main() {
             localLight += uLightCols[i] * exp(-d * d * 2.2) * lt.w;
         }
         float pulseGate = clamp(0.45 + uKick * 0.36 + uSnare * 0.30 + uHat * 0.16 + uDrop * 0.42 + uOverdrive * 0.34, 0.0, 1.3);
-        vec3 ridge = pow(max(col - vec3(0.03), 0.0), vec3(1.35)) * 1.4;
-        vec3 abyssal = vec3(0.003, 0.004, 0.010) + ridge * pulseGate + col * localLight * 1.4 + localLight * 0.012;
+        vec3 abyssal = col * (0.34 + pulseGate * (0.28 + peak * 0.12))
+                    + localLight * (col * 1.20 + 0.010);
         col = mix(col, abyssal, uDarkTheme);
     }
+    vec3 ambient = mix(vec3(0.021, 0.034, 0.067), vec3(0.014, 0.025, 0.052), uDarkTheme);
+    col += ambient * mix(0.42, 1.0, focus);
     fragColor = vec4(col * min(uIntensity, 1.1), 1.0);
 }
 """;
@@ -802,15 +813,17 @@ void main() {
     col = hueRotate(col, uHue);
     float luma = dot(col, vec3(0.299, 0.587, 0.114));
     col = mix(vec3(luma), col, uSat);
-    float themeContrast = mix(1.0, 1.07, uDarkTheme);
-    col = clamp((col - 0.5) * (uContrast * themeContrast) + 0.5, 0.0, 1.0);
+    // Fade the contrast adjustment toward black and white to retain coloured shadows.
+    col = clamp(col, 0.0, 1.0);
+    float contrast = uContrast * mix(1.0, 1.05, uDarkTheme) - 1.0;
+    col += (col - 0.5) * contrast * (4.0 * col * (1.0 - col));
     col *= uTint;
     if (uDamage == 1) {
         col = mix(col, vec3(1.0, 0.10, 0.18), 0.16);
     }
     col = mix(col, vec3(1.0), clamp(uFlash, 0.0, 0.45));
-    float vig = smoothstep(1.12, 0.35, length(dir * vec2(1.0, 1.1)));
-    float vigFloor = mix(0.36, 0.22, uDarkTheme);
+    float vig = 1.0 - smoothstep(0.35, 1.12, length(dir * vec2(1.0, 1.1)));
+    float vigFloor = mix(0.36, 0.30, uDarkTheme);
     float effVig = mix(uVignette, max(uVignette, 0.85), uDarkTheme);
     col *= mix(1.0, vigFloor + (1.0 - vigFloor) * vig, effVig);
     float grain = hash21(uv * uResolution + fract(uTime) * 113.0) - 0.5;
@@ -901,20 +914,23 @@ void main() {
     vec3 L = normalize(uLightDir);
     float diff = max(dot(n, L), 0.0);
     float back = max(dot(n, -L), 0.0);
-    float hemi = mix(0.16, 0.42, clamp(n.z * 0.5 + 0.5, 0.0, 1.0));
+    vec3 hemi = mix(vec3(0.13, 0.17, 0.26), vec3(0.28, 0.36, 0.46), n.z * 0.5 + 0.5);
     vec3 h = normalize(L + V);
     float spec = pow(max(dot(n, h), 0.0), (mapped ? mix(84.0, 5.0, roughness) : 36.0));
     float fres = pow(1.0 - clamp(dot(n, V), 0.0, 1.0), 3.0);
-    float darkHemi = mix(hemi, hemi * 0.32, uDarkTheme);
-    float darkDiff = mix(diff, diff * 0.55, uDarkTheme);
-    float fillScale = mix(0.35, 0.14, uDarkTheme);
-    float rimBoost = mix(1.0, 2.15, uDarkTheme);
-    float glowBoost = mix(1.0, 1.25, uDarkTheme);
-    vec3 col = base * (darkHemi + darkDiff * 0.95) + uFill * back * fillScale * base;
-    col += vec3(spec) * (mapped ? mix(0.85, 0.08, roughness) : 0.55) * (0.3 + diff);
-    col += uRimColor * fres * uRim * rimBoost;
+    // Cool ambient and a directional key shape the hull. Reserve the bright response for emitters.
+    vec3 key = vec3(0.80, 0.88, 0.94) * diff * mix(0.78, 0.56, uDarkTheme);
+    vec3 fill = uFill * back * mix(0.40, 0.30, uDarkTheme);
+    vec3 col = base * (hemi * mix(1.0, 0.72, uDarkTheme) + key + fill);
+    vec3 specColor = mix(vec3(0.40, 0.57, 0.78), base, 0.40);
+    // Atlas-mapped surfaces scale the highlight by their roughness map.
+    float specScale = mapped ? mix(1.55, 0.15, roughness) : 1.0;
+    col += specColor * spec * specScale * (0.06 + 0.20 * diff);
+    col += uRimColor * fres * uRim * mix(0.73, 1.38, uDarkTheme);
     col *= uBrightness;
-    col += (base * vGlow + emission) * uGlowScale * glowBoost;
+    float glowGain = uGlowScale * mix(1.0, 1.14, uDarkTheme);
+    float glow = vGlow * glowGain;
+    col += base * (glow / (1.0 + 0.16 * glow)) + emission * glowGain;
     float alpha = vColor.a;
     if (uPerspective == 1) {
         float d = length(uEye - vWorld);
