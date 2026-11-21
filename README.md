@@ -56,9 +56,27 @@ It's written in pure C#: OpenGL through Silk.NET and audio through NAudio, with 
 | **Pause / Back** | `P` / `Esc` | `Start` / `B` |
 | **Diagnostics / Fullscreen / Audio Source** | `F1` / `F2` / `F3` | — |
 
-## Build and run
+## Install and play
 
-Requires Windows 10 (build 20348+) or Windows 11 and the .NET 8 SDK.
+Requires Windows 10 (build 20348+) or Windows 11. You need the .NET 8 SDK to build the game, but not to play it.
+
+```powershell
+git clone https://github.com/avermitus/nullwave.git
+cd nullwave
+# skip this line if you already have a .NET 8 SDK installed
+powershell -ExecutionPolicy Bypass -File tools/dotnet-install.ps1 -Channel 8.0 -InstallDir .dotnet
+powershell -ExecutionPolicy Bypass -File tools/install.ps1
+```
+
+This builds a standalone copy with the .NET runtime included, installs it to `%LOCALAPPDATA%\Programs\NULLWAVE`, and adds **NULLWAVE** to the Start Menu and the Desktop. No admin rights are needed. Run it again after `git pull` to update. Use `-NoDesktopShortcut` to skip the Desktop icon, or `-Uninstall` to remove the game.
+
+Saves, settings and song records live in `%LOCALAPPDATA%\Nullwave` and are kept when you update or uninstall. Highlight clips go to `Videos\NULLWAVE`.
+
+Put on some music in Spotify, a browser or any app, start NULLWAVE, and pick **NEW SIGNAL**. Press `F3` in game to follow a single app instead of everything your PC is playing.
+
+## Build and run from source
+
+Requires the .NET 8 SDK.
 
 ```powershell
 # either use a system-wide .NET 8 SDK, or install a private copy into .dotnet/
