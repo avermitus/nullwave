@@ -1,6 +1,6 @@
 # NULLWAVE — handoff
 
-Native Windows twin-stick bullet hell written in pure C# (no engine, no model assets) that captures
+Native Windows twin-stick bullet hell written in pure C# (no engine; only the player ship and pylons are model assets) that captures
 loopback audio from **any** app and drives its level design, pacing, and visuals from that signal.
 It also has an offline recorder used to capture video of live play.
 
@@ -55,6 +55,7 @@ Pre-change sources are backed up at `_backup/Nullwave-pre-v2/` (there is still n
 | Gravity wells, melody rails, hunting enemies (V14) | `World/World.MusicFields.cs`: `GravityWell` (spawn on `ChordChanged`/held `HarmLow`, `WellPull` bends bullets, core absorbs, ship slingshot via `SlingCharge/SlingBoost`, `CollapseWells` on `OnMusicDrop`) and `MelodyRail` (grown from `MelodyPitch`/`MelodyConfidence`, riding → `RailBoost`, crossing bullets get `Bullet.Tuned` and pass a riding ship; spatial hash). Player top speed × (1 + 0.45 rail + 0.4 sling). `UpdateEnemyBrain`: per-role chase styles, `EnemyBaseSpeed` 175, `ChaseBoost(dist)` up to 4.4×. `SynthVisual` now fakes chords/bass/melody for captures and tests. See `.game-studio/tasks/TASK-019.md`. | `World/World.MusicFields.cs`, `World/World.Enemies.cs`, `Render/WorldRenderer.cs` |
 | Music understanding (V13) | `Audio/MusicAnalyzer.cs`: HPSS (drums vs. melody, `PercLow..High`/`HarmLow..High`), chroma → chord (`ChordRoot/Minor`) and key (`Key`), timbre (`Brightness`, `TextureChanged`), beat-synchronous structure (`SectionChanged/Label/Repeat`, per `SongEpoch`). Renderer: `uPerc`/`uHarm`/`uChordShift`/`uBright`; `SectionWorldMemory` brings a section's world back when it repeats. Sections: first-beat nearest-twin novelty on a kick-aligned grid; buffered sources run a second `MusicAnalyzer` on `LookaheadAudioBuffer.CopyAheadWindow` and fire at the boundary's audio frame. Galaga arrivals / screen-holding enemies were reverted (owner: unplayable). See `.game-studio/tasks/TASK-017.md`. | `Audio/MusicAnalyzer.cs`, `Audio/AudioEngine.cs`, `Render/SectionWorldMemory.cs` |
 | Music-shaped 3D worlds + Spotify buffer (V12) | Backdrop = raymarched organic world under the arena seen through the game camera (`uCam`/`uView`/`uOblique`): 6 worlds × 4 atmospheres, geometry driven by `uSpec[16]` (Renderer.ComputeBackdropSpectrum), `uBeatPos`, world-anchored `uWaves`; readability pools `uFocus[16]` under ship/enemies. Spotify buffer: `AppAudioRouter` (undocumented AudioPolicyConfig, as EarTrumpet) routes Spotify to a silent output, `LiveStreamSource` feeds the 0.75 s `LookaheadAudioBuffer`; routing undone on switch/exit/crash. See `.game-studio/tasks/TASK-015.md`, `TASK-016.md`. | `Shaders.BackgroundFrag`, `Audio/AppAudioRouter.cs`, `Audio/AudioEngine.cs` |
+| Atlas models + polish pass (V15) | Player and pylon load from `Assets/Models/*.obj` via Silk.NET.Assimp (`AtlasAssets.LoadMesh`) with a shared 1024² atlas (`Assets/Textures/{Albedo,Normal,Roughness,Emissive}.png`, StbImageSharp, copied to the output by the csproj). Mesh vertices carry UVs; `vUV.x < 0` means untextured, so procedural meshes are unaffected. `MeshFrag` builds tangents from derivatives and folds roughness/emissive into the polish pass's key/fill lighting. Atlas recipe: `tools/generate_cyber_tribal_atlas.py`, `tools/Prompts/`, Sogni client in `tools/AssetPipeline`. Input: `PlayerActionBuffer` holds dash/burst edges until a tick that updates the player (`Game.StepPlaying`, `World.WillUpdatePlayer`), cleared on any phase change. HUD: dash meter, chain drain bar (`World.ComboDuration` = 4.1 s), cached modifier caption, redesigned title with mouse hover/click. | `Render/AtlasAssets.cs`, `Render/Models.cs`, `Shaders.MeshFrag`, `Core/InputState.cs`, `Core/Game.cs`, `UI/Screens.cs` |
 | Tests | New suites: model mesh validity, beat-grid firing (0 off-grid volleys), layouts, health display. New capture scenario `hurt`. | `Tools/SelfTest.cs` |
 
 Re-measured after V2/V3 (V3 also: `--audiotest --app self` PASS; `--audiotest --app <silent app>` correctly FAILs with external=False, which proves isolation): `--selftest` PASS (58054 assertions), `--smoke 15` 64 fps, 0 warnings.
@@ -236,7 +237,7 @@ ffmpeg -v error -i capture/take_mux.mp4 -f null -        # must be silent, exit 
 
 ## 9. Ground rules that were followed
 
-* Pure C#, no engine, no model assets — keep it that way.
+* Pure C#, no engine. Model assets are limited to the atlas-mapped player and pylon OBJs; keep everything else procedural.
 * Endless replayability and audio-reactivity from any app are the core pitch; don't regress them.
 * Prefer editing the existing code over adding parallel paths; the recorder lives entirely in
   `Program.cs` plus the tap in `AudioEngine.cs`.

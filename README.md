@@ -1,10 +1,24 @@
 # NULLWAVE
 
-A native Windows twin-stick bullet hell in pure C# (OpenGL via Silk.NET, audio via NAudio, no game engine, no external model assets) that listens to the music on your PC — the whole system mix or a single app you pick — and builds the fight, the visuals, and the pacing from it.
+A native Windows twin-stick bullet hell in pure C# (OpenGL via Silk.NET, audio via NAudio, no game engine; the ship and pylons are UV-mapped OBJ models on a shared cyber-tribal texture atlas, and everything else is built in code) that listens to the music on your PC — the whole system mix or a single app you pick — and builds the fight, the visuals, and the pacing from it.
 
-![NULLWAVE Combat](docs/screenshots/latest_combat.png)
+![NULLWAVE Combat](docs/screenshots/polish_combat.png)
 
 ## What's new
+
+![THE CHOIR boss fight through to SIGNAL CLEARED](docs/media/boss_fight.gif)
+
+*THE CHOIR, from phase II to SIGNAL CLEARED, with the new dash indicator and chain timer in the HUD ([MP4](docs/media/boss_fight.mp4)).*
+
+- **Cyber-tribal ship and pylons:** the player ship and the pylons are now UV-mapped OBJ models sharing one 1024² material atlas (albedo, normal, roughness and emissive maps) in dark carbon and titanium, bone and bronze, and neon sigils. The atlas is generated reproducibly by `tools/generate_cyber_tribal_atlas.py`, and its surface can be generated with Sogni (`tools/AssetPipeline`).
+- **Taps you can trust:** dash and Resonance Cascade presses are no longer dropped on frames that run no simulation tick or during hit-stop. A press now fires exactly once on the next tick and is cleared on pause, death, menus and restart.
+- **Readable status:** a `DASH // READY` / `RECHARGING` meter (text as well as colour), and the kill chain now drains a bar so you can see when it will run out.
+- **Cleaner light:** a cooler key light and highlights kept for emitters on ships and enemies, and brighter, more legible sea, crust, dune and cavern worlds, nebula and aurora.
+- **New title screen:** a single panel with the menu, ship select, best run, controls and the current track. Hover and click work with the mouse.
+
+![Cyber-tribal texture atlas: albedo, normal, roughness, emissive](docs/screenshots/cyber_tribal_atlas.png)
+
+### Previously: the EDM show and THE DROP
 
 | The EDM show: build-up into the drop | THE DROP: a boss built from the song |
 |---|---|
@@ -92,6 +106,10 @@ powershell -ExecutionPolicy Bypass -File tools/dotnet-install.ps1 -Channel 8.0 -
 | ![Setlist and ship select](docs/screenshots/setlist_title.png) | ![THE DROP](docs/screenshots/the_drop_boss.png) |
 | **The EDM Show — build-up, drop, after** | **Music-Shaped 3D Worlds** |
 | ![EDM show](docs/screenshots/edm_show.png) | ![Music worlds](docs/screenshots/music_worlds.png) |
+| **New Title Screen** | **Dash Meter & Chain Timer** |
+| ![New title](docs/screenshots/polish_title.png) | ![Speed and dash meter](docs/screenshots/polish_speed.png) |
+| **THE CHOIR — Phase II with Atlas Pylons** | **Full Roster with the Cyber-Tribal Ship** |
+| ![Boss](docs/screenshots/polish_boss.png) | ![Roster](docs/screenshots/cyber_tribal_roster.png) |
 
 ## Documentation
 

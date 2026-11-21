@@ -4,7 +4,31 @@ All notable gameplay, rendering, audio-intelligence, and UI updates to **NULLWAV
 
 ---
 
-## Latest Updates — Setlists, Song Records, Instrument Ships, In-Key Guns, THE DROP, Run Recap, Tutorial & the EDM Show
+## Latest Updates — Cyber-Tribal Ship & Pylons, Reliable Dash Taps, Dash Meter, Chain Timer & New Title Screen
+
+### Rendering — cyber-tribal models
+- **Atlas-mapped player ship and pylons:** the ship and pylons are now UV-mapped OBJ models (`Assets/Models/player.obj`, `pylon.obj`, described in `model_manifest.json`) that share one 1024×1024 material atlas: **albedo, normal, roughness and emissive** maps in three bands (dark carbon/titanium plating, bone and bronze, neon sigils in cyan, amber and magenta). Every other model is still built in code.
+- The mesh shader builds a tangent frame from screen-space derivatives for the normal map, uses roughness for highlight sharpness and strength, and adds emissive glow. Untextured meshes render as before.
+- **Asset pipeline:** `tools/generate_cyber_tribal_atlas.py` builds the atlas reproducibly (analytic patterns, no randomness or network) and can mix in a generated surface image; `tools/AssetPipeline` requests that surface from Sogni, and `tools/Prompts/` holds the art-direction recipes.
+- **Lighting pass:** a cooler ambient and directional key light on ships and enemies, a toned-down specular highlight, and a softer emissive curve so the brightest response stays on emitters. The sea, crust, dunes and cavern are lit more evenly (major/minor dune contours, bluer water and stone), the nebula keeps more colour, the aurora has broader curtains, and a shared tone shoulder keeps bright terrain in its palette colour.
+
+### Gameplay & HUD
+- **Dash and Cascade taps are never lost:** presses are buffered across frames that run no simulation tick, catch-up ticks and hit-stop, and fire exactly once on the next tick that updates the player. Pending presses are cleared on pause, death, menus and restart. Held move, fire and focus stay live, and dash cooldown, sync windows and balance are unchanged.
+- **Dash meter:** `DASH // READY` or `DASH // RECHARGING` with a fill bar above the loadout strip, readable by text as well as colour and separate from Phase Sync feedback.
+- **Chain timer:** the kill chain shows a draining bar for its 4.1 s window (`World.ComboDuration`) instead of only fading out.
+- **New title screen:** one panel with the signal seed, menu, ship select, best wave and score, controls, archive progress and the current track. Menu rows and ship arrows work with mouse hover and click.
+- The modifier caption in the HUD is cached instead of being rebuilt every frame.
+
+### Tools & Tests
+- New self-test for buffered input (zero-tick frames, catch-up ticks, hit-stop, wave changes and resets): **72,849 assertions**.
+
+![The cyber-tribal ship in the roster capture](docs/screenshots/cyber_tribal_roster.png)
+
+![Cyber-tribal texture atlas: albedo, normal, roughness, emissive](docs/screenshots/cyber_tribal_atlas.png)
+
+---
+
+## Setlists, Song Records, Instrument Ships, In-Key Guns, THE DROP, Run Recap, Tutorial & the EDM Show
 
 ### Gameplay
 - **Setlist runs (`SETLIST` on the title screen):** play a set of songs (2–8, `SETTINGS > AUDIO > SETLIST LENGTH`, default 4). Every new track is a new stage: the floor is swept, you get a stage bonus and an upgrade. The last track's first drop (or 45 s in) brings **THE DROP** as the final boss; beat it to win the set. Tracks come from Spotify's song title, the local file (each loop counts), or a new chapter every 3 minutes for untitled sources.
