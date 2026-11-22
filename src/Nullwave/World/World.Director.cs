@@ -28,7 +28,7 @@ public sealed partial class World
     public int Layout;
     public string LayoutName => LayoutNames[Layout];
     /// <summary>Minimap caption: the map's name in a map run, else the monolith layout.</summary>
-    public string PlayfieldName => Map != null ? Map.Name + " // " + LayoutName : LayoutName;
+    public string PlayfieldName => Map?.Name ?? LayoutName;
 
     /// <summary>
     /// The nearest place inside the playfield with <paramref name="margin"/> of room. In a map
