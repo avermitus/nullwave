@@ -576,6 +576,25 @@ public sealed class MapGeometry
         into.Sort();
     }
 
+    private readonly List<float> _floorCrossings = new();
+
+    /// <summary>Clips a decorative line to floor intervals, including shared vertices and tangencies.</summary>
+    public void FloorSegments(Vector2 a, Vector2 b, List<(Vector2 A, Vector2 B)> into)
+    {
+        SegmentCrossings(a, b, _floorCrossings);
+        into.Clear();
+        float previous = 0f;
+        for (int i = 0; i <= _floorCrossings.Count; i++)
+        {
+            float next = i < _floorCrossings.Count ? _floorCrossings[i] : 1f;
+            // Inclusive intersections may repeat at a vertex. Zero-width intervals have no
+            // floor to draw; classify each remaining interval independently of crossing parity.
+            if (next > previous && IsFloor(Vector2.Lerp(a, b, (previous + next) * 0.5f)))
+                into.Add((Vector2.Lerp(a, b, previous), Vector2.Lerp(a, b, next)));
+            previous = next;
+        }
+    }
+
     /// <summary>
     /// No wall crosses a-b. This is a boundary test: callers pass a floor endpoint (two points
     /// in the void far from every wall also have nothing between them).

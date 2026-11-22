@@ -129,7 +129,7 @@ public static class WorldRenderer
 
     // ------------------------------------------------------------------ arena
 
-    private static readonly List<float> GridCrossings = new();
+    private static readonly List<(Vector2 A, Vector2 B)> GridSegments = new();
 
     /// <summary>
     /// An experimental map: the floor plate, floor grid, glowing edges, wall blocks and spectrum
@@ -157,16 +157,9 @@ public static class WorldRenderer
         var line = M.WithAlpha(p.Primary, abyssal ? 0.032f + audio.BeatPulse * 0.038f : 0.05f + audio.BeatPulse * 0.03f);
         void GridLine(Vector2 a, Vector2 b)
         {
-            map.SegmentCrossings(a, b, GridCrossings);
-            bool inside = map.IsFloor(a);
-            float t0 = 0f;
-            foreach (float t in GridCrossings)
-            {
-                if (inside) r.Line(Vector2.Lerp(a, b, t0), Vector2.Lerp(a, b, t), 1f, line);
-                inside = !inside;
-                t0 = t;
-            }
-            if (inside) r.Line(Vector2.Lerp(a, b, t0), b, 1f, line);
+            map.FloorSegments(a, b, GridSegments);
+            foreach (var segment in GridSegments)
+                r.Line(segment.A, segment.B, 1f, line);
         }
         for (float x = MathF.Floor(vmin.X / cell) * cell; x <= vmax.X; x += cell) GridLine(new Vector2(x, vmin.Y), new Vector2(x, vmax.Y));
         for (float y = MathF.Floor(vmin.Y / cell) * cell; y <= vmax.Y; y += cell) GridLine(new Vector2(vmin.X, y), new Vector2(vmax.X, y));
