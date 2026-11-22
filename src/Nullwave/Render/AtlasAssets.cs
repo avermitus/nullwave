@@ -12,7 +12,7 @@ internal sealed class AtlasAssets : IDisposable
     static readonly string Root = Path.Combine(AppContext.BaseDirectory, "Assets");
     readonly GL _gl;
     readonly uint[] _textures = new uint[Maps.Length];
-    uint _modelSheet;
+    uint _modelSheet, _modelNormals;
 
     /// <summary>The fal enemy model sheet (Models.png) is in place.</summary>
     public static bool HasModelSheet => System.IO.File.Exists(Path.Combine(Root, "Textures", "Models.png"));
@@ -45,20 +45,25 @@ internal sealed class AtlasAssets : IDisposable
         catch { Dispose(); throw; }
         if (HasModelSheet)
         {
-            using var file = System.IO.File.OpenRead(Path.Combine(Root, "Textures", "Models.png"));
-            var image = ImageResult.FromStream(file, ColorComponents.RedGreenBlueAlpha);
-            _modelSheet = gl.GenTexture();
-            gl.BindTexture(TextureTarget.Texture2D, _modelSheet);
-            unsafe
-            {
-                fixed (byte* pixels = image.Data)
-                    gl.TexImage2D(TextureTarget.Texture2D, 0, InternalFormat.Srgb8Alpha8, (uint)image.Width,
-                        (uint)image.Height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, pixels);
-            }
-            gl.GenerateMipmap(TextureTarget.Texture2D);
-            gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.LinearMipmapLinear);
-            gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+            _modelSheet = LoadSheet(gl, "Models.png", InternalFormat.Srgb8Alpha8);
+            if (System.IO.File.Exists(Path.Combine(Root, "Textures", "ModelsNormal.png")))
+                _modelNormals = LoadSheet(gl, "ModelsNormal.png", InternalFormat.Rgba8);
         }
+    }
+
+    static unsafe uint LoadSheet(GL gl, string file, InternalFormat format)
+    {
+        using var stream = System.IO.File.OpenRead(Path.Combine(Root, "Textures", file));
+        var image = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
+        uint tex = gl.GenTexture();
+        gl.BindTexture(TextureTarget.Texture2D, tex);
+        fixed (byte* pixels = image.Data)
+            gl.TexImage2D(TextureTarget.Texture2D, 0, format, (uint)image.Width, (uint)image.Height, 0,
+                PixelFormat.Rgba, PixelType.UnsignedByte, pixels);
+        gl.GenerateMipmap(TextureTarget.Texture2D);
+        gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.LinearMipmapLinear);
+        gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+        return tex;
     }
 
     /// <summary>A fal enemy model (Assets/Models/enemy_{name}.obj), or null if it isn't there.</summary>
@@ -68,7 +73,10 @@ internal sealed class AtlasAssets : IDisposable
         try
         {
             var m = LoadMesh("enemy_" + name);
-            return new Mesh(m.Positions, m.Normals, m.Materials, m.UV) { GpuStatic = true };
+            // drawn 15 % larger than the unit radius so the detail reads at top-down scale (hitboxes are unchanged)
+            var scaled = new System.Numerics.Vector3[m.Positions.Length];
+            for (int i = 0; i < scaled.Length; i++) scaled[i] = m.Positions[i] * 1.15f;
+            return new Mesh(scaled, m.Normals, m.Materials, m.UV) { GpuStatic = true };
         }
         catch (Exception ex)
         {
@@ -90,6 +98,9 @@ internal sealed class AtlasAssets : IDisposable
             _gl.ActiveTexture(TextureUnit.Texture0 + Maps.Length);
             _gl.BindTexture(TextureTarget.Texture2D, _modelSheet);
             shader.SetInt("uModelMap", Maps.Length);
+            _gl.ActiveTexture(TextureUnit.Texture0 + Maps.Length + 1);
+            _gl.BindTexture(TextureTarget.Texture2D, _modelNormals != 0 ? _modelNormals : _textures[1]);
+            shader.SetInt("uModelNormalMap", Maps.Length + 1);
         }
         _gl.ActiveTexture(TextureUnit.Texture0);
         shader.SetFloat("uEmissiveIntensity", intensity);
@@ -115,7 +126,8 @@ internal sealed class AtlasAssets : IDisposable
                 for (int f = 0; f < mesh->MNumFaces; f++)
                 {
                     var face = mesh->MFaces[f];
-                    if (face.MNumIndices != 3) throw new InvalidDataException($"Expected triangles on {name}.");
+                    // a stray line or point left by decimation is skipped rather than rejecting the model
+                    if (face.MNumIndices != 3) continue;
                     for (int j = 0; j < 3; j++)
                     {
                         var index = face.MIndices[j];
@@ -137,5 +149,6 @@ internal sealed class AtlasAssets : IDisposable
         foreach (uint texture in _textures)
             if (texture != 0) _gl.DeleteTexture(texture);
         if (_modelSheet != 0) _gl.DeleteTexture(_modelSheet);
+        if (_modelNormals != 0) _gl.DeleteTexture(_modelNormals);
     }
 }

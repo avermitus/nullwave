@@ -762,7 +762,9 @@ public static class Screens
 
     public static void DrawGameOver(Renderer r, Palette p, GameWorld w, MetaProgress meta, List<string> unlocks, RecordBreak records, float time)
     {
-        r.UiRect(0, 0, 1600, 900, PanelFill(new Vector4(0.002f, 0.003f, 0.010f, 0.80f), 0.88f));
+        // the shattered statue (fal key art) shows through behind the results card
+        r.UiImage("GameOverArt.png", 0, 0, 1600, 900, 0.9f);
+        r.UiRect(0, 0, 1600, 900, PanelFill(new Vector4(0.002f, 0.003f, 0.010f, 0.5f), 0.6f));
         DrawCard(r, p, 280, 94, 1040, 728, M.WithAlpha(p.Danger, 0.7f));
         var s = w.Summary;
         r.UiTextCentered("SIGNAL LOST", 800, 132, 6.5f, p.Text, true);

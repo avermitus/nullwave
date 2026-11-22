@@ -35,6 +35,31 @@ void main() {
 }
 """;
 
+    /// <summary>Full-colour images under the UI (title and game-over key art).</summary>
+    public const string ImageVert = """
+#version 410 core
+layout(location = 0) in vec2 aPos;
+layout(location = 1) in vec2 aUv;
+uniform vec2 uSize;
+out vec2 vUv;
+void main() {
+    gl_Position = vec4(aPos.x / uSize.x * 2.0 - 1.0, 1.0 - aPos.y / uSize.y * 2.0, 0.0, 1.0);
+    vUv = aUv;
+}
+""";
+
+    public const string ImageFrag = """
+#version 410 core
+in vec2 vUv;
+uniform sampler2D uImage;
+uniform float uAlpha;
+out vec4 fragColor;
+void main() {
+    vec4 c = texture(uImage, vUv);
+    fragColor = vec4(c.rgb, c.a * uAlpha);
+}
+""";
+
     public const string UiVert = """
 #version 410 core
 layout(location = 0) in vec2 aPos;
@@ -848,7 +873,7 @@ in float vGlow;
 in vec2 vUV;
 uniform sampler2D uAlbedoMap, uNormalMap, uRoughnessMap, uEmissiveMap;
 // fal enemy models: their own textures packed in one sheet, addressed at u in [2, 3]; alpha = glow mask
-uniform sampler2D uModelMap;
+uniform sampler2D uModelMap, uModelNormalMap;
 uniform float uEmissiveIntensity;
 in vec3 vWorld;
 out vec4 fragColor;
@@ -873,7 +898,7 @@ void main() {
     float roughness = 0.5;
     vec3 emission = vec3(0);
     vec3 base = vColor.rgb;
-    if (mapped) {
+    if (textured) {
         vec3 dx = dFdx(vWorld), dy = dFdy(vWorld);
         vec2 ux = dFdx(vUV), uy = dFdy(vUV);
         float det = ux.x * uy.y - ux.y * uy.x;
@@ -884,9 +909,11 @@ void main() {
             vec3 bitangent = normalize(cross(n, tangent));
             vec3 dv = (dy * ux.x - dx * uy.x) / det;
             bitangent *= -sign(dot(bitangent, dv));
-            vec3 detail = texture(uNormalMap, vUV).xyz * 2.0 - 1.0;
+            vec3 detail = (modelSheet ? texture(uModelNormalMap, vec2(vUV.x - 2.0, vUV.y)) : texture(uNormalMap, vUV)).xyz * 2.0 - 1.0;
             n = normalize(mat3(tangent, bitangent, n) * detail);
         }
+    }
+    if (mapped) {
         base = mix(texture(uAlbedoMap, vUV).rgb, vec3(1), clamp(vGlow, 0.0, 1.0));
         roughness = texture(uRoughnessMap, vUV).r;
         emission = texture(uEmissiveMap, vUV).rgb * uEmissiveIntensity;
@@ -895,7 +922,8 @@ void main() {
         // the model's own marble/chrome texture; its neon parts glow in this enemy's colour
         vec4 t = texture(uModelMap, vec2(vUV.x - 2.0, vUV.y));
         vec3 hue = vColor.rgb / max(max(vColor.r, max(vColor.g, vColor.b)), 0.05);
-        base = mix(t.rgb * mix(vec3(1.0), hue, 0.18), vec3(1.0), clamp(vGlow - 0.06, 0.0, 1.0));
+        // marble and chrome read brighter than the old dark hulls, so the angels pop against the backdrop
+        base = mix(t.rgb * mix(vec3(1.0), hue, 0.18) * 1.35, vec3(1.0), clamp(vGlow - 0.06, 0.0, 1.0));
         roughness = 0.3;
         emission = hue * t.a * 1.4 * uEmissiveIntensity;
     }

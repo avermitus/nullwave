@@ -544,6 +544,84 @@ public sealed class Renderer : IDisposable
     {
         _uiAlpha.Clear();
         _uiGlow.Clear();
+        _uiImages.Clear();
+    }
+
+    private Shader? _imageShader;
+    private uint _imageVao, _imageVbo;
+    private readonly Dictionary<string, uint> _uiTextures = new();
+    private readonly List<(uint Texture, float X, float Y, float W, float H, float Alpha)> _uiImages = new();
+
+    /// <summary>Draws an image from Assets/Textures under this frame's UI (missing files are skipped).</summary>
+    public void UiImage(string file, float x, float y, float w, float h, float alpha)
+    {
+        if (!_uiTextures.TryGetValue(file, out uint tex))
+        {
+            tex = LoadUiTexture(file);
+            _uiTextures[file] = tex;
+        }
+        if (tex != 0 && alpha > 0.001f) _uiImages.Add((tex, x, y, w, h, alpha));
+    }
+
+    private unsafe uint LoadUiTexture(string file)
+    {
+        string path = Path.Combine(AppContext.BaseDirectory, "Assets", "Textures", file);
+        if (!File.Exists(path)) return 0;
+        try
+        {
+            using var stream = File.OpenRead(path);
+            var image = StbImageSharp.ImageResult.FromStream(stream, StbImageSharp.ColorComponents.RedGreenBlueAlpha);
+            uint tex = _gl.GenTexture();
+            _gl.BindTexture(TextureTarget.Texture2D, tex);
+            fixed (byte* pixels = image.Data)
+                _gl.TexImage2D(TextureTarget.Texture2D, 0, InternalFormat.Rgba8, (uint)image.Width, (uint)image.Height, 0,
+                    PixelFormat.Rgba, PixelType.UnsignedByte, pixels);
+            _gl.GenerateMipmap(TextureTarget.Texture2D);
+            _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.LinearMipmapLinear);
+            _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+            _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
+            _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+            return tex;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"UI | {file} failed to load: {ex.Message}");
+            return 0;
+        }
+    }
+
+    private unsafe void DrawUiImages()
+    {
+        if (_uiImages.Count == 0) return;
+        if (_imageShader == null)
+        {
+            _imageShader = new Shader(_gl, Shaders.ImageVert, Shaders.ImageFrag, "image");
+            _imageVao = _gl.GenVertexArray();
+            _gl.BindVertexArray(_imageVao);
+            _imageVbo = _gl.GenBuffer();
+            _gl.BindBuffer(BufferTargetARB.ArrayBuffer, _imageVbo);
+            _gl.VertexAttribPointer(0, 2, VertexAttribPointerType.Float, false, 4 * sizeof(float), (void*)0);
+            _gl.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, 4 * sizeof(float), (void*)(2 * sizeof(float)));
+            _gl.EnableVertexAttribArray(0);
+            _gl.EnableVertexAttribArray(1);
+        }
+        _imageShader.Use();
+        _imageShader.SetVec2("uSize", DesignWidth, DesignHeight);
+        _imageShader.SetInt("uImage", 0);
+        _gl.BindVertexArray(_imageVao);
+        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, _imageVbo);
+        Span<float> quad = stackalloc float[24];
+        foreach (var (tex, x, y, w, h, alpha) in _uiImages)
+        {
+            float[] v = { x, y, 0, 0, x + w, y, 1, 0, x + w, y + h, 1, 1, x, y, 0, 0, x + w, y + h, 1, 1, x, y + h, 0, 1 };
+            fixed (float* ptr = v)
+                _gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(v.Length * sizeof(float)), ptr, BufferUsageARB.StreamDraw);
+            _gl.ActiveTexture(TextureUnit.Texture0);
+            _gl.BindTexture(TextureTarget.Texture2D, tex);
+            _imageShader.SetFloat("uAlpha", alpha);
+            _gl.DrawArrays(PrimitiveType.Triangles, 0, 6);
+        }
+        _gl.BindVertexArray(0);
     }
 
     public Vector2 ScreenToWorld(Vector2 mouse, Vector2 windowSize)
@@ -787,9 +865,10 @@ public sealed class Renderer : IDisposable
         _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
         _gl.Viewport(0, 0, (uint)Width, (uint)Height);
         _gl.Enable(EnableCap.Blend);
+        BlendMode.Alpha.Apply(_gl);
+        DrawUiImages();
         _uiShader.Use();
         _uiShader.SetVec2("uSize", DesignWidth, DesignHeight);
-        BlendMode.Alpha.Apply(_gl);
         _uiAlpha.Draw();
         BlendMode.Additive.Apply(_gl);
         _uiGlow.Draw();

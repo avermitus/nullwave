@@ -1,57 +1,33 @@
 {
-  "generator": "Sogni AI",
-  "model": "minimax_music3",
-  "seed": 2940404251,
-  "projectId": "E0E92CC6-646B-434F-9357-8DC832565BB4",
-  "promptFile": "tools/Prompts/nullwave-sound-palette.txt",
-  "sourceSha256": "7f0dd67487ea9bc19d05e0d0453009f06b8675e68d98ef0b2aa279dd4e49cbd3",
-  "sourceDurationSeconds": 19.992381,
-  "billing": {
-    "paidBy": "plan",
-    "sparkCharged": 0
-  },
+  "generator": "fal: ElevenLabs Sound Effects v3",
   "format": "48000 Hz mono PCM16 WAV",
-  "usage": "Generated texture layers mixed with procedural effects",
-  "listeningReview": "Owner listening feedback pending",
+  "usage": "Sampled layers mixed with procedural effects",
+  "theme": "biblically accurate angels / marble / liquid chrome",
+  "source": "Assets/Source/fal/sfx/*.mp3 (trimmed, faded, peak-normalised)",
   "effects": [
     {
       "effect": "kill",
       "file": "kill.wav",
-      "sourceStartSeconds": 4.41,
-      "durationSeconds": 0.26,
-      "filters": "highpass=f=1100,lowpass=f=10000",
-      "reversed": false,
-      "attackMs": 2,
-      "releaseMs": 60,
+      "prompt": "a small marble angel statue shattering with a bright chrome chime and a tiny choir tail",
+      "durationSeconds": 0.34,
       "peak": 0.75,
-      "rms": 0.099095,
-      "sha256": "06553460843828894104058b4976239c738dfbcf3e93513f64ffc58cd59ed2b2"
+      "sha256": "48627e0edfca0b7baf34464604cf8284bd63e93437d7737278e4e5612063de97"
     },
     {
       "effect": "explosion",
       "file": "explosion.wav",
-      "sourceStartSeconds": 1.08,
-      "durationSeconds": 0.95,
-      "filters": "highpass=f=45,lowpass=f=2200",
-      "reversed": false,
-      "attackMs": 2,
-      "releaseMs": 60,
+      "prompt": "a deep divine boom with shattering marble, a reversed cymbal swell and an angelic choir burst",
+      "durationSeconds": 1.1,
       "peak": 0.75,
-      "rms": 0.070227,
-      "sha256": "933d2d4a5690e4aa4fa06617e2113beb3148eda3c8e7e71750620ccff53d681f"
+      "sha256": "e2790e02ad916da07c8ae063de08394571b6bff84cceb79f49c629f7e4d2d37b"
     },
     {
       "effect": "dash",
       "file": "dash.wav",
-      "sourceStartSeconds": 8.55,
-      "durationSeconds": 0.3,
-      "filters": "highpass=f=1600,lowpass=f=9000",
-      "reversed": true,
-      "attackMs": 2,
-      "releaseMs": 60,
+      "prompt": "one quick whoosh of large feathered wings with a glassy liquid-chrome shimmer",
+      "durationSeconds": 0.34,
       "peak": 0.75,
-      "rms": 0.117687,
-      "sha256": "4d93cc42df043cfcbeec19a7e0a55f87deb19f7e5c078e280a5bd87e486dcb35"
+      "sha256": "7059dec396ab7d9d7e2f81312f090085e272074203a55e9f2b0afb29860a840e"
     }
   ]
 }

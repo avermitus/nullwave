@@ -1414,6 +1414,8 @@ public sealed class Game : IDisposable
         switch (_state)
         {
             case AppState.Title:
+                // fal key art: the melting marble saint, dark on the left where the menu sits
+                _renderer.UiImage("TitleArt.png", 0, 0, 1600, 900, 0.72f);
                 Screens.DrawTitle(_renderer, _palette, _meta, world.Seed, false, _menuIndex, _elapsed, _audio.State);
                 Screens.DrawShipSelect(_renderer, _palette, Ships.Parse(_meta.SelectedShip));
                 break;
