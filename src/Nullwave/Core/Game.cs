@@ -67,6 +67,7 @@ public sealed class Game : IDisposable
     private int _paletteMovement;
     private ulong _paletteSeed;
     private int _menuIndex;
+    private Vector2 _lastTitleMouse = new(float.NaN, float.NaN);
     private readonly Coach _coach = new();
     private readonly ClipRecorder _clip = new();
     private int _clipMomentVersion;
@@ -95,6 +96,7 @@ public sealed class Game : IDisposable
     private bool _autoPilot;
     private readonly List<string> _unlocks = new();
     private float _accumulator;
+    private PlayerActionBuffer _playerActions;
     private float _elapsed;
     private float _fps = 60f;
     private float _runClock;
@@ -535,6 +537,7 @@ public sealed class Game : IDisposable
         _daily = daily;
         _setlist = setlist;
         _recordedTracks = 0;
+        _playerActions = default;
         _world = new GameWorld(new RunConfig
         {
             Seed = seed,
@@ -760,17 +763,34 @@ public sealed class Game : IDisposable
         if (_input == null) return;
         if (_input.UpPressed) { _menuIndex = (_menuIndex + TitleItemCount - 1) % TitleItemCount; _audio.Sfx.Trigger(SfxType.Menu, 0.22f); }
         if (_input.DownPressed) { _menuIndex = (_menuIndex + 1) % TitleItemCount; _audio.Sfx.Trigger(SfxType.Menu, 0.22f); }
-        // left / right picks the instrument ship
-        if (_input.LeftPressed || _input.RightPressed)
+        bool movedMouse = _mouseUi != _lastTitleMouse;
+        _lastTitleMouse = _mouseUi;
+        int hoveredRow = -1;
+        if (_mouseUi.X >= Screens.TitleMenuX && _mouseUi.X < Screens.TitleMenuX + Screens.TitleMenuWidth &&
+            _mouseUi.Y >= Screens.TitleMenuY && _mouseUi.Y < Screens.TitleMenuY + TitleItemCount * Screens.TitleMenuRowHeight)
+        {
+            float offset = _mouseUi.Y - Screens.TitleMenuY;
+            if (offset % Screens.TitleMenuRowHeight < Screens.TitleMenuRowHeightVisible)
+                hoveredRow = (int)(offset / Screens.TitleMenuRowHeight);
+        }
+        if (movedMouse && hoveredRow >= 0) _menuIndex = hoveredRow;
+        bool titleClick = _input.MouseLeftPressed && hoveredRow >= 0;
+        if (titleClick) _menuIndex = hoveredRow;
+
+        bool shipClick = _input.MouseLeftPressed && _mouseUi.Y >= Screens.TitleShipY &&
+            _mouseUi.Y < Screens.TitleShipY + Screens.TitleShipButtonHeight;
+        bool clickLeft = shipClick && _mouseUi.X >= Screens.TitleShipLeftX && _mouseUi.X < Screens.TitleShipLeftX + Screens.TitleShipButtonWidth;
+        bool clickRight = shipClick && _mouseUi.X >= Screens.TitleShipRightX && _mouseUi.X < Screens.TitleShipRightX + Screens.TitleShipButtonWidth;
+        if (_input.LeftPressed || _input.RightPressed || clickLeft || clickRight)
         {
             var ships = Ships.All;
             int i = Array.IndexOf(ships, Ships.Parse(_meta.SelectedShip));
-            i = (i + (_input.RightPressed ? 1 : ships.Length - 1)) % ships.Length;
+            i = (i + ((_input.RightPressed || clickRight) ? 1 : ships.Length - 1)) % ships.Length;
             _meta.SelectedShip = ships[i].ToString();
             _meta.Save();
             _audio.Sfx.Trigger(SfxType.Menu, 0.3f);
         }
-        if (_input.ConfirmPressed)
+        if (_input.ConfirmPressed || titleClick)
         {
             _audio.Sfx.Trigger(SfxType.Menu, 0.35f);
             switch (_menuIndex)
@@ -971,10 +991,12 @@ public sealed class Game : IDisposable
         if (_input != null && _input.PausePressed)
         {
             _state = AppState.Paused;
+            _playerActions = default;
             _pauseIndex = 0;
             return;
         }
 
+        bool playerControlled = false;
         InputFrame frame;
         if (_rosterHold)
         {
@@ -1000,19 +1022,13 @@ public sealed class Game : IDisposable
         else
         {
             frame = BuildInput();
+            playerControlled = _input != null;
         }
 
         if (_captureCue) _world.SetMusicCue(0.95f, 0f, 0f, ++_cueFrames == 40);
         else _world.SetMusicCue(_director.Intensity * (0.7f + _world.Hype * 0.5f), _director.Build, _director.Breakdown, _director.DropTriggered);
         _runClock += dt;
-        _accumulator += dt;
-        int steps = 0;
-        while (_accumulator >= 1f / 60f && steps++ < 5)
-        {
-            _world.Step(1f / 60f, _audio.State, frame);
-            _accumulator -= 1f / 60f;
-            if (_world.Phase == GamePhase.Attuning || _world.Phase == GamePhase.Dead) break;
-        }
+        StepPlaying(_world, _audio.State, dt, frame, playerControlled, ref _accumulator, ref _playerActions);
 
         if (_world.Phase == GamePhase.Attuning)
         {
@@ -1032,6 +1048,27 @@ public sealed class Game : IDisposable
             _palette = Palette.FromSeed(_world.Seed, _world.Movement);
             _paletteMovement = _world.Movement;
             _paletteSeed = _world.Seed;
+        }
+    }
+
+    internal static void StepPlaying(GameWorld world, AudioState audio, float dt, InputFrame frame,
+        bool playerControlled, ref float accumulator, ref PlayerActionBuffer playerActions)
+    {
+        const float tick = 1f / 60f;
+        if (playerControlled && world.Phase == GamePhase.Playing) playerActions.Sample(frame);
+        else playerActions = default;
+
+        accumulator += dt;
+        int steps = 0;
+        while (accumulator >= tick && steps++ < 5)
+        {
+            var tickInput = playerControlled ? playerActions.ForTick(frame, world.WillUpdatePlayer) : frame;
+            world.Step(tick, audio, tickInput);
+            accumulator -= tick;
+            if (world.Phase == GamePhase.Playing) continue;
+
+            playerActions = default;
+            if (world.Phase is GamePhase.Attuning or GamePhase.Dead) break;
         }
     }
 

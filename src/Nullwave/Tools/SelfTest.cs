@@ -23,6 +23,7 @@ public static partial class SelfTest
             TestMeta();
             TestSeeds();
             TestDamageAndBurst();
+            TestPlayerActionBuffer();
             TestLongRun();
             TestEndlessWave();
             TestModels();
@@ -91,6 +92,77 @@ public static partial class SelfTest
     {
         Check(float.IsFinite(p.Pos.X) && float.IsFinite(p.Pos.Y), "player position finite");
         Check(float.IsFinite(p.Vel.X) && float.IsFinite(p.Vel.Y), "player velocity finite");
+    }
+
+    private static void TestPlayerActionBuffer()
+    {
+        const float tick = 1f / 60f;
+        var audio = new AudioState { Bpm = 120f };
+        var world = new GameWorld(new RunConfig { Seed = 0xA6710UL });
+        var actions = new PlayerActionBuffer();
+        float accumulator = 0f;
+
+        void Update(float dt, InputFrame frame) =>
+            Game.StepPlaying(world, audio, dt, frame, true, ref accumulator, ref actions);
+
+        var dash = new InputFrame(Vector2.UnitX, Vector2.UnitX, false, true, false, false);
+        var burst = new InputFrame(Vector2.Zero, Vector2.UnitX, false, false, false, true);
+        var dashAndBurst = new InputFrame(Vector2.UnitX, Vector2.UnitX, false, true, false, true);
+        var held = new InputFrame(Vector2.UnitY, Vector2.UnitY, true, false, true, false);
+        world.Player.Resonance = world.Player.ResonanceMax;
+        Update(tick / 4f, dash);
+        world.HitStop = tick;
+        Update(tick / 4f, burst);
+        Check(world.SessionTime == 0f && !world.Player.IsDashing && world.Bursts == 0,
+            "dash and burst wait across zero-tick updates");
+
+        Update(tick / 2f, InputFrame.Empty);
+        Check(world.HitStop == 0f && !world.Player.IsDashing && world.Bursts == 0,
+            "the tick that ends hit-stop does not consume dash or burst");
+        Update(tick, held);
+        Check(world.Player.IsDashing && world.Player.DashDir == Vector2.UnitY && world.Bursts == 1,
+            "the first active tick delivers both presses with the latest movement");
+        Check(world.Player.Focus > 0f && world.Player.ShotCounter > 0,
+            "held focus and fire reach the same player tick");
+
+        // A dash rejected on tick one would fire on tick two if its edge were replayed.
+        world.HitStop = 0f;
+        world.Player.IsDashing = false;
+        world.Player.DashCooldown = 2f * tick;
+        Update(3f * tick, dash);
+        Check(world.Player.DashCooldown == 0f && !world.Player.IsDashing,
+            "catch-up ticks do not retry a press after cooldown clears");
+
+        world.Player.Resonance = world.Player.ResonanceMax;
+        Update(tick / 2f, dashAndBurst);
+        world.Phase = GamePhase.Attuning;
+        Update(tick / 2f, InputFrame.Empty);
+        world.Phase = GamePhase.Playing;
+        Update(tick, InputFrame.Empty);
+        Check(!world.Player.IsDashing && world.Bursts == 1,
+            "a modal transition clears both pending presses");
+
+        int wave = world.Wave;
+        float playerTime = world.Player.Time;
+        Update(tick / 2f, dashAndBurst);
+        world.Phase = GamePhase.Intermission;
+        world.IntermissionTimer = tick;
+        Update(2f * tick, InputFrame.Empty);
+        Check(world.Wave == wave + 1 && world.Player.Time > playerTime &&
+            !world.Player.IsDashing && world.Bursts == 1,
+            "intermission entry clears presses pending from the previous wave");
+
+        playerTime = world.Player.Time;
+        world.Phase = GamePhase.Intermission;
+        world.IntermissionTimer = tick;
+        Update(2f * tick, dashAndBurst);
+        Check(world.Wave == wave + 2 && world.Player.Time > playerTime &&
+            !world.Player.IsDashing && world.Bursts == 1,
+            "taps during intermission do not reach the next wave in the same catch-up update");
+
+        Update(tick, dashAndBurst);
+        Check(world.Player.IsDashing && world.Bursts == 2,
+            "fresh dash and burst presses work after intermission");
     }
 
     private static void TestMeta()
