@@ -1,0 +1,3 @@
+Rodin 2.5 (Gen-2.5-High, 20K tris, PBR) models.
+spiraller still generating: fal request 01a204c0-567e-7993-865e-1e44ab316e4b (endpoint fal-ai/hyper3d/rodin/v2.5)
+Next: run blender_views.py on these, fix blender_convert.py (no decimation, take the Base Color image), pack_model_sheet.py, rebuild.

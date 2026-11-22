@@ -13,17 +13,18 @@ public static class Models
 {
     public static readonly Mesh Player = AtlasAssets.LoadMesh("player");
     public static readonly Mesh PlayerThruster = BuildThruster();
-    public static readonly Mesh Drifter = BuildDrifter();
-    public static readonly Mesh Orbiter = BuildOrbiter();
+    // fal enemy models (cybersigilism x Renaissance x liquid chrome); each falls back to its built-in shape
+    public static readonly Mesh Drifter = AtlasAssets.TryLoadEnemy("hunter") ?? BuildDrifter();
+    public static readonly Mesh Orbiter = AtlasAssets.TryLoadEnemy("spiraller") ?? BuildOrbiter();
     public static readonly Mesh OrbiterPod = BuildPod();
     public static readonly Mesh Sniper = BuildSniper();
-    public static readonly Mesh Dasher = BuildDasher();
+    public static readonly Mesh Dasher = AtlasAssets.TryLoadEnemy("pouncer") ?? BuildDasher();
     public static readonly Mesh TurretBase = BuildTurretBase();
     public static readonly Mesh TurretHead = BuildTurretHead();
-    public static readonly Mesh SplitterCore = BuildSplitterCore();
+    public static readonly Mesh SplitterCore = AtlasAssets.TryLoadEnemy("juggernaut") ?? BuildSplitterCore();
     public static readonly Mesh SplitterCell = BuildSplitterCell();
-    public static readonly Mesh Swarm = BuildSwarm();
-    public static readonly Mesh BossCore = BuildBossCore();
+    public static readonly Mesh Swarm = AtlasAssets.TryLoadEnemy("pack") ?? BuildSwarm();
+    public static readonly Mesh BossCore = AtlasAssets.TryLoadEnemy("choir") ?? BuildBossCore();
     public static readonly Mesh BossPillar = BuildBossPillar();
     public static readonly Mesh BossHalo = BuildBossHalo();
     public static readonly Mesh BossShard = BuildBossShard();

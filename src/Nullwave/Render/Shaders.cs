@@ -59,6 +59,7 @@ uniform vec2 uResolution;
 uniform float uTime;
 uniform float uFlow;
 uniform float uIntensity;
+uniform float uLumaCap;
 uniform float uDrop;
 uniform float uBuild;
 uniform float uKick;
@@ -599,7 +600,16 @@ void main() {
     }
     vec3 ambient = mix(vec3(0.021, 0.034, 0.067), vec3(0.014, 0.025, 0.052), uDarkTheme);
     col += ambient * mix(0.42, 1.0, focus);
-    fragColor = vec4(col * min(uIntensity, 1.1), 1.0);
+    col *= min(uIntensity, 1.1);
+    // readability guard: however loud the show gets, the world's brightness stays under a soft
+    // ceiling, so the ship, bullets and enemies always sit brighter than it (hue kept, values eased)
+    float lumW = dot(col, vec3(0.2126, 0.7152, 0.0722));
+    float knee = uLumaCap * 0.55;
+    if (uLumaCap < 5.0 && lumW > knee) {
+        float room = max(uLumaCap - knee, 1e-3);
+        col *= (knee + room * (1.0 - exp(-(lumW - knee) / room))) / lumW;
+    }
+    fragColor = vec4(col, 1.0);
 }
 """;
 
@@ -810,17 +820,23 @@ layout(location = 3) in float aGlow;
 layout(location = 4) in vec2 aUV;
 out vec2 vUV;
 uniform mat4 uViewProj;
+// high-detail models: drawn per instance from a static buffer with their own transform and colour
+uniform int uInstance;
+uniform mat4 uModel;
+uniform vec4 uInstColor;
+uniform float uInstGlow;
 out vec3 vNormal;
 out vec4 vColor;
 out float vGlow;
 out vec3 vWorld;
 void main() {
-    gl_Position = uViewProj * vec4(aPos, 1.0);
-    vNormal = aNormal;
-    vColor = aColor;
-    vGlow = aGlow;
+    vec4 world = uInstance == 1 ? uModel * vec4(aPos, 1.0) : vec4(aPos, 1.0);
+    gl_Position = uViewProj * world;
+    vNormal = uInstance == 1 ? normalize(mat3(uModel) * aNormal) : aNormal;
+    vColor = uInstance == 1 ? uInstColor : aColor;
+    vGlow = uInstance == 1 ? uInstGlow : aGlow;
     vUV = aUV;
-    vWorld = aPos;
+    vWorld = world.xyz;
 }
 """;
 
@@ -831,6 +847,8 @@ in vec4 vColor;
 in float vGlow;
 in vec2 vUV;
 uniform sampler2D uAlbedoMap, uNormalMap, uRoughnessMap, uEmissiveMap;
+// fal enemy models: their own textures packed in one sheet, addressed at u in [2, 3]; alpha = glow mask
+uniform sampler2D uModelMap;
 uniform float uEmissiveIntensity;
 in vec3 vWorld;
 out vec4 fragColor;
@@ -848,7 +866,9 @@ uniform float uFogNear;
 uniform float uFogFar;
 uniform float uDarkTheme;
 void main() {
-    bool mapped = vUV.x >= 0.0;
+    bool modelSheet = vUV.x >= 1.5;
+    bool mapped = vUV.x >= 0.0 && !modelSheet;
+    bool textured = mapped || modelSheet;
     vec3 n = normalize(vNormal);
     float roughness = 0.5;
     vec3 emission = vec3(0);
@@ -871,13 +891,21 @@ void main() {
         roughness = texture(uRoughnessMap, vUV).r;
         emission = texture(uEmissiveMap, vUV).rgb * uEmissiveIntensity;
     }
+    if (modelSheet) {
+        // the model's own marble/chrome texture; its neon parts glow in this enemy's colour
+        vec4 t = texture(uModelMap, vec2(vUV.x - 2.0, vUV.y));
+        vec3 hue = vColor.rgb / max(max(vColor.r, max(vColor.g, vColor.b)), 0.05);
+        base = mix(t.rgb * mix(vec3(1.0), hue, 0.18), vec3(1.0), clamp(vGlow - 0.06, 0.0, 1.0));
+        roughness = 0.3;
+        emission = hue * t.a * 1.4 * uEmissiveIntensity;
+    }
     vec3 V = uPerspective == 1 ? normalize(uEye - vWorld) : normalize(uViewDir);
     vec3 L = normalize(uLightDir);
     float diff = max(dot(n, L), 0.0);
     float back = max(dot(n, -L), 0.0);
     vec3 hemi = mix(vec3(0.13, 0.17, 0.26), vec3(0.28, 0.36, 0.46), n.z * 0.5 + 0.5);
     vec3 h = normalize(L + V);
-    float spec = pow(max(dot(n, h), 0.0), (mapped ? mix(84.0, 5.0, roughness) : 36.0));
+    float spec = pow(max(dot(n, h), 0.0), (textured ? mix(84.0, 5.0, roughness) : 36.0));
     float fres = pow(1.0 - clamp(dot(n, V), 0.0, 1.0), 3.0);
     // Cool ambient and a directional key shape the hull. Reserve the bright response for emitters.
     vec3 key = vec3(0.80, 0.88, 0.94) * diff * mix(0.78, 0.56, uDarkTheme);
@@ -885,7 +913,7 @@ void main() {
     vec3 col = base * (hemi * mix(1.0, 0.72, uDarkTheme) + key + fill);
     vec3 specColor = mix(vec3(0.40, 0.57, 0.78), base, 0.40);
     // Atlas-mapped surfaces scale the highlight by their roughness map.
-    float specScale = mapped ? mix(1.55, 0.15, roughness) : 1.0;
+    float specScale = textured ? mix(1.55, 0.15, roughness) : 1.0;
     col += specColor * spec * specScale * (0.06 + 0.20 * diff);
     col += uRimColor * fres * uRim * mix(0.73, 1.38, uDarkTheme);
     col *= uBrightness;

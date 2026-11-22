@@ -145,7 +145,7 @@ public sealed partial class World
                 if (M.DistanceToSegment(e.Pos, LeadBeam[i - 1], LeadBeam[i]) < width + e.Radius * 0.8f)
                 {
                     DamageEnemy(e, dps * dt, null);
-                    if (FxRng.Chance(0.25f)) SpawnParticle(e.Pos, FxRng.InCircle(90f), 0.18f, 2.4f, M.Hsv(LeadBeamHue, 0.6f, 1f, 0.8f), ParticleKind.Spark, 3f);
+                    if (FxRng.Chance(0.25f * dt * 60f)) SpawnParticle(e.Pos, FxRng.InCircle(90f), 0.18f, 2.4f, M.Hsv(LeadBeamHue, 0.6f, 1f, 0.8f), ParticleKind.Spark, 3f);
                     break;
                 }
             }

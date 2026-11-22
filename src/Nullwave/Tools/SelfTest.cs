@@ -73,6 +73,11 @@ public static partial class SelfTest
             TestRunRecap();
             TestRumbleAndCoach();
             TestEdmShow();
+            TestStragglerHunt();
+            TestReadabilityGuard();
+            TestSimRateIndependence();
+            TestDamageSources();
+            TestPackSpreadsWhenFleeing();
             Console.WriteLine($"RESULT: PASS ({_checks} assertions, {sw.Elapsed.TotalSeconds:0.0}s)");
             return 0;
         }
@@ -98,7 +103,7 @@ public static partial class SelfTest
 
     private static void TestPlayerActionBuffer()
     {
-        const float tick = 1f / 60f;
+        const float tick = Game.SimTick;   // timings below are in simulation steps
         var audio = new AudioState { Bpm = 120f };
         var world = new GameWorld(new RunConfig { Seed = 0xA6710UL });
         var actions = new PlayerActionBuffer();

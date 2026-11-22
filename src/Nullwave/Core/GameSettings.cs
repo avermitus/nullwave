@@ -50,11 +50,15 @@ public sealed class GameSettings
     /// <summary>Visual aesthetic: Standard neon synthwave or Abyssal OLED-black void noir.</summary>
     public VisualTheme Theme { get; set; } = VisualTheme.Standard;
     public int BackgroundIntensity { get; set; } = 100;
+    /// <summary>Soft brightness ceiling on the background so the ship, bullets and enemies always stand out (percent; 0 = off).</summary>
+    public int ReadabilityGuard { get; set; } = 100;
     public int BackgroundMotion { get; set; } = 100;
     public int Bloom { get; set; } = 100;
     public int ScreenShake { get; set; } = 100;
     public int Aberration { get; set; } = 100;
     public bool ShowFps { get; set; }
+    /// <summary>Frames per second the game aims for (VSync still applies on top).</summary>
+    public int FrameRateCap { get; set; } = 120;
     /// <summary>Strength of music-driven grading, kick thump, camera punch and drop effects.</summary>
     public int MusicFx { get; set; } = 100;
     /// <summary>Caps full-screen flashes and glitches (photosensitivity).</summary>
@@ -122,6 +126,8 @@ public sealed class GameSettings
         BeatMotion = Math.Clamp(BeatMotion, 0, MaxBeatMotion);
         CameraFx = Math.Clamp(CameraFx, 0, MaxCameraFx);
         BackgroundIntensity = Math.Clamp(BackgroundIntensity, 0, MaxBackgroundIntensity);
+        ReadabilityGuard = Math.Clamp(ReadabilityGuard, 0, 100);
+        FrameRateCap = Math.Clamp(FrameRateCap, 60, 240);
         BackgroundMotion = Math.Clamp(BackgroundMotion, 0, MaxBackgroundMotion);
         Bloom = Math.Clamp(Bloom, 0, MaxBloom);
         ScreenShake = Math.Clamp(ScreenShake, 0, MaxScreenShake);

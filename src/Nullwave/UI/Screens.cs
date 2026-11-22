@@ -252,7 +252,9 @@ public static class Screens
         var settings = GameSettings.Current;
         if (settings.ShowAttunements && player.AttunementCount > 0) DrawHudAttunements(r, p, player, time);
         if (settings.Minimap) DrawMinimap(r, p, w, time);
-        if (settings.ThreatArrows) DrawThreatIndicators(r, p, w, time);
+        // hunting stragglers are always pointed out, so the last enemy of a wave is never lost
+        DrawHitDirection(r, w);
+        if (settings.ThreatArrows || w.StragglersHunting) DrawThreatIndicators(r, p, w, time, !settings.ThreatArrows);
         if (settings.ShowFps) r.UiTextRight("FPS " + fps.ToString("0"), 1542, 790, 1.4f, M.WithAlpha(p.Dim, 0.85f));
         r.UiText("RESONANCE", 56, 836, 1.4f, M.WithAlpha(p.Text, 0.9f));
         float resFrac = M.Clamp01(player.Resonance / player.ResonanceMax);
@@ -469,12 +471,43 @@ public static class Screens
     }
 
     /// <summary>Edge arrows pointing at enemies outside the view, nearer = brighter.</summary>
-    private static void DrawThreatIndicators(Renderer r, Palette p, GameWorld w, float time)
+    /// <summary>For a moment after a hit, a red arc around the ship points at what hit it.</summary>
+    private static void DrawHitDirection(Renderer r, GameWorld w)
+    {
+        float age = w.SessionTime - w.LastHitTime;
+        if (age < 0f || age > HitMarkerSeconds || w.Phase == GamePhase.Dead) return;
+        Vector2 d = w.LastHitFrom - w.Player.Pos;
+        if (d.LengthSquared() < 1f) return;
+        Vector2 n = Vector2.Normalize(d);
+        Vector2 c = r.WorldToUi(w.Player.Pos);
+        float a = M.Clamp01(1f - age / HitMarkerSeconds);
+        float radius = 62f + (1f - a) * 18f;
+        float baseAngle = MathF.Atan2(n.Y, n.X);
+        var col = new Vector4(1f, 0.22f, 0.32f, 0.95f * a);
+        const int segs = 7;
+        const float span = 0.9f;
+        for (int i = 0; i < segs; i++)
+        {
+            float t0 = baseAngle - span * 0.5f + span * i / segs;
+            float t1 = baseAngle - span * 0.5f + span * (i + 1) / segs;
+            float w0 = 1f - MathF.Abs(i - (segs - 1) * 0.5f) / segs;
+            r.UiLine(c.X + MathF.Cos(t0) * radius, c.Y + MathF.Sin(t0) * radius,
+                     c.X + MathF.Cos(t1) * radius, c.Y + MathF.Sin(t1) * radius, 2f + 3f * w0, col, true);
+        }
+        // a short spike straight at the source
+        r.UiLine(c.X + n.X * (radius + 4f), c.Y + n.Y * (radius + 4f), c.X + n.X * (radius + 20f), c.Y + n.Y * (radius + 20f), 3f, col, true);
+    }
+
+    public const float HitMarkerSeconds = 0.8f;
+
+    private static void DrawThreatIndicators(Renderer r, Palette p, GameWorld w, float time, bool stragglersOnly = false)
     {
         const float cx = 800f, cy = 450f, ex = 770f, ey = 415f;
+        bool hunting = w.StragglersHunting;
         foreach (var e in w.Enemies)
         {
-            if (e.Dead || r.InView(e.Pos, -20f)) continue;
+            if (e.Dead || e.Boss && stragglersOnly || r.InView(e.Pos, -20f)) continue;
+            if (stragglersOnly && !hunting) continue;
             Vector2 ui = r.WorldToUi(e.Pos);
             Vector2 d = ui - new Vector2(cx, cy);
             if (d.LengthSquared() < 1f) continue;
@@ -482,10 +515,11 @@ public static class Screens
             Vector2 at = new Vector2(cx, cy) + d * k;
             float dist = M.Dist(e.Pos, w.Player.Pos);
             float near = M.Clamp01(1f - (dist - 700f) / 1800f);
+            if (hunting && !e.Boss) near = MathF.Max(near, 0.75f + 0.25f * MathF.Sin(time * 9f));
             if (near <= 0.02f && !e.Boss) continue;
             Vector2 n = Vector2.Normalize(d);
             Vector2 side = new(-n.Y, n.X);
-            float s = e.Boss ? 18f : e.Elite ? 13f : 10f;
+            float s = e.Boss ? 18f : e.Elite || hunting ? 13f : 10f;
             var c = e.Boss ? new Vector4(1f, 0.3f, 0.5f, 0.9f) : M.Hsv(e.Hue, 0.7f, 1f, 0.25f + near * 0.6f);
             Vector2 tip = at, l = at - n * s * 1.5f + side * s * 0.7f, rr = at - n * s * 1.5f - side * s * 0.7f;
             r.UiLine(tip.X, tip.Y, l.X, l.Y, 2.4f, c, true);
@@ -735,9 +769,12 @@ public static class Screens
         if (s != null)
         {
             string mode = s.Daily ? "DAILY SIGNAL" : "ENDLESS SIGNAL";
-            r.UiTextCentered("SEED " + SeedCode.ToCode(s.Seed) + "  //  " + mode + "  //  SHIP " + Ships.Name(s.Ship) + "  //  " + (int)s.Duration + "S", 800, 214, 1.7f, M.WithAlpha(p.Dim, 0.9f));
+            r.UiTextCentered("SEED " + SeedCode.ToCode(s.Seed) + "  //  " + mode + "  //  SHIP " + Ships.Name(s.Ship) + "  //  " + (int)s.Duration + "S", 800, 210, 1.7f, M.WithAlpha(p.Dim, 0.9f));
+            // what ended the run, so every death teaches something
+            if (s.KilledBy.Length > 0)
+                r.UiTextCentered("TAKEN OUT BY // " + s.KilledBy, 800, 232, 1.6f, M.WithAlpha(p.Danger, 0.95f), true);
         }
-        r.UiLine(340, 250, 1260, 250, 1f, M.WithAlpha(p.Danger, 0.3f));
+        r.UiLine(340, 254, 1260, 254, 1f, M.WithAlpha(p.Danger, 0.3f));
         float pulse = 0.72f + 0.28f * MathF.Sin(time * 5.5f);
         if (s != null)
         {

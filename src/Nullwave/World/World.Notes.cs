@@ -14,14 +14,14 @@ public sealed partial class World
     private int _keyRoot;
     private float _hitNoteCooldown;
 
-    private void CacheHarmony(AudioState audio)
+    private void CacheHarmony(AudioState audio, float dt)
     {
         _harmonyRoot = audio.ChordRoot;
         _harmonyMinor = audio.ChordMinor;
         _keyRoot = audio.Key >= 0 ? audio.Key % 12 : 0;
         Sfx?.SetHarmony(_harmonyRoot >= 0 ? _harmonyRoot : audio.Key,
             _harmonyRoot >= 0 ? _harmonyMinor : audio.Key < 0 || audio.Key >= 12, GameSettings.Current.InKeySounds);
-        _hitNoteCooldown -= 1f / 60f;
+        _hitNoteCooldown -= dt;
     }
 
     /// <summary>Chord tone <paramref name="degree"/> (0 root, 1 third, 2 fifth, 3 octave) as a MIDI note near C5.</summary>

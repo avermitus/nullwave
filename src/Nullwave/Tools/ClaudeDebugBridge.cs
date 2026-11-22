@@ -264,6 +264,8 @@ public sealed class ClaudeDebugBridge : IDisposable
                 vx = Math.Round(p.Vel.X, 1), vy = Math.Round(p.Vel.Y, 1),
                 speedFrac = Math.Round(p.SpeedFrac, 3),
                 health = p.Health, maxHealth = p.MaxHealth,
+                lastHit = shown.LastHitCause, hitsTaken = shown.HitsTaken,
+                lastHitDx = (int)(shown.LastHitFrom.X - p.Pos.X), lastHitDy = (int)(shown.LastHitFrom.Y - p.Pos.Y),
                 invuln = Math.Round(p.Invuln, 2),
                 dashing = p.IsDashing,
                 resonance = Math.Round(p.Resonance, 1),

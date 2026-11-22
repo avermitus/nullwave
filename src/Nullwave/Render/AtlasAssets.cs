@@ -12,6 +12,10 @@ internal sealed class AtlasAssets : IDisposable
     static readonly string Root = Path.Combine(AppContext.BaseDirectory, "Assets");
     readonly GL _gl;
     readonly uint[] _textures = new uint[Maps.Length];
+    uint _modelSheet;
+
+    /// <summary>The fal enemy model sheet (Models.png) is in place.</summary>
+    public static bool HasModelSheet => System.IO.File.Exists(Path.Combine(Root, "Textures", "Models.png"));
 
     public AtlasAssets(GL gl)
     {
@@ -39,6 +43,38 @@ internal sealed class AtlasAssets : IDisposable
             }
         }
         catch { Dispose(); throw; }
+        if (HasModelSheet)
+        {
+            using var file = System.IO.File.OpenRead(Path.Combine(Root, "Textures", "Models.png"));
+            var image = ImageResult.FromStream(file, ColorComponents.RedGreenBlueAlpha);
+            _modelSheet = gl.GenTexture();
+            gl.BindTexture(TextureTarget.Texture2D, _modelSheet);
+            unsafe
+            {
+                fixed (byte* pixels = image.Data)
+                    gl.TexImage2D(TextureTarget.Texture2D, 0, InternalFormat.Srgb8Alpha8, (uint)image.Width,
+                        (uint)image.Height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, pixels);
+            }
+            gl.GenerateMipmap(TextureTarget.Texture2D);
+            gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.LinearMipmapLinear);
+            gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+        }
+    }
+
+    /// <summary>A fal enemy model (Assets/Models/enemy_{name}.obj), or null if it isn't there.</summary>
+    public static Mesh? TryLoadEnemy(string name)
+    {
+        if (!HasModelSheet || !System.IO.File.Exists(Path.Combine(Root, "Models", "enemy_" + name + ".obj"))) return null;
+        try
+        {
+            var m = LoadMesh("enemy_" + name);
+            return new Mesh(m.Positions, m.Normals, m.Materials, m.UV) { GpuStatic = true };
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"MODEL | enemy_{name} failed to load, using the built-in shape: {ex.Message}");
+            return null;
+        }
     }
 
     public void Bind(Shader shader, float intensity)
@@ -48,6 +84,12 @@ internal sealed class AtlasAssets : IDisposable
             _gl.ActiveTexture(TextureUnit.Texture0 + i);
             _gl.BindTexture(TextureTarget.Texture2D, _textures[i]);
             shader.SetInt("u" + Maps[i] + "Map", i);
+        }
+        if (_modelSheet != 0)
+        {
+            _gl.ActiveTexture(TextureUnit.Texture0 + Maps.Length);
+            _gl.BindTexture(TextureTarget.Texture2D, _modelSheet);
+            shader.SetInt("uModelMap", Maps.Length);
         }
         _gl.ActiveTexture(TextureUnit.Texture0);
         shader.SetFloat("uEmissiveIntensity", intensity);
@@ -94,5 +136,6 @@ internal sealed class AtlasAssets : IDisposable
     {
         foreach (uint texture in _textures)
             if (texture != 0) _gl.DeleteTexture(texture);
+        if (_modelSheet != 0) _gl.DeleteTexture(_modelSheet);
     }
 }

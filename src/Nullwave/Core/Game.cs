@@ -34,6 +34,10 @@ public sealed class Game : IDisposable
     private AppState _settingsReturn = AppState.Title;
     private readonly SettingsMenu _settingsMenu = new();
     private float _frameDt = 1f / 60f;
+    /// <summary>The simulation runs 120 steps a second, so motion is as smooth as a 120 Hz screen.</summary>
+    public const float SimTick = 1f / 120f;
+    /// <summary>Catch-up limit per frame (about 83 ms of game time).</summary>
+    public const int MaxSimSteps = 10;
     private readonly MusicDirector _director = new();
     private int _backdropMovement = -1;
     private bool _speedDemo;
@@ -359,9 +363,10 @@ public sealed class Game : IDisposable
                 _director.ForceForCapture(0.1f, 0f, 1f, 0f, -0.6f, 0.1f);
             return;
         }
-        if (scenario == "settings")
+        if (scenario is "settings" or "settingsend")
         {
             OpenSettings(AppState.Title);
+            if (scenario == "settingsend") _settingsMenu.SelectLastForCapture();
             return;
         }
         if (string.Equals(scenario, "archive", StringComparison.OrdinalIgnoreCase))
@@ -483,7 +488,7 @@ public sealed class Game : IDisposable
             w.Score = 73_400;
             AttunementCatalog.Apply(w.Player, "split");
             AttunementCatalog.Apply(w.Player, "rapid");
-            w.ForceDeathForTest();
+            w.ForceDeathForTest("laser:LASER CROSS");
         }
     }
 
@@ -491,6 +496,17 @@ public sealed class Game : IDisposable
     {
         for (int i = 0; i < frames; i++)
         {
+            // "hurt": take a real hit just before the frame, so the hit marker shows where it came from
+            if (CaptureScenario == "hurt" && i == frames - 6 && _world != null)
+            {
+                _world.StartGrace = 0f;
+                _world.Player.Invuln = 0f;
+                _world.Player.Health = 2;
+                _world.Player.InvincibleDemo = false;
+                _world.Player.IsDashing = false;
+                _world.HurtPlayer(1f, "contact:Dasher", _world.Player.Pos + new Vector2(260f, -180f));
+                _world.Player.InvincibleDemo = true;
+            }
             if (CaptureScenario == "boss" && i == frames - 20 && _world?.BossEnemy is { Dead: false } boss && boss.BossPhase == 0)
             {
                 boss.Spawning = false;
@@ -570,6 +586,9 @@ public sealed class Game : IDisposable
         _clip.Reset();
         _clipMomentVersion = 0;
         _clipDue = -1f;
+#if DEBUG
+        if (Playtest && Environment.GetEnvironmentVariable("NULLWAVE_PLAYTEST_GOD") == "1") _world!.PlaytestGod = true;
+#endif
     }
 
     public void Update(float dt)
@@ -745,10 +764,10 @@ public sealed class Game : IDisposable
         }
         _accumulator += dt;
         int steps = 0;
-        while (_accumulator >= 1f / 60f && steps++ < 4)
+        while (_accumulator >= SimTick && steps++ < MaxSimSteps)
         {
-            demo.Step(1f / 60f, _audio.State, Pilot.Think(demo));
-            _accumulator -= 1f / 60f;
+            demo.Step(SimTick, _audio.State, Pilot.Think(demo));
+            _accumulator -= SimTick;
             if (demo.Phase == GamePhase.Attuning || demo.Phase == GamePhase.Dead) break;
         }
         if (demo.Phase == GamePhase.Attuning && demo.Offers.Count > 0) demo.ChooseAttunement(0);
@@ -1051,13 +1070,13 @@ public sealed class Game : IDisposable
     internal static void StepPlaying(GameWorld world, AudioState audio, float dt, InputFrame frame,
         bool playerControlled, ref float accumulator, ref PlayerActionBuffer playerActions)
     {
-        const float tick = 1f / 60f;
+        const float tick = SimTick;
         if (playerControlled && world.Phase == GamePhase.Playing) playerActions.Sample(frame);
         else playerActions = default;
 
         accumulator += dt;
         int steps = 0;
-        while (accumulator >= tick && steps++ < 5)
+        while (accumulator >= tick && steps++ < MaxSimSteps)
         {
             var tickInput = playerControlled ? playerActions.ForTick(frame, world.WillUpdatePlayer) : frame;
             world.Step(tick, audio, tickInput);
