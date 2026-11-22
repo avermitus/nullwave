@@ -89,7 +89,7 @@ public sealed class Game : IDisposable
         return (Math.Clamp(low, 0f, 1f), Math.Clamp(high, 0f, 1f));
     }
     private int _recordedTracks;
-    public const int TitleItemCount = 5;
+    public const int TitleItemCount = 6;
     private int _pauseIndex;
     private int _archiveIndex;
     private int _attuneHover;
@@ -137,6 +137,9 @@ public sealed class Game : IDisposable
     public static string? SeedOverride;
     public static VisualTheme? ThemeOverride;
     public static string? TrackOverride;
+    public static MapKind MapOverride;
+    public static bool SmokeMode;
+    public MapKind SelectedMap { get; private set; } = MapOverride;
 
     public void StartSmokeRun(ulong seed)
     {
@@ -154,7 +157,7 @@ public sealed class Game : IDisposable
         {
             _world.Player.InvincibleDemo = true;
             ApplyAttuneOverride(_world.Player, AttuneOverride);
-            Console.WriteLine($"SMOKECONFIG | seed={SeedCode.ToCode(_world.Seed)} mods={_world.Mods.Active.Count} mult=x{_world.Mods.ScoreMultiplier:0.00} bossPhases={_world.Mods.BossPhases} attunes={_world.Player.AttunementCount} synergies={SynergyCatalog.CountActive(_world.Player.ActiveSynergies)}");
+            Console.WriteLine($"SMOKECONFIG | map={_world.MapKind} seed={SeedCode.ToCode(_world.Seed)} mods={_world.Mods.Active.Count} mult=x{_world.Mods.ScoreMultiplier:0.00} bossPhases={_world.Mods.BossPhases} attunes={_world.Player.AttunementCount} synergies={SynergyCatalog.CountActive(_world.Player.ActiveSynergies)}");
         }
     }
 
@@ -190,11 +193,11 @@ public sealed class Game : IDisposable
         _capture = capture;
         _audio = new AudioEngine(enableOutput: !capture, enableCapture: !capture);
         string captureMeta = Path.Combine(Path.GetTempPath(), "nullwave-capture-meta.json");
-        if (capture)
+        if (capture || SmokeMode)
         {
             try { File.Delete(captureMeta); } catch { /* best-effort disposable capture save */ }
         }
-        string? metaPath = capture ? captureMeta : null;
+        string? metaPath = capture || SmokeMode ? captureMeta : null;
 #if DEBUG
         if (!capture && Playtest)
         {
@@ -291,6 +294,14 @@ public sealed class Game : IDisposable
         CaptureScenario = scenario;
         _state = AppState.Title;
         _menuIndex = 0;
+        if (scenario is "map" or "mapplay")
+        {
+            StartRun(0x5EEDC0DEUL, false);
+            _world!.Player.InvincibleDemo = true;
+            _world.BeginWave(4);
+            _autoPilot = true;
+            return;
+        }
         if (scenario == "roster")
         {
             // one of every enemy around a parked ship, for readability checks
@@ -529,6 +540,7 @@ public sealed class Game : IDisposable
         _demo = new GameWorld(new RunConfig
         {
             Seed = 0xC0FFEE1234UL,
+            Map = SelectedMap,
             Demo = true,
             Sfx = _audio.Sfx,
             UnlockedAttunements = new HashSet<string>(_meta.UnlockedAttunements),
@@ -558,6 +570,7 @@ public sealed class Game : IDisposable
         _world = new GameWorld(new RunConfig
         {
             Seed = seed,
+            Map = SelectedMap,
             Daily = daily,
             Sfx = _audio.Sfx,
             SelectedModifiers = new HashSet<string>(modifierOverride ?? _meta.SelectedModifiers),
@@ -800,7 +813,7 @@ public sealed class Game : IDisposable
             _mouseUi.Y < Screens.TitleShipY + Screens.TitleShipButtonHeight;
         bool clickLeft = shipClick && _mouseUi.X >= Screens.TitleShipLeftX && _mouseUi.X < Screens.TitleShipLeftX + Screens.TitleShipButtonWidth;
         bool clickRight = shipClick && _mouseUi.X >= Screens.TitleShipRightX && _mouseUi.X < Screens.TitleShipRightX + Screens.TitleShipButtonWidth;
-        if (_input.LeftPressed || _input.RightPressed || clickLeft || clickRight)
+        if ((_menuIndex != 5 && (_input.LeftPressed || _input.RightPressed)) || clickLeft || clickRight)
         {
             var ships = Ships.All;
             int i = Array.IndexOf(ships, Ships.Parse(_meta.SelectedShip));
@@ -808,6 +821,11 @@ public sealed class Game : IDisposable
             _meta.SelectedShip = ships[i].ToString();
             _meta.Save();
             _audio.Sfx.Trigger(SfxType.Menu, 0.3f);
+        }
+        if (_menuIndex == 5 && (_input.LeftPressed || _input.RightPressed))
+        {
+            SelectedMap = MapCatalog.Next(SelectedMap, _input.LeftPressed ? -1 : 1);
+            ResetDemo();
         }
         if (_input.ConfirmPressed || titleClick)
         {
@@ -827,6 +845,10 @@ public sealed class Game : IDisposable
                     break;
                 case 3:
                     OpenSettings(AppState.Title);
+                    break;
+                case 5:
+                    SelectedMap = MapCatalog.Next(SelectedMap, 1);
+                    ResetDemo();
                     break;
                 case 4:
                     _window.Close();
@@ -1400,7 +1422,10 @@ public sealed class Game : IDisposable
         float edmCam = GameSettings.Current.CameraFx / 100f;
         float punch = Math.Clamp(1f + fx * edmCam * (_director.Kick * 0.035f - _director.Build * 0.05f + _director.DropPulse * 0.06f), 0.6f, 1.6f);
         _renderer.AimTilt = _aimTilt;
-        _renderer.BeginWorld(world.Cam.Position + world.Cam.ShakeOffset, world.Cam.Zoom * punch);
+        if (CaptureScenario == "map" && world.Map != null)
+            _renderer.BeginWorld(Vector2.Zero, MathF.Min(1480f / world.ArenaW, 730f / world.ArenaH));
+        else
+            _renderer.BeginWorld(world.Cam.Position + world.Cam.ShakeOffset, world.Cam.Zoom * punch);
         if (BackdropOnly)
         {
             _renderer.Palette = _palette;
@@ -1414,7 +1439,7 @@ public sealed class Game : IDisposable
         switch (_state)
         {
             case AppState.Title:
-                Screens.DrawTitle(_renderer, _palette, _meta, world.Seed, false, _menuIndex, _elapsed, _audio.State);
+                Screens.DrawTitle(_renderer, _palette, _meta, world.Seed, false, _menuIndex, _elapsed, _audio.State, SelectedMap);
                 Screens.DrawShipSelect(_renderer, _palette, Ships.Parse(_meta.SelectedShip));
                 break;
             case AppState.Archive:

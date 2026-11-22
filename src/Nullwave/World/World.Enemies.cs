@@ -50,6 +50,8 @@ public sealed partial class World
         if (elite) radius *= 1.28f;
         // bigger targets: easier to see and to hit at racing speed
         if (!boss) radius *= 1.3f;
+        // maps: every spawn path (waves, children, phase adds, captures) lands somewhere the body fits
+        if (Map != null && !Map.IsBodyValid(pos, radius + 4f)) pos = Map.ProjectToFloor(pos, radius + 6f);
 
         float hue = role switch
         {
@@ -206,6 +208,7 @@ public sealed partial class World
             }
 
             UpdateEnemyBrain(e, dt, audio);
+            if (Map != null) RescueBody(ref e.Pos, e.Radius);
 
             if (EighthTick)
             {
@@ -219,10 +222,13 @@ public sealed partial class World
             }
             e.Telegraph = TelegraphFor(e);
 
-            float margin = e.Radius + 20f;
-            e.Pos = new Vector2(
-                M.Clamp(e.Pos.X, -ArenaW * 0.5f + margin, ArenaW * 0.5f - margin),
-                M.Clamp(e.Pos.Y, -ArenaH * 0.5f + margin, ArenaH * 0.5f - margin));
+            if (Map == null)
+            {
+                float margin = e.Radius + 20f;
+                e.Pos = new Vector2(
+                    M.Clamp(e.Pos.X, -ArenaW * 0.5f + margin, ArenaW * 0.5f - margin),
+                    M.Clamp(e.Pos.Y, -ArenaH * 0.5f + margin, ArenaH * 0.5f - margin));
+            }
         }
         ResolveEnemySpacing();
     }
@@ -250,6 +256,13 @@ public sealed partial class World
                 Vector2 normal = distance > 0.001f ? delta / distance
                     : M.FromAngle((i * 0.618034f + j * 0.381966f) * M.Tau, 1f);
                 Vector2 correction = normal * ((room - distance) * 0.5f);
+                if (Map != null)
+                {
+                    // separation is a swept shove too: a pack against a wall compresses along it, never through it
+                    a.Pos = ShiftBody(a.Pos, a.Pos - correction, a.Radius);
+                    b.Pos = ShiftBody(b.Pos, b.Pos + correction, b.Radius);
+                    continue;
+                }
                 a.Pos = ClampToArena(a.Pos - correction, a.Radius + 20f);
                 b.Pos = ClampToArena(b.Pos + correction, b.Radius + 20f);
             }
@@ -282,6 +295,24 @@ public sealed partial class World
         Vector2 toPlayer = Player.Pos - e.Pos;
         float dist = toPlayer.Length();
         Vector2 dir = dist > 0.01f ? toPlayer / dist : new Vector2(1, 0);
+        // Maps: with a clear run at the player every role hunts in its own style; without one it
+        // follows the shared path field round the walls (one Dijkstra per player move, not per enemy).
+        bool routed = false;
+        if (Map != null && PlayerField != null)
+        {
+            e.NavCheck -= dt;
+            if (e.NavCheck <= 0f)
+            {
+                e.NavCheck = 0.12f + (e.MovePhase * 0.08f);
+                e.NavSight = Map.CapsuleClear(e.Pos, Player.Pos, e.Radius + 6f);
+            }
+            if (!e.NavSight)
+            {
+                routed = true;
+                dir = PlayerField.Direction(e.Pos, Player.Pos, e.Radius);
+                dist = MathF.Max(dist, PlayerField.PathDistance(e.Pos, Player.Pos));
+            }
+        }
         Vector2 perp = M.Perp(dir);
         e.Facing = M.MoveTowardsAngle(e.Facing, M.AngleOf(dir), dt * (e.Role == EnemyRole.Sniper ? 2.2f : 4f));
         // the first waves ease in (72 % speed on wave 1, full speed from wave 5)
@@ -425,6 +456,8 @@ public sealed partial class World
                     float side = Rng.Chance(0.5f) ? 1f : -1f;
                     float r = MathF.Max(220f, MathF.Min(dist * 0.55f, 420f));
                     Vector2 to = ClampToArena(Player.Pos + M.FromAngle(M.AngleOf(-dir) + side * Rng.Range(0.7f, 1.5f), r), e.Radius + 30f);
+                    // maps: only blink to a flank the player can see (never into another room); else stay
+                    if (Map != null && (!Map.IsBodyValid(to, e.Radius + 4f) || !Map.SegmentClear(Player.Pos, to))) to = e.Pos;
                     AddShockwave(from, e.Radius * 3f, 0.35f, 3f, M.Hsv(e.Hue, 0.6f, 1f, 0.8f));
                     BurstParticles(from, M.Hsv(e.Hue, 0.6f, 1f, 0.7f), 14, 260f, 2.4f, 0.35f, ParticleKind.Spark);
                     e.Pos = to;
@@ -452,6 +485,12 @@ public sealed partial class World
         }
         e.Groove = groove;
 
+        if (routed && !direct && !(e.Role == EnemyRole.Dasher && e.State == 2) && desired.LengthSquared() > 1f)
+        {
+            // a role's own target (lead point, orbit slot, flank) is behind a wall: take the route instead
+            desired = dir * MathF.Max(desired.Length(), speed * pursuit);
+        }
+
         // the wave's last enemies stop keeping their distance and come straight for you
         float hunt = e.Boss || e.Spawning ? 0f : StragglerHunt;
         if (hunt > 0f)
@@ -476,7 +515,8 @@ public sealed partial class World
                 e.Vel = M.Lerp(e.Vel, desired, 1f - MathF.Exp(-dt * 4f));
         }
         // each role strides on its own part of the bar: a push on its hit, then a coast
-        e.Pos += e.Vel * dt * surge;
+        if (Map != null) MoveBody(ref e.Pos, ref e.Vel, e.Vel * dt * surge, e.Radius);
+        else e.Pos += e.Vel * dt * surge;
     }
 
     /// <summary>Speed scale for the opening waves: 0.72 on wave 1 rising to 1 by wave 5.</summary>
@@ -648,6 +688,7 @@ public sealed partial class World
         for (int i = 0; i < 3; i++)
         {
             Vector2 p = e.Pos + FxRng.InCircle(240);
+            if (Map != null) p = ShiftBody(e.Pos, p, 10f * 1.3f * 1.28f + 4f);
             if (Enemies.Count < 28) SpawnEnemyAt(EnemyRole.Swarm, p, true);
         }
     }
@@ -670,8 +711,16 @@ public sealed partial class World
         Vector2 target = new(
             M.Clamp(targetX, -ArenaW * 0.36f, ArenaW * 0.36f),
             M.Clamp(targetY, -ArenaH * 0.36f, ArenaH * 0.36f));
-        e.Vel = (target - e.Pos) * 1.1f;
-        e.Pos = M.Lerp(e.Pos, target, 1f - MathF.Exp(-dt * 1.4f));
+        if (Map != null)
+        {
+            // maps: hover over open floor near the player, travelling round walls, never through them
+            MoveBossInMap(e, BossTarget(new Vector2(targetX, targetY)), 1.4f, dt);
+        }
+        else
+        {
+            e.Vel = (target - e.Pos) * 1.1f;
+            e.Pos = M.Lerp(e.Pos, target, 1f - MathF.Exp(-dt * 1.4f));
+        }
         e.BossScale = 1f + BeatPulse * 0.025f + MathF.Sin(Time * 0.7f) * 0.01f;
 
         int phases = Math.Max(3, Mods.BossPhases);
@@ -756,6 +805,8 @@ public sealed partial class World
                 if (i == gap || i == (gap + 1) % count) continue;
                 float a = i / (float)count * M.Tau;
                 Vector2 spawn = e.Pos + M.FromAngle(a, MathF.Min(ArenaW * 0.48f, 1300f));
+                // maps: the closing ring forms at the walls of the boss's room instead of behind them
+                if (Map != null) spawn = WallAnchor(e.Pos, M.FromAngle(a), 1300f, 24f);
                 Vector2 vel = M.FromAngle(a + MathF.PI, baseSpeed * 0.72f);
                 SpawnEnemyBullet(spawn, vel, 6f, hue, BulletKind.Orb, 9f, 1f);
             }
@@ -820,6 +871,7 @@ public sealed partial class World
             {
                 if (Enemies.Count >= 28) break;
                 Vector2 p = e.Pos + FxRng.InCircle(e.Radius * 2.2f);
+                if (Map != null) p = ShiftBody(e.Pos, p, 10f * 1.3f * 1.28f);
                 SpawnChild(EnemyRole.Swarm, p);
             }
         }

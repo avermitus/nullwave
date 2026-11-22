@@ -14,6 +14,8 @@ public sealed class RunConfig
     public SoundBank? Sfx;
     /// <summary>The instrument ship for this run.</summary>
     public ShipKind Ship;
+    /// <summary>Playfield: the open arena (default) or an experimental map.</summary>
+    public MapKind Map;
 }
 
 public sealed class RunSummary
@@ -35,6 +37,8 @@ public sealed class RunSummary
     /// <summary>What landed the last hit of the run ("LASER CROSS", "POUNCER RAM"), "" if unknown.</summary>
     public string KilledBy = "";
     public ShipKind Ship;
+    /// <summary>Playfield the run was played on.</summary>
+    public MapKind Map;
     /// <summary>Every track played this run.</summary>
     public List<TrackStat> Tracks = new();
     /// <summary>Run recap timeline.</summary>
@@ -225,12 +229,14 @@ public sealed partial class World
         FxRng = new Rng(Seed ^ 0xE7037ED1A0B428DBUL);
         ArenaW = BaseArenaW * Mods.ArenaScale;
         ArenaH = BaseArenaH * Mods.ArenaScale;
+        Map = MapCatalog.Build(config.Map, Mods.ArenaScale);
+        InitMap();
         Player.MaxHealth = Mods.MaxHealth;
         Player.Health = Player.MaxHealth;
         Player.DashCooldownBase = 0.82f * Mods.DashCooldown;
         Player.Resonance = Mods.StartResonance;
-        Player.Pos = Vector2.Zero;
-        Player.PrevPos = Vector2.Zero;
+        Player.Pos = Map?.Spawn ?? Vector2.Zero;
+        Player.PrevPos = Player.Pos;
         Player.InvincibleDemo = Demo;
         Cam.Snap(Player.Pos);
         StartGrace = Demo ? 0 : 1.4f;
@@ -316,6 +322,7 @@ public sealed partial class World
         if (Phase != GamePhase.Playing) return;   // a new stage opened its upgrade pick
         Timeline.Sample(this, audio, dt);
         UpdateHype(dt);
+        UpdateNav();
         UpdateDirector(dt, audio);
         UpdateStragglers(dt);
         UpdateEnemies(dt, audio);
@@ -554,6 +561,7 @@ public sealed partial class World
         {
             _cueDrop = false;
             Vector2 c = ClampToArena(p + M.FromAngle(Rng.Range(0, M.Tau), Rng.Range(380f, 520f)), 100f);
+            if (Map != null && !Map.SegmentClear(p, c)) c = WallAnchor(p, M.SafeNorm(c - p), 450f, 100f);
             float a0 = Rng.Range(0, M.Tau);
             float spin = Rng.Chance(0.5f) ? 0.32f : -0.32f;
             _laserSource = "STARBURST";
@@ -866,8 +874,13 @@ public sealed partial class World
         });
     }
 
+    /// <summary>Pickup body radius used for map placement and wall sliding.</summary>
+    public const float PickupRadius = 14f;
+
     public void SpawnPickup(Vector2 pos, PickupKind kind, float value = 1f, float hue = 0.5f)
     {
+        // maps: rewards land on open, connected floor (a boss killed at a wall drops them in its room)
+        if (Map != null && !Map.IsBodyValid(pos, PickupRadius + 6f)) pos = Map.ProjectToFloor(pos, PickupRadius + 10f);
         Pickups.Add(new Pickup
         {
             Kind = kind,
@@ -890,14 +903,17 @@ public sealed partial class World
             if (p.Life <= 0) { Pickups.RemoveAt(i); continue; }
             Vector2 toPlayer = Player.Pos - p.Pos;
             float d = toPlayer.Length();
-            if (d < 260f && d > 0.01f)
+            // maps: the magnet and the pickup itself work only in sight, never through a wall
+            bool sight = Map == null || d > 300f || Map.SegmentClear(p.Pos, Player.Pos);
+            if (d < 260f && d > 0.01f && sight)
             {
                 float pull = (1f - d / 260f) * 2600f;
                 p.Vel += toPlayer / d * pull * dt;
             }
             p.Vel *= MathF.Max(0f, 1f - dt * 1.2f);
-            p.Pos += p.Vel * dt;
-            if (d < Player.Radius + 24f && Phase == GamePhase.Playing)
+            if (Map != null) MoveBody(ref p.Pos, ref p.Vel, p.Vel * dt, PickupRadius);
+            else p.Pos += p.Vel * dt;
+            if (d < Player.Radius + 24f && sight && Phase == GamePhase.Playing)
             {
                 CollectPickup(p);
                 Pickups.RemoveAt(i);
@@ -985,7 +1001,9 @@ public sealed partial class World
         if (_echoTimer <= 0f && audio.Downbeat && EnemyBullets.Count < 1800)
         {
             _echoTimer = 0.4f;
-            Vector2 edge = ClampToArena(Player.Pos + M.FromAngle(FxRng.Range(0, M.Tau), 1250f), 20f);
+            Vector2 edge = Map != null
+                ? WallAnchor(Player.Pos, M.FromAngle(FxRng.Range(0, M.Tau)), 1250f, 24f)
+                : ClampToArena(Player.Pos + M.FromAngle(FxRng.Range(0, M.Tau), 1250f), 20f);
             Vector2 target = Player.Pos;
             float a = M.AngleOf(target - edge);
             for (int i = -1; i <= 2; i++)
@@ -1058,6 +1076,7 @@ public sealed partial class World
         {
             Ship = Ship,
             KilledBy = DescribeHit(LastHitCause),
+            Map = MapKind,
             Tracks = new List<TrackStat>(Tracks),
             Timeline = Timeline,
             Seed = Seed,

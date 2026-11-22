@@ -125,11 +125,19 @@ public sealed partial class World
         }
 
         p.PrevPos = p.Pos;
-        p.Pos += p.Vel * dt;
-        float margin = 28f + p.Radius;
-        p.Pos = new Vector2(
-            M.Clamp(p.Pos.X, -ArenaW * 0.5f + margin, ArenaW * 0.5f - margin),
-            M.Clamp(p.Pos.Y, -ArenaH * 0.5f + margin, ArenaH * 0.5f - margin));
+        if (Map != null)
+        {
+            // swept against the walls in sub-steps (a dash covers 85 units in a long step), sliding along them
+            MoveBody(ref p.Pos, ref p.Vel, p.Vel * dt, p.Radius);
+        }
+        else
+        {
+            p.Pos += p.Vel * dt;
+            float margin = 28f + p.Radius;
+            p.Pos = new Vector2(
+                M.Clamp(p.Pos.X, -ArenaW * 0.5f + margin, ArenaW * 0.5f - margin),
+                M.Clamp(p.Pos.Y, -ArenaH * 0.5f + margin, ArenaH * 0.5f - margin));
+        }
 
         foreach (var o in Obstacles)
         {
@@ -138,8 +146,9 @@ public sealed partial class World
             float minDist = o.Radius * 0.78f + p.Radius;
             float d = delta.Length();
             if (d < minDist && d > 0.001f)
-                p.Pos = o.Pos + delta / d * minDist;
+                p.Pos = ShiftBody(p.Pos, o.Pos + delta / d * minDist, p.Radius);
         }
+        RescueBody(ref p.Pos, p.Radius);
 
         if (p.TrailTimer <= 0 && p.Vel.LengthSquared() > 900f && !p.IsDashing)
         {
@@ -334,11 +343,24 @@ public sealed partial class World
                     b.Vel = M.FromAngle(M.MoveTowardsAngle(current, desired, b.Homing * dt), speed);
                 }
             }
+            // a fresh shot is swept from the ship itself, so firing point-blank into a wall cannot skip it
+            Vector2 sweepFrom = Map != null && b.Age <= dt + 1e-5f && M.DistSq(Player.Pos, b.PrevPos) < 80f * 80f ? Player.Pos : b.PrevPos;
             b.Pos += b.Vel * dt;
             if (b.Life <= 0 || b.Pos.LengthSquared() > (ArenaW * 0.5f + 240f) * (ArenaW * 0.5f + 240f))
             {
                 if (b.SynergyKind == 4 && b.Life <= 0) BassBurst(b.Pos, b.Damage);
                 ReturnBullet(PlayerBullets, i);
+                continue;
+            }
+            if (Map != null)
+            {
+                // walls: the first wall along the step bounces a ricochet shot (once) or stops it
+                if (BulletHitsWall(b, sweepFrom, true))
+                {
+                    SpawnParticle(b.Pos, FxRng.InCircle(40), 0.16f, 2.2f, M.Hsv(b.Hue, 0.7f, 1f, 0.7f), ParticleKind.Spark, 3f);
+                    if (b.SynergyKind == 4) BassBurst(b.Pos, b.Damage);
+                    ReturnBullet(PlayerBullets, i);
+                }
                 continue;
             }
             if (MathF.Abs(b.Pos.X) > ArenaW * 0.5f - 4f || MathF.Abs(b.Pos.Y) > ArenaH * 0.5f - 4f)
@@ -372,9 +394,19 @@ public sealed partial class World
             if (MathF.Abs(b.AngularVel) > 0.0001f)
                 b.Vel = M.Rotate(b.Vel, b.AngularVel * dt);
             // every enemy shot lurches forward on the beat and glides to the next one
+            bool fresh = b.Age <= dt + 1e-5f;
             b.Pos += b.Vel * dt * (b.Kind == BulletKind.Needle ? needleSurge : surge);
             if (b.Life <= 0 || MathF.Abs(b.Pos.X) > marginX || MathF.Abs(b.Pos.Y) > marginY)
+            {
                 ReturnBullet(EnemyBullets, i);
+                continue;
+            }
+            // walls block enemy fire too; a shot spawned inside a wall never enters the floor
+            if (Map != null && ((fresh && !Map.IsFloor(b.PrevPos)) || BulletHitsWall(b, b.PrevPos, false)))
+            {
+                SpawnParticle(b.Pos, FxRng.InCircle(50), 0.2f, 2f, M.Hsv(b.Hue, 0.6f, 1f, 0.6f), ParticleKind.Spark, 2.5f);
+                ReturnBullet(EnemyBullets, i);
+            }
         }
     }
 
@@ -398,6 +430,7 @@ public sealed partial class World
     public void SpawnLaser(Vector2 origin, Vector2 target, float warmup, float duration, float width, float hue, float sweep = 0f, bool boss = false, float length = 0f)
     {
         if (Lasers.Count >= 40) return;
+        if (Map != null) origin = AnchorLaserOrigin(origin, target);
         float angle = M.AngleOf(target - origin);
         Lasers.Add(new LaserBeam
         {
@@ -412,6 +445,7 @@ public sealed partial class World
             BossLaser = boss,
             Source = _laserSource ?? (boss ? "THE CHOIR" : "LASER"),
         });
+        ClipLaser(Lasers[^1]);
         Sfx?.Trigger(SfxType.LaserWarn, boss ? 0.55f : 0.25f);
     }
 
@@ -422,6 +456,7 @@ public sealed partial class World
             var l = Lasers[i];
             l.Age += dt;
             l.Angle += l.Sweep * dt;
+            ClipLaser(l);
             if (!l.PlayedFire && l.Age >= l.Warmup)
             {
                 l.PlayedFire = true;
@@ -429,8 +464,8 @@ public sealed partial class World
                 Cam.AddShake(l.BossLaser ? 4f : 1.4f);
                 for (int k = 0; k < 10; k++)
                 {
-                    float d = FxRng.Range(0, l.Length);
-                    SpawnParticle(l.Origin + l.Direction * d, FxRng.InCircle(80), 0.25f, 2f, M.Hsv(l.Hue, 0.7f, 1f, 0.6f), ParticleKind.Spark, 2f);
+                    float d = FxRng.Range(0, MathF.Max(1f, l.BeamLength));
+                    SpawnParticle(l.BeamStart + l.Direction * d, FxRng.InCircle(80), 0.25f, 2f, M.Hsv(l.Hue, 0.7f, 1f, 0.6f), ParticleKind.Spark, 2f);
                 }
             }
             if (l.Age > l.Warmup + l.Duration + l.Fade)

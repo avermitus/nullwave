@@ -35,7 +35,7 @@ public sealed partial class World
     public void SpawnSongBoss()
     {
         if (BossEnemy is { Dead: false }) return;
-        Vector2 pos = ClampToArena(Player.Pos + new Vector2(0f, -520f), 300f);
+        Vector2 pos = Map != null ? BossSpawnPoint(Player.Pos + new Vector2(0f, -520f)) : ClampToArena(Player.Pos + new Vector2(0f, -520f), 300f);
         SpawnEnemyAt(EnemyRole.Boss, pos, true);
         var e = Enemies[^1];
         e.SongBoss = true;
@@ -57,9 +57,18 @@ public sealed partial class World
 
         // hovers on a slow orbit around you, always on screen
         float orbit = Time * 0.22f;
-        Vector2 target = ClampToArena(Player.Pos + new Vector2(MathF.Sin(orbit) * 420f, -260f + MathF.Cos(orbit * 1.3f) * 90f), 240f);
-        e.Vel = (target - e.Pos) * 1.2f;
-        e.Pos = M.Lerp(e.Pos, target, 1f - MathF.Exp(-dt * 1.6f));
+        Vector2 desiredSpot = Player.Pos + new Vector2(MathF.Sin(orbit) * 420f, -260f + MathF.Cos(orbit * 1.3f) * 90f);
+        if (Map != null)
+        {
+            // maps: orbit over open floor near the player, routed round walls, never through them
+            MoveBossInMap(e, BossTarget(desiredSpot), 1.6f, dt);
+        }
+        else
+        {
+            Vector2 target = ClampToArena(desiredSpot, 240f);
+            e.Vel = (target - e.Pos) * 1.2f;
+            e.Pos = M.Lerp(e.Pos, target, 1f - MathF.Exp(-dt * 1.6f));
+        }
         e.BossScale = 1f + audio.PercLow * 0.06f + audio.KickPulse * 0.05f;
 
         // each new section of the song is a new phase; a returning section brings its phase back

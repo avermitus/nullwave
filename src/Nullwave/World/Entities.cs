@@ -124,6 +124,9 @@ public sealed class Player
 
 public sealed class Enemy
 {
+    /// <summary>Maps: whether the enemy can run straight at the player, and when to look again.</summary>
+    public bool NavSight = true;
+    public float NavCheck;
     public EnemyRole Role;
     public Vector2 Pos;
     public Vector2 Vel;
@@ -268,6 +271,16 @@ public sealed class LaserBeam
     public bool Active => Age >= Warmup && Age < Warmup + Duration;
     public Vector2 Direction => M.FromAngle(Angle);
     public Vector2 End => Origin + Direction * Length;
+    /// <summary>
+    /// The part of the beam that is not behind a wall, as distances along it (recomputed every
+    /// step; in the open arena the whole beam). <see cref="Length"/> stays the requested length so
+    /// a rotating beam that was cut short can reach out again once it swings clear.
+    /// </summary>
+    public float ClipStart;
+    public float ClipEnd = -1f;
+    public float BeamLength => ClipEnd < 0f ? Length : MathF.Max(0f, ClipEnd - ClipStart);
+    public Vector2 BeamStart => ClipEnd < 0f ? Origin : Origin + Direction * ClipStart;
+    public Vector2 BeamEnd => BeamStart + Direction * BeamLength;
     public float Alpha
     {
         get

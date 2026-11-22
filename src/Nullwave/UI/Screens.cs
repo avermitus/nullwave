@@ -9,7 +9,7 @@ namespace Nullwave.UI;
 
 public static class Screens
 {
-    private static readonly string[] TitleItems = ["NEW SIGNAL", "DAILY SIGNAL", "ARCHIVE", "SETTINGS", "QUIT"];
+    private static readonly string[] TitleItems = ["NEW SIGNAL", "DAILY SIGNAL", "ARCHIVE", "SETTINGS", "QUIT", "MAP"];
     private static readonly string[] PauseItems = ["RESUME", "ARCHIVE", "SETTINGS", "ABANDON SIGNAL"];
     // Only the first three IDs and count affect the displayed caption. The list itself is mutable.
     private static int _captionCount = -1;
@@ -46,7 +46,7 @@ public static class Screens
     public const float TitleMenuX = 74f, TitleMenuY = 296f, TitleMenuWidth = 480f, TitleMenuRowHeight = 52f, TitleMenuRowHeightVisible = 46f;
     public const float TitleShipLeftX = 76f, TitleShipRightX = 318f, TitleShipY = 664f, TitleShipButtonWidth = 42f, TitleShipButtonHeight = 30f;
 
-    public static void DrawTitle(Renderer r, Palette p, MetaProgress meta, ulong seed, bool dailySeed, int menuIndex, float time, AudioState audio)
+    public static void DrawTitle(Renderer r, Palette p, MetaProgress meta, ulong seed, bool dailySeed, int menuIndex, float time, AudioState audio, MapKind selectedMap = MapKind.Arena)
     {
         // Keep the live demo visible across the open right side of the console.
         r.UiRect(0, 0, 1600, 900, new Vector4(0.002f, 0.004f, 0.016f, 0.30f));
@@ -69,9 +69,16 @@ public static class Screens
                 r.UiFrame(TitleMenuX, y, TitleMenuWidth, TitleMenuRowHeightVisible, 1.5f, M.WithAlpha(p.Accent, 0.95f), true);
                 r.UiRect(TitleMenuX, y, 5, TitleMenuRowHeightVisible, p.Accent, true);
             }
-            r.UiText(TitleItems[i], 96, y + 10, selected ? 2.7f : 2.45f,
+            r.UiText(i == 5 ? "MAP: " + MapCatalog.Name(selectedMap) : TitleItems[i], 96, y + 10, selected ? 2.7f : 2.45f,
                 selected ? p.Text : M.WithAlpha(p.Text, 0.82f), selected);
             if (selected) r.UiTextRight(">", 530, y + 10, 2.5f, p.Accent, true);
+        }
+        r.UiText("MAP: SELECT ROW, LEFT / RIGHT OR CLICK TO CYCLE", 76, 614, 1.15f, p.Accent);
+        if (MapCatalog.Preview(selectedMap) is { } preview)
+        {
+            r.UiRect(710, 190, 760, 540, new Vector4(0.002f, 0.004f, 0.014f, 0.90f));
+            DrawMapOutline(r, preview, 740, 260, 700, 450, preview.HalfExtents.X * 2 + 200, preview.HalfExtents.Y * 2 + 200, M.WithAlpha(p.Primary, 0.8f), 2f);
+            r.UiText(MapCatalog.Name(selectedMap) + " // EXPERIMENT", 740, 216, 2f, p.Text);
         }
         r.UiText("BEST WAVE " + meta.BestWave.ToString("00") + "  //  " + FormatScore(meta.BestScore), 76, 803, 1.55f, M.WithAlpha(p.Text, 0.85f));
         r.UiText("MOVE WASD / STICK   AIM MOUSE / STICK   FIRE LMB / RT", 76, 829, 1.25f, M.WithAlpha(p.Text, 0.72f));
@@ -434,8 +441,14 @@ public static class Screens
         float x = 1542f - mw, y = 212f;
         r.UiRect(x, y, mw, mh, PanelFill(new Vector4(0.004f, 0.006f, 0.016f, 0.72f), 0.86f));
         r.UiFrame(x, y, mw, mh, 1f, M.WithAlpha(p.Primary, Abyssal ? 0.28f : 0.3f));
-        r.UiText(w.LayoutName, x, y + mh + 6, 1.2f, M.WithAlpha(p.Dim, 0.6f));
+        r.UiText(w.PlayfieldName, x, y + mh + 6, 1.2f, M.WithAlpha(w.Map != null ? p.Text : p.Dim, w.Map != null ? 0.8f : 0.6f));
         Vector2 Map(Vector2 wp) => new(x + (wp.X / w.ArenaW + 0.5f) * mw, y + (wp.Y / w.ArenaH + 0.5f) * mh);
+
+        if (w.Map is { } geo)
+        {
+            // the same wall loops the world collides with: rooms, corridors, doorways and pillars
+            DrawMapOutline(r, geo, x, y, mw, mh, w.ArenaW, w.ArenaH, M.WithAlpha(p.Primary, 0.75f), 1.3f);
+        }
 
         foreach (var o in w.Obstacles)
         {
@@ -468,6 +481,26 @@ public static class Screens
         float blink = 0.75f + 0.25f * MathF.Sin(time * 6f);
         r.UiLine(pm.X, pm.Y, pm.X + d.X * 7f, pm.Y + d.Y * 7f, 1.6f, M.WithAlpha(p.Player, blink), true);
         r.UiRect(pm.X - 2f, pm.Y - 2f, 4f, 4f, new Vector4(1f, 1f, 1f, blink), true);
+    }
+
+    /// <summary>Draws a map's wall loops into a UI rectangle sized for a world of extent (worldW, worldH).</summary>
+    public static void DrawMapOutline(Renderer r, MapGeometry map, float x, float y, float mw, float mh, float worldW, float worldH, Vector4 color, float width)
+    {
+        Vector2 Map(Vector2 wp) => new(x + (wp.X / worldW + 0.5f) * mw, y + (wp.Y / worldH + 0.5f) * mh);
+        // a faint fill so rooms read as rooms at a glance
+        var fill = M.WithAlpha(color, color.W * 0.12f);
+        foreach (var q in map.FloorQuads)
+        {
+            Vector2 a = Map(q.A), c = Map(q.C);
+            if (c.Y - a.Y < 0.8f) continue;
+            Vector2 b = Map(q.B), d = Map(q.D);
+            r.UiQuad(a, b, c, d, fill);
+        }
+        for (int s = 0; s < map.SegmentCount; s++)
+        {
+            Vector2 a = Map(map.SegA[s]), b = Map(map.SegB[s]);
+            r.UiLine(a.X, a.Y, b.X, b.Y, width, color, true);
+        }
     }
 
     /// <summary>Edge arrows pointing at enemies outside the view, nearer = brighter.</summary>

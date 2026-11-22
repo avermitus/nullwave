@@ -31,6 +31,27 @@ public static class Pilot
         }
         if (aim.LengthSquared() < 0.01f) aim = new Vector2(0, -1);
 
+        // maps: head down the shared path field toward the nearest enemy when it is round a corner
+        Vector2 navDir = Vector2.Zero;
+        if (w.Map != null && target != null && !w.Map.SegmentClear(p.Pos, target.Pos))
+        {
+            var field = new Vector2(0f);
+            int node = w.Map.NodeAt(target.Pos);
+            if (w.PlayerField != null && node >= 0 && w.PlayerField.Dist[node] < float.MaxValue)
+            {
+                // walk back from the enemy toward the player along the field and aim at the first visible step
+                int n = node, guard = 0;
+                Vector2 aimAt = target.Pos;
+                while (n >= 0 && guard++ < 400)
+                {
+                    Vector2 c = w.Map.NodeCenter(n);
+                    if (w.Map.CapsuleClear(p.Pos, c, p.Radius + 6f)) { aimAt = c; break; }
+                    n = w.PlayerField.Next[n];
+                }
+                field = M.SafeNorm(aimAt - p.Pos);
+            }
+            navDir = field;
+        }
         Vector2 bestMove = Vector2.Zero;
         float bestScore = float.MinValue;
         Vector2[] candidates = new Vector2[17];
@@ -43,9 +64,19 @@ public static class Pilot
             Vector2 test = p.Pos + dir * (p.IsDashing ? 80f : 70f);
             float score = 0f;
             float wallMargin = 80f;
-            score -= MathF.Max(0, MathF.Abs(test.X) - (w.ArenaW * 0.5f - wallMargin)) * 7f;
-            score -= MathF.Max(0, MathF.Abs(test.Y) - (w.ArenaH * 0.5f - wallMargin)) * 7f;
-            score -= test.Length() * 0.012f;
+            if (w.Map != null)
+            {
+                // maps: stay off the walls, and when the target is out of sight take the path toward it
+                if (!w.Map.IsFloor(test)) score -= 900f;
+                else score -= MathF.Max(0f, wallMargin - w.Map.Clearance(test, wallMargin)) * 6f;
+                if (navDir.LengthSquared() > 0.1f) score += Vector2.Dot(dir, navDir) * 14f;
+            }
+            else
+            {
+                score -= MathF.Max(0, MathF.Abs(test.X) - (w.ArenaW * 0.5f - wallMargin)) * 7f;
+                score -= MathF.Max(0, MathF.Abs(test.Y) - (w.ArenaH * 0.5f - wallMargin)) * 7f;
+                score -= test.Length() * 0.012f;
+            }
 
             foreach (var o in w.Obstacles)
             {

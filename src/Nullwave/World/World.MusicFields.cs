@@ -91,6 +91,8 @@ public sealed partial class World
             Vector2 p = Player.Pos + heading * Rng.Range(380f, 600f) + M.Perp(heading) * Rng.Range(-280f, 280f);
             p = ClampToArena(p, 260f);
             if (M.Dist(p, Player.Pos) < 260f) continue;
+            // maps: the well's core must sit on open floor the player can see and fly to
+            if (Map != null && (!Map.IsBodyValid(p, 200f) || !Map.CapsuleClear(Player.Pos, p, Player.Radius + 4f))) continue;
             bool clear = true;
             foreach (var o in Wells) if (M.Dist(o.Pos, p) < 520f) { clear = false; break; }
             if (!clear) continue;
@@ -282,9 +284,11 @@ public sealed partial class World
     private MelodyRail StartRail(AudioState audio)
     {
         Vector2 heading = Player.Vel.LengthSquared() > 150f * 150f ? M.SafeNorm(Player.Vel) : Player.AimDir;
+        Vector2 head = ClampToArena(Player.Pos + heading * 140f, 120f);
+        if (Map != null && !Map.SegmentClear(Player.Pos, head)) head = Player.Pos;
         var r = new MelodyRail
         {
-            Head = ClampToArena(Player.Pos + heading * 140f, 120f),
+            Head = head,
             Heading = M.AngleOf(heading),
             Center = audio.MelodyPitch,
         };
@@ -306,9 +310,29 @@ public sealed partial class World
             float diff = MathF.IEEERemainder(toCenter - r.Heading, M.Tau);
             turn = M.Clamp(diff * 3f, -2.6f, 2.6f);
         }
+        if (Map != null)
+        {
+            // maps: feel ahead for walls and bend away toward the more open side
+            Vector2 ahead = r.Head + M.FromAngle(r.Heading, 260f);
+            if (!Map.CapsuleClear(r.Head, ahead, 70f))
+            {
+                float left = Map.Clearance(r.Head + M.FromAngle(r.Heading - 0.9f, 220f), 400f);
+                float right = Map.Clearance(r.Head + M.FromAngle(r.Heading + 0.9f, 220f), 400f);
+                if (!Map.IsFloor(r.Head + M.FromAngle(r.Heading - 0.9f, 220f))) left = 0f;
+                if (!Map.IsFloor(r.Head + M.FromAngle(r.Heading + 0.9f, 220f))) right = 0f;
+                turn = left > right ? -2.8f : 2.8f;
+            }
+        }
         r.Heading += turn * dt;
         Vector2 step = M.FromAngle(r.Heading, RailHeadSpeed * dt);
-        r.Head = ClampToArena(r.Head + step, 80f);
+        if (Map != null)
+        {
+            // a rail never crosses a wall: if this step would, it holds and keeps turning
+            Vector2 next = r.Head + step;
+            if (!Map.IsFloor(next) || !Map.CapsuleClear(r.Head, next, 40f)) step = Vector2.Zero;
+            r.Head += step;
+        }
+        else r.Head = ClampToArena(r.Head + step, 80f);
         r.Length += step.Length();
         if (r.Points.Count == 0 || M.Dist(r.Points[^1], r.Head) >= RailPointSpacing) AddRailPoint(r, audio);
     }

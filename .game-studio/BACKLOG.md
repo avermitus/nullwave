@@ -69,3 +69,8 @@ Candidates are scored on a 1–5 scale for **Player Impact** (higher is better),
 ### 5. `TASK-005` — Choir Boss Phase-Transition Choreography & Audio-Reactive Telegraph Polish
 - **Player Benefit:** Every 5th wave features **THE CHOIR** across 3–4 phases (`Mods.BossPhases`). Adding distinct phase-break shockwaves, brief bullet-clear rings on phase transitions, and phase-specific sub-titles (`PHASE II // HARMONIC CONVERGENCE`, `PHASE III // NULL RESONANCE`) elevates boss encounters into landmark run milestones.
 - **Scope:** `World.Enemies.cs` boss phase transition hook + `Screens.cs` boss bar subtitle polish.
+
+
+## Opt-in map experiment (2026-11-21)
+
+HALO CIRCUIT and CATHEDRAL implemented on experiment/maps; arena remains default. Shared polygon geometry drives rendering, movement, navigation, spawning and minimap. Title MAP selection and --map support are available. See [TASK-MAPS-EXPERIMENT](tasks/TASK-MAPS-EXPERIMENT.md) for evidence and scope. Parent independent review/integration is pending; human balance testing remains follow-up.
