@@ -60,6 +60,7 @@ public static partial class SelfTest
             TestMusicAnalysis();
             TestMusicToWorlds();
             TestEnemiesChase();
+            TestEnemySpacing();
             TestBeatPockets();
             TestMelodyPitch();
             TestGravityWells();

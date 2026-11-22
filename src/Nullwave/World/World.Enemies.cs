@@ -224,6 +224,36 @@ public sealed partial class World
                 M.Clamp(e.Pos.X, -ArenaW * 0.5f + margin, ArenaW * 0.5f - margin),
                 M.Clamp(e.Pos.Y, -ArenaH * 0.5f + margin, ArenaH * 0.5f - margin));
         }
+        ResolveEnemySpacing();
+    }
+
+    private void ResolveEnemySpacing()
+    {
+        // Steering alone loses to fast catch-up movement and is bypassed by hoppers/dashes.
+        // Resolve bodies after every brain has moved, even outside the camera. Several passes
+        // let a correction propagate through a pack instead of compressing its next neighbour.
+        for (int pass = 0; pass < 4; pass++)
+        for (int i = 0; i < Enemies.Count; i++)
+        {
+            var a = Enemies[i];
+            if (a.Dead || a.Spawning || a.Boss) continue;
+            for (int j = i + 1; j < Enemies.Count; j++)
+            {
+                var b = Enemies[j];
+                if (b.Dead || b.Spawning || b.Boss) continue;
+                Vector2 delta = b.Pos - a.Pos;
+                float room = a.Radius + b.Radius + 8f;
+                float distanceSq = delta.LengthSquared();
+                if (distanceSq >= room * room) continue;
+                float distance = MathF.Sqrt(distanceSq);
+                // Coincident spawns still need a stable direction; don't consume gameplay RNG.
+                Vector2 normal = distance > 0.001f ? delta / distance
+                    : M.FromAngle((i * 0.618034f + j * 0.381966f) * M.Tau, 1f);
+                Vector2 correction = normal * ((room - distance) * 0.5f);
+                a.Pos = ClampToArena(a.Pos - correction, a.Radius + 20f);
+                b.Pos = ClampToArena(b.Pos + correction, b.Radius + 20f);
+            }
+        }
     }
 
     /// <summary>How close (0..1) the enemy is to its next on-beat shot, over the final beat.</summary>
@@ -408,7 +438,7 @@ public sealed partial class World
             // personal space so the chase reads as a pack, not a blob
             foreach (var o in Enemies)
             {
-                if (o == e || o.Dead || o.Boss) continue;
+                if (o == e || o.Dead || o.Spawning || o.Boss) continue;
                 Vector2 d = e.Pos - o.Pos;
                 float l = d.Length();
                 float room = e.Radius + o.Radius + 30f;
