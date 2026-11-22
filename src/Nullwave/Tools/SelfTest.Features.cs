@@ -43,6 +43,66 @@ public static partial class SelfTest
     private static void KillForTest(GameWorld w, Enemy e) =>
         typeof(GameWorld).GetMethod("KillEnemy", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(w, [e]);
 
+    private static void TestEnemySpacing()
+    {
+        var update = typeof(GameWorld).GetMethod("UpdateEnemies", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        // Exercise actual movement, including direct hopper velocity and active pouncer lunges.
+        foreach (var role in Enum.GetValues<EnemyRole>().Where(r => r != EnemyRole.Boss))
+        {
+            var w = new GameWorld(new RunConfig { Seed = 0x5AACEUL });
+            w.Player.Pos = new Vector2(1800f, 0f);
+            w.SpawnForCapture(role, new Vector2(-1800f, 0f));
+            w.SpawnForCapture(role, new Vector2(-1800f, 0f));
+            foreach (var e in w.Enemies)
+            {
+                e.MovePhase = 0.25f;
+                e.State = 2;
+                e.StateTimer = 1f;
+                e.DashDir = Vector2.UnitX;
+            }
+            update.Invoke(w, [Dt, new AudioState { Bpm = 120f }]);
+            var a = w.Enemies[0];
+            var b = w.Enemies[1];
+            Check(Vector2.Distance(a.Pos, b.Pos) >= a.Radius + b.Radius + 7f,
+                role + " separates coincident enemies during off-screen movement");
+        }
+
+        var pack = new GameWorld(new RunConfig { Seed = 0x5AACEUL });
+        pack.Player.Pos = new Vector2(2200f, 1000f);
+        for (int i = 0; i < 18; i++)
+            pack.SpawnForCapture(i % 3 == 0 ? EnemyRole.Turret : i % 3 == 1 ? EnemyRole.Drifter : EnemyRole.Splitter,
+                new Vector2(-2000f + i % 3 * 45f, -200f + i / 3 * 45f));
+        float closest = float.MaxValue;
+        for (int frame = 0; frame < 900; frame++)
+        {
+            pack.SetBeatClockForTest(frame / 30.0);
+            // Keep racing away and then turn along the wall, with the pack behind the camera.
+            pack.Player.Pos = frame < 450 ? new Vector2(2200f, 1000f) : new Vector2(2200f, -1200f);
+            update.Invoke(pack, [Dt, new AudioState { Bpm = 120f }]);
+            if (frame < 120) continue;
+            for (int i = 0; i < pack.Enemies.Count; i++)
+            for (int j = i + 1; j < pack.Enemies.Count; j++)
+            {
+                var a = pack.Enemies[i];
+                var b = pack.Enemies[j];
+                closest = MathF.Min(closest, Vector2.Distance(a.Pos, b.Pos) / (a.Radius + b.Radius));
+            }
+            foreach (var e in pack.Enemies)
+                Check(float.IsFinite(e.Pos.X) && float.IsFinite(e.Pos.Y) &&
+                    e.Pos == pack.ClampToArena(e.Pos, e.Radius + 20f), "chasing pack stays finite and inside the arena");
+        }
+        Check(closest > 0.9f, "a fast mixed pack stays spread while chasing and turning: " + closest);
+
+        var ignored = new GameWorld(new RunConfig { Seed = 0x5AACEUL });
+        for (int i = 0; i < 4; i++) ignored.SpawnForCapture(EnemyRole.Turret, Vector2.Zero);
+        ignored.Enemies[1].Spawning = true;
+        ignored.Enemies[2].Dead = true;
+        ignored.Enemies[3].Boss = true;
+        typeof(GameWorld).GetMethod("ResolveEnemySpacing", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(ignored, null);
+        Check(ignored.Enemies.All(e => e.Pos == Vector2.Zero), "spacing ignores dead enemies, spawn telegraphs and bosses");
+        Console.WriteLine("  enemy spacing: coincident spawns, every role, fast mixed pursuit and arena bounds");
+    }
+
     /// <summary>Each enemy role moves on its own part of the bar, and the rhythm never changes its average speed.</summary>
     private static void TestBeatPockets()
     {
