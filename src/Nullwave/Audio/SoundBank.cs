@@ -21,14 +21,17 @@ public enum SfxType
     Wave,
     /// <summary>A pitched note (in-key guns): FM bell or soft pluck.</summary>
     Note,
+    DrumKick,
+    DrumSnare,
+    DrumHat,
+    BassShot,
+    LeadShot,
 }
 
 /// <summary>
-/// Procedural sound effects. Each voice is synthesised with its own filter state (one-pole
-/// low/high-pass and a state-variable band-pass), layered from physically motivated parts:
-/// a pitch-dropping body for punch, filtered noise for air and debris, inharmonic partials for
-/// metal, FM for bells and zaps, a sub thump for weight. Everything goes through a small
-/// stereo Schroeder reverb so the effects sit in a space instead of beeping in a void.
+/// Layered electronic percussion, formant bass and tuned glass. Each trigger snapshots the
+/// current harmony; ongoing voices keep their tuning through chord changes. Transients stay
+/// immediate, with short decorrelated room tails and a bounded effects bus.
 /// </summary>
 public sealed class SoundBank
 {
@@ -40,10 +43,31 @@ public sealed class SoundBank
     private long _seed = 0x9E3779B9;
     private float[] _dry = new float[4096];
     private readonly Reverb _reverb = new();
+    private readonly IReadOnlyDictionary<SfxType, float[]> _samples;
+    public int GeneratedSampleCount => _samples.Count;
+
+    public SoundBank(bool useGeneratedSamples = true)
+    {
+        _samples = useGeneratedSamples ? SfxSamples.All : new Dictionary<SfxType, float[]>();
+    }
+    private float _rootHz = 130.8128f; // C3 until music is known
+    private float _thirdRatio = 1.1892071f;
+
+    /// <summary>Update future voices only. Disabling in-key sounds uses a fixed C minor palette.</summary>
+    public void SetHarmony(int root, bool minor, bool enabled = true)
+    {
+        root = enabled && root >= 0 ? root % 12 : 0;
+        lock (_lock)
+        {
+            _rootHz = 130.8128f * MathF.Pow(2f, root / 12f);
+            _thirdRatio = MathF.Pow(2f, (enabled && !minor ? 4f : 3f) / 12f);
+        }
+    }
 
     private struct Voice
     {
         public SfxType Type;
+        public float[]? Sample;
         public double Age;
         public double Life;
         public float Gain;
@@ -53,7 +77,7 @@ public sealed class SoundBank
         public double Phase1, Phase2, Phase3;
         public float Lp, Lp2, Hp, HpIn, Bp, BpLow, Hold;
         public int HoldCount;
-        public float Freq;
+        public float Freq, ThirdRatio;
         public int Timbre;
     }
 
@@ -99,11 +123,13 @@ public sealed class SoundBank
             {
                 Type = type,
                 Life = LifeOf(type),
-                Gain = gain,
+                Sample = _samples.GetValueOrDefault(type),
+                Gain = gain * LevelOf(type),
                 Pan = Math.Clamp(pan, -1f, 1f),
                 Seed = seed,
                 Pitch = 1f + ((seed >> 8) % 1000 / 1000f - 0.5f) * 0.12f,
-                Freq = 523.25f,   // a Note triggered without PlayNote sounds a C5
+                Freq = type == SfxType.Note ? _rootHz * 4f : _rootHz,
+                ThirdRatio = _thirdRatio,
             };
         }
     }
@@ -146,16 +172,31 @@ public sealed class SoundBank
             float l = _dry[i], r = _dry[i + 1];
             _reverb.Process(l, r, out float wl, out float wr);
             // soft clip the bus so stacked explosions stay round instead of cracking
-            buffer[offset + i] += SoftClip((l + wl * 0.22f) * volume);
-            buffer[offset + i + 1] += SoftClip((r + wr * 0.22f) * volume);
+            buffer[offset + i] += SoftClip((l + wl * 0.14f) * volume);
+            buffer[offset + i + 1] += SoftClip((r + wr * 0.14f) * volume);
         }
     }
 
-    private static float SoftClip(float x) => x / (1f + MathF.Abs(x) * 0.6f);
+    private static float SoftClip(float x) => 0.94f * MathF.Tanh(x / 0.94f);
+
+    // Match the previous set's measured RMS rather than making a redesign louder by default.
+    private static float LevelOf(SfxType type) => type switch
+    {
+        SfxType.Shot => 0.95f, SfxType.Hit => 0.82f, SfxType.Kill => 1.1f,
+        SfxType.Explosion => 1.1f, SfxType.Dash => 0.95f, SfxType.Pickup => 0.78f,
+        SfxType.LaserWarn => 0.86f, SfxType.LaserFire => 0.85f, SfxType.Burst => 1.3f,
+        SfxType.Hurt => 0.87f, SfxType.Boss => 0.7f, SfxType.Menu => 0.6f,
+        SfxType.Unlock => 0.63f, SfxType.Wave => 1.1f, _ => 1f,
+    };
 
     private static double LifeOf(SfxType type) => type switch
     {
-        SfxType.Shot => 0.09,
+        SfxType.Shot => 0.12,
+        SfxType.DrumKick => 0.25,
+        SfxType.DrumSnare => 0.18,
+        SfxType.DrumHat => 0.07,
+        SfxType.BassShot => 0.42,
+        SfxType.LeadShot => 0.15,
         SfxType.Hit => 0.12,
         SfxType.Kill => 0.42,
         SfxType.Explosion => 1.4,
@@ -191,10 +232,26 @@ public sealed class SoundBank
 
     private static float Saw(ref double phase, float freq)
     {
-        phase += freq / SampleRate;
-        if (phase > 1.0) phase -= Math.Floor(phase);
-        return (float)(phase * 2.0 - 1.0);
+        float step = Math.Clamp(freq / SampleRate, 0.00001f, 0.45f);
+        phase += step;
+        phase -= Math.Floor(phase);
+        float t = (float)phase;
+        float y = t * 2f - 1f;
+        if (t < step) { float x = t / step; y -= x + x - x * x - 1f; }
+        else if (t > 1f - step) { float x = (t - 1f) / step; y -= x * x + x + x + 1f; }
+        return y;
     }
+
+    // Phase modulation in radians rather than frequency modulation with a moving DC offset.
+    private static float Fm(ref Voice v, float hz, float ratio, float index)
+    {
+        float mod = Osc(ref v.Phase2, hz * ratio);
+        v.Phase1 += hz / SampleRate;
+        v.Phase1 -= Math.Floor(v.Phase1);
+        return MathF.Sin((float)(v.Phase1 * Math.Tau) + mod * index);
+    }
+
+    private static float Fold(float x) => MathF.Sin(x * 2.4f);
 
     private static float LowPass(ref float state, float x, float cutoff)
     {
@@ -224,146 +281,172 @@ public sealed class SoundBank
         float t = (float)v.Age;
         float u = (float)(v.Age / v.Life);
         float p = v.Pitch;
+        float f = v.Freq;
+        // All voices fade to zero before expiry, including warnings and sample-held glitches.
+        float end = Math.Clamp((float)(v.Life - v.Age) * 250f, 0f, 1f);
+        float dry = RenderVoice(ref v, t, u, p, f);
+        if (v.Sample is { } sample)
+        {
+            int frame = (int)(v.Age * SampleRate);
+            dry *= 0.8f;
+            if (frame < sample.Length)
+                dry += sample[frame] * 0.35f;
+        }
+        return dry * end;
+    }
+
+    private static float RenderVoice(ref Voice v, float t, float u, float p, float f)
+    {
         switch (v.Type)
         {
             case SfxType.Shot:
             {
-                // punchy blaster: fast pitch drop body + bright noise click
-                float body = Osc(ref v.Phase1, (1300f * MathF.Exp(-t * 55f) + 260f) * p) * MathF.Exp(-t * 38f);
-                float click = HighPass(ref v.Hp, Noise(ref v), 3500f) * MathF.Exp(-t * 160f);
-                float grit = Saw(ref v.Phase2, 180f * p) * MathF.Exp(-t * 70f) * 0.15f;
-                return (body * 0.5f + click * 0.45f + grit) * 0.75f;
+                // Tight electro stab: a tuned wavefolder body and a dry, granular spark.
+                float body = Fm(ref v, f * 2f, 2f, 3.6f * MathF.Exp(-t * 55f));
+                float snap = HighPass(ref v.Hp, Noise(ref v), 4200f) * MathF.Exp(-t * 210f);
+                return (Fold(body * (0.9f + MathF.Exp(-t * 40f))) * Env(t, 0.001f, 45f) * 0.48f + snap * 0.32f);
+            }
+            case SfxType.DrumKick:
+            {
+                float body = Osc(ref v.Phase1, (f * 0.5f + 185f * MathF.Exp(-t * 65f)) * p);
+                float click = HighPass(ref v.Hp, Noise(ref v), 2800f) * MathF.Exp(-t * 180f);
+                return MathF.Tanh(body * 1.8f) * Env(t, 0.001f, 20f) * 0.65f + click * 0.28f;
+            }
+            case SfxType.DrumSnare:
+            {
+                float shell = Osc(ref v.Phase1, 185f * p) + Osc(ref v.Phase3, 320f * p) * 0.4f;
+                float wire = HighPass(ref v.Hp, Noise(ref v), 1400f);
+                return shell * Env(t, 0.001f, 48f) * 0.36f + wire * Env(t, 0.002f, 27f) * 0.52f;
+            }
+            case SfxType.DrumHat:
+            {
+                float metal = Osc(ref v.Phase1, 6173f * p) * Osc(ref v.Phase2, 8351f * p);
+                float air = HighPass(ref v.Hp, Noise(ref v), 7500f);
+                return (metal * 0.32f + air * 0.45f) * Env(t, 0.0007f, 75f);
+            }
+            case SfxType.BassShot:
+            {
+                // Reese growl with a moving vowel over a clean tuned sub.
+                float saw = Saw(ref v.Phase1, f * 0.5f * 0.994f) + Saw(ref v.Phase2, f * 0.5f * 1.006f);
+                float growl = BandPass(ref v, Fold(saw), 260f + 1700f * MathF.Exp(-t * 12f), 2.3f);
+                float sub = Osc(ref v.Phase3, f * 0.5f);
+                return (MathF.Tanh(growl * 2f) * 0.42f + sub * 0.38f) * Env(t, 0.003f, 9f);
+            }
+            case SfxType.LeadShot:
+            {
+                // Smooth resonant ribbon, separate from the classic weapon's hard transient.
+                float ribbon = Saw(ref v.Phase1, f * 4f) + Saw(ref v.Phase2, f * 4.012f);
+                float tone = LowPass(ref v.Lp, ribbon, 1700f + 2300f * MathF.Exp(-t * 18f));
+                return tone * Env(t, 0.008f, 18f) * 0.32f;
             }
             case SfxType.Hit:
             {
-                // metallic tink: inharmonic partials ring briefly over a click
-                float metal = Osc(ref v.Phase1, 1830f * p) * 0.4f + Osc(ref v.Phase2, 2710f * p) * 0.3f + Osc(ref v.Phase3, 3950f * p) * 0.2f;
-                float click = HighPass(ref v.Hp, Noise(ref v), 2000f);
-                return (metal * MathF.Exp(-t * 34f) + click * MathF.Exp(-t * 120f) * 0.5f) * 0.45f;
+                // Short ceramic knock with a sand-like impact, rather than a repeating beep.
+                float knock = Fm(ref v, f * 3f, 2.76f * p, 2.8f * MathF.Exp(-t * 85f));
+                float sand = HighPass(ref v.Hp, Noise(ref v), 2400f) * MathF.Exp(-t * 135f);
+                return knock * Env(t, 0.0008f, 57f) * 0.37f + sand * 0.24f;
             }
             case SfxType.Kill:
             {
-                // crunchy shatter: body thump + debris noise whose brightness falls away
-                float body = Osc(ref v.Phase1, (190f * MathF.Exp(-t * 12f) + 55f) * p) * MathF.Exp(-t * 11f);
-                float debris = LowPass(ref v.Lp, Noise(ref v), 7000f * MathF.Exp(-t * 7f) + 300f) * Env(t, 0.002f, 9f);
-                float glass = BandPass(ref v, Noise(ref v), 3200f * p, 6f) * MathF.Exp(-t * 14f);
-                return (body * 0.55f + debris * 0.55f + glass * 0.35f) * 0.8f;
+                // Shattered digital glass: pitched fragments flutter away from a hard body hit.
+                float glass = Fm(ref v, f * 4f, 2.003f * p, 5f * MathF.Exp(-t * 12f));
+                float gate = 0.45f + 0.55f * MathF.Pow(MathF.Cos(t * 95f), 2f);
+                float debris = BandPass(ref v, Noise(ref v), 4300f * MathF.Exp(-t * 11f) + 450f, 2f);
+                float body = Osc(ref v.Phase3, (85f + 150f * MathF.Exp(-t * 45f)) * p);
+                return glass * gate * Env(t, 0.001f, 17f) * 0.28f + debris * Env(t, 0.001f, 15f) * 0.6f + body * MathF.Exp(-t * 28f) * 0.52f;
             }
             case SfxType.Explosion:
             {
-                // sub thump + rumble that darkens + sparse crackle
-                float sub = Osc(ref v.Phase1, (70f * MathF.Exp(-t * 4f) + 30f) * p) * Env(t, 0.004f, 3.5f);
-                float rumble = LowPass(ref v.Lp2, LowPass(ref v.Lp, Noise(ref v), 2600f * MathF.Exp(-t * 3f) + 120f), 1800f * MathF.Exp(-t * 2f) + 90f) * Env(t, 0.01f, 2.6f);
-                if (--v.HoldCount <= 0)
-                {
-                    v.HoldCount = 200 + (int)((v.Seed >> 4) % 2400);
-                    v.Hold = Noise(ref v) > 0.2f ? 1f : 0f;
-                }
-                float crackle = v.Hold * HighPass(ref v.Hp, Noise(ref v), 1500f) * MathF.Exp(-t * 4f) * 0.4f;
-                v.Hold *= 0.995f;
-                return (sub * 0.75f + rumble * 1.4f + crackle) * 0.9f;
+                // A sub drop, torn-speaker growl and a scattering tail of bitcrushed debris.
+                float sub = Osc(ref v.Phase1, f * 0.25f + 100f * MathF.Exp(-t * 14f));
+                float tear = Saw(ref v.Phase2, f * 0.5f * p);
+                float growl = BandPass(ref v, Fold(tear * 1.5f), 220f + 1100f * MathF.Exp(-t * 4f), 1.5f);
+                if (--v.HoldCount <= 0) { v.HoldCount = 12 + (int)(u * 180f); v.Hold = Noise(ref v); }
+                float debris = LowPass(ref v.Lp, v.Hold, 5000f * MathF.Exp(-t * 4f) + 120f);
+                return (sub * 0.65f + MathF.Tanh(growl * 2f) * 0.3f) * Env(t, 0.003f, 4.5f) + debris * Env(t, 0.001f, 5f) * 0.55f;
             }
             case SfxType.Dash:
             {
-                // air whoosh: band-passed noise sweeping up then away
-                float centre = 350f + 2600f * MathF.Sin(MathF.PI * MathF.Min(1f, u * 1.2f));
-                float air = BandPass(ref v, Noise(ref v), centre * p, 2.2f);
-                float env = MathF.Sin(MathF.PI * MathF.Min(1f, u)) * MathF.Exp(-u * 1.5f);
-                float tone = Osc(ref v.Phase1, (140f + 260f * u) * p) * 0.15f;
-                return (air * 1.1f + tone) * env * 0.8f;
+                // Vacuum intake followed by a rip through the stereo room.
+                float air = BandPass(ref v, Noise(ref v), 300f + 4600f * MathF.Pow(1f-u, 2f), 1.7f);
+                float zip = Fm(ref v, f * (1f + 6f * MathF.Exp(-t * 22f)), 2f, 1.6f);
+                return (air * 0.8f + zip * 0.22f) * Env(t, 0.003f, 13f);
             }
             case SfxType.Graze:
             {
-                // bright "shing": shimmering FM partial
-                float mod = Osc(ref v.Phase2, 3100f * p) * 900f * MathF.Exp(-t * 30f);
-                return Osc(ref v.Phase1, 2350f * p + mod) * Env(t, 0.003f, 30f) * 0.22f;
+                float shimmer = Fm(ref v, f * 8f, 1.5f, 1.8f * MathF.Exp(-t * 35f));
+                return shimmer * Env(t, 0.002f, 35f) * 0.22f;
             }
             case SfxType.Pickup:
             {
-                // FM bell, two notes a fifth apart
-                float i1 = 4f * MathF.Exp(-t * 6f);
-                float b1 = Osc(ref v.Phase1, 880f * p + Osc(ref v.Phase2, 880f * 3.5f * p) * 880f * i1) * Env(t, 0.002f, 6f);
-                float t2 = MathF.Max(0f, t - 0.06f);
-                float b2 = t > 0.06f ? Osc(ref v.Phase3, 1320f * p) * Env(t2, 0.002f, 7f) : 0f;
-                return (b1 * 0.25f + b2 * 0.2f);
+                float step = t < 0.055f ? 1f : t < 0.11f ? 1.5f : 2f;
+                float local = t < 0.11f ? t % 0.055f : t - 0.11f;
+                float pluck = Fm(ref v, f * 4f * step, 2f, 2.8f * MathF.Exp(-local * 25f));
+                return pluck * Env(local, 0.002f, 14f) * MathF.Exp(-t * 3f) * 0.36f;
             }
             case SfxType.LaserWarn:
             {
-                // charging whine: filtered saw rising in pitch with a fast tremolo
-                float f = (180f + 900f * u * u) * p;
-                float saw = LowPass(ref v.Lp, Saw(ref v.Phase1, f) + Saw(ref v.Phase2, f * 1.007f), 1200f + 3000f * u);
-                float trem = 0.6f + 0.4f * MathF.Sin(t * M.Tau * (12f + 30f * u));
-                return saw * trem * MathF.Min(1f, u * 6f) * 0.18f;
+                // Accelerating gated charge, with a deliberate gap before the discharge.
+                float charge = Saw(ref v.Phase1, f * (1f + 3f * u * u));
+                float pulse = 0.2f + 0.8f * MathF.Pow(MathF.Max(0f, MathF.Sin(t * M.Tau * (8f + 20f*u))), 2f);
+                return LowPass(ref v.Lp, charge, 600f + 6500f*u) * pulse * MathF.Sin(MathF.PI*u) * 0.48f;
             }
             case SfxType.LaserFire:
             {
-                // zap: FM with a collapsing index + hiss + mains-like hum
-                float index = 8f * MathF.Exp(-t * 10f);
-                float zap = Osc(ref v.Phase1, 420f * p + Osc(ref v.Phase2, 1260f * p) * 420f * index) * Env(t, 0.002f, 5f);
-                float hiss = HighPass(ref v.Hp, Noise(ref v), 4000f) * Env(t, 0.001f, 9f);
-                float hum = Saw(ref v.Phase3, 55f) * Env(t, 0.02f, 4f);
-                return (zap * 0.35f + hiss * 0.25f + LowPass(ref v.Lp, hum, 400f) * 0.35f) * 0.9f;
+                float beam = Fm(ref v, f * 2f, 3f, 7f * MathF.Exp(-t * 12f));
+                float hiss = HighPass(ref v.Hp, Noise(ref v), 5300f) * MathF.Exp(-t * 20f);
+                return MathF.Tanh(beam * 2f) * Env(t, 0.001f, 7f) * 0.49f + hiss * 0.28f;
             }
             case SfxType.Burst:
             {
-                // cascade: reverse-swell whoosh into a bright chord and sub drop
-                float swell = BandPass(ref v, Noise(ref v), 400f + 5000f * MathF.Exp(-t * 2f), 1.5f) * Env(t, 0.05f, 2.2f);
-                float chord = (Osc(ref v.Phase1, 220f * p) + Osc(ref v.Phase2, 330f * p) + Osc(ref v.Phase3, 440f * p)) * Env(t, 0.02f, 2.5f) * 0.22f;
-                float sub = MathF.Sin(t * M.Tau * (80f * MathF.Exp(-t * 2f) + 30f)) * Env(t, 0.005f, 3f);
-                return (swell * 0.7f + chord + sub * 0.6f) * 0.8f;
+                // Immediate drop impact, opening chord and a chopped, dissolving air tail.
+                float root = Saw(ref v.Phase1, f);
+                float third = Saw(ref v.Phase2, f * v.ThirdRatio);
+                float fifth = Saw(ref v.Phase3, f * 1.498307f);
+                float chord = LowPass(ref v.Lp, (root + third + fifth) / 3f, 300f + 4200f * MathF.Exp(-t*3f));
+                float air = BandPass(ref v, Noise(ref v), 500f + 3500f*MathF.Exp(-t*2f), 1.7f);
+                float chop = 0.65f + 0.35f*MathF.Cos(t * 40f);
+                return chord * Env(t, 0.004f, 3.4f) * 0.95f + air * chop * Env(t, 0.002f, 3f) * 0.58f;
             }
             case SfxType.Hurt:
             {
-                // distorted thud with a sample-and-hold glitch tail
-                float thud = MathF.Tanh(Osc(ref v.Phase1, (95f * MathF.Exp(-t * 6f) + 40f) * p) * 3f) * Env(t, 0.003f, 6f);
-                if (--v.HoldCount <= 0) { v.HoldCount = 600; v.Hold = Noise(ref v); }
-                float glitch = v.Hold * Saw(ref v.Phase2, 330f) * Env(t, 0.02f, 9f);
-                return (thud * 0.6f + glitch * 0.25f) * 0.9f;
+                // Low broken-machine alarm: instantly distinct from positive feedback.
+                float thud = Osc(ref v.Phase1, 47f + 130f*MathF.Exp(-t*35f));
+                if (--v.HoldCount <= 0) { v.HoldCount = 80 + (int)(u * 700f); v.Hold = Noise(ref v); }
+                float glitch = LowPass(ref v.Lp, v.Hold, 1500f) * (0.5f + 0.5f*MathF.Cos(t*105f));
+                return MathF.Tanh(thud*3f) * Env(t, 0.002f, 8f) * 0.65f + glitch * Env(t, 0.002f, 7f) * 0.3f;
             }
             case SfxType.Boss:
             {
-                // brass-like horn: detuned saws through a slow-opening filter
-                float f = 55f * p;
-                float horn = Saw(ref v.Phase1, f) + Saw(ref v.Phase2, f * 1.01f) + Saw(ref v.Phase3, f * 1.5f) * 0.6f;
-                float filt = LowPass(ref v.Lp, horn, 150f + 1400f * Env(t, 0.25f, 1.5f));
-                return LowPass(ref v.Lp2, filt, 2000f) * Env(t, 0.08f, 1.4f) * 0.35f;
+                // Detuned reese horn with a slow formant opening, tuned down two octaves.
+                float reese = Saw(ref v.Phase1, f * 0.25f * 0.989f) + Saw(ref v.Phase2, f * 0.25f * 1.011f);
+                float formant = BandPass(ref v, Fold(reese), 180f + 1400f*Env(t, 0.18f, 2f), 2f);
+                float sub = Osc(ref v.Phase3, f*0.25f);
+                return (MathF.Tanh(formant*2.3f)*0.5f + sub*0.38f) * Env(t, 0.012f, 1.8f);
             }
             case SfxType.Menu:
-                return (Osc(ref v.Phase1, 1800f) * MathF.Exp(-t * 90f) * 0.4f + HighPass(ref v.Hp, Noise(ref v), 5000f) * MathF.Exp(-t * 400f) * 0.3f) * 0.4f;
+                return Fm(ref v, f*4f, 2f, 1.5f*MathF.Exp(-t*140f)) * Env(t, 0.001f, 100f)*0.24f;
             case SfxType.Unlock:
             {
-                // rising bell arpeggio
-                float a = Osc(ref v.Phase1, 523f) * Env(t, 0.002f, 4f);
-                float b = t > 0.08f ? Osc(ref v.Phase2, 784f) * Env(t - 0.08f, 0.002f, 4f) : 0f;
-                float c = t > 0.16f ? Osc(ref v.Phase3, 1046f) * Env(t - 0.16f, 0.002f, 3.5f) : 0f;
-                return (a + b + c) * 0.18f;
+                float step = t < 0.09f ? 1f : t < 0.18f ? v.ThirdRatio : t < 0.27f ? 1.498307f : 2f;
+                float local = t < 0.27f ? t % 0.09f : t - 0.27f;
+                float bell = Fm(ref v, f*4f*step, 2f, 2.5f*MathF.Exp(-local*12f));
+                return bell * Env(local, 0.003f, 5.5f)*MathF.Exp(-t*1.5f)*0.4f;
             }
             case SfxType.Wave:
             {
-                float sweep = BandPass(ref v, Noise(ref v), 300f + 4000f * u, 4f) * MathF.Sin(MathF.PI * u);
-                float chime = Osc(ref v.Phase1, 660f) * Env(t, 0.005f, 5f) * 0.18f;
-                return sweep * 0.5f + chime;
+                float sweep = BandPass(ref v, Noise(ref v), 500f + 4800f*u*u, 2f);
+                float stab = Fm(ref v, f*2f, 1.5f, 4f*MathF.Exp(-t*15f));
+                return sweep * MathF.Sin(MathF.PI*u)*0.6f + stab * Env(t, 0.002f, 8f)*0.32f;
             }
             case SfxType.Note:
             {
-                float f = v.Freq;
-                v.Phase1 += f / SampleRate;
-                v.Phase2 += f * (v.Timbre == 0 ? 3.5f : 2f) / SampleRate;
-                if (v.Phase1 > 1.0) v.Phase1 -= 1.0;
-                if (v.Phase2 > 1.0) v.Phase2 -= 1.0;
-                if (v.Timbre == 0)
-                {
-                    // FM bell: bright attack that mellows as the modulation dies away
-                    float index = 2.2f * MathF.Exp(-t * 9f);
-                    float mod = MathF.Sin((float)v.Phase2 * MathF.Tau) * index;
-                    return MathF.Sin((float)v.Phase1 * MathF.Tau + mod) * Env(t, 0.003f, 5.5f) * 0.32f;
-                }
-                // soft pluck
-                float body = MathF.Sin((float)v.Phase1 * MathF.Tau) + MathF.Sin((float)v.Phase2 * MathF.Tau) * 0.3f;
-                return body * Env(t, 0.002f, 12f) * 0.22f;
+                // In-key rewards become a wavetable-like glass pluck instead of a plain sine bell.
+                float pluck = Fm(ref v, f, 2f, (v.Timbre == 0 ? 3.2f : 1.4f)*MathF.Exp(-t*18f));
+                float overtone = Osc(ref v.Phase3, f*3f)*MathF.Exp(-t*26f)*0.12f;
+                return (pluck + overtone) * Env(t, 0.002f, v.Timbre == 0 ? 7f : 18f) * 0.32f;
             }
-            default:
-                return 0f;
+            default: return 0f;
         }
     }
 

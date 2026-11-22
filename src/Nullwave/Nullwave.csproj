@@ -22,5 +22,6 @@
   <ItemGroup>
     <Content Include="../../Assets/Models/*.obj;../../Assets/Models/model_manifest.json" Link="Assets/Models/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../../Assets/Textures/*.png" Link="Assets/Textures/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../Assets/Audio/*.wav;../../Assets/Audio/manifest.json" Link="Assets/Audio/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

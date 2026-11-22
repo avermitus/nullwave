@@ -21,3 +21,6 @@ _backup/
 *.user
 *.log
 .env
+
+# Small generated SFX layers shipped with the game
+!Assets/Audio/*.wav

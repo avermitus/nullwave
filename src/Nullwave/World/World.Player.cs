@@ -238,7 +238,7 @@ public sealed partial class World
         Vector4 flash = M.Hsv(0.51f, 0.5f, 1f, 0.8f);
         SpawnParticle(p.Pos + p.AimDir * 20f, p.AimDir * 120f + FxRng.InCircle(50), 0.12f, 4.5f, flash, ParticleKind.Spark, 4f);
         if (!style.Quiet)
-            Sfx?.Trigger(SfxType.Shot, (0.16f + MathF.Min(0.12f, fired * 0.005f)) * (style.Kind == 4 ? 1.6f : 1f), M.Clamp(p.Pos.X / (ArenaW * 0.5f), -1f, 1f) * 0.45f);
+            Sfx?.Trigger(style.Sound, (0.16f + MathF.Min(0.12f, fired * 0.005f)) * (style.Kind == 4 ? 1.6f : 1f), M.Clamp(p.Pos.X / (ArenaW * 0.5f), -1f, 1f) * 0.45f);
     }
 
     public void SpawnPlayerBullet(Vector2 pos, Vector2 vel, float radius, float damage, float life, int pierce, float homing = 0f, int bounces = 0, byte synergyKind = 0, float hue = 0.51f)

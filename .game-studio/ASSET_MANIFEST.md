@@ -146,3 +146,15 @@ All seven PNG files were visually inspected via `read_file`:
 5. **`docs/assets/seed_archive_console.png` (`1600x900`):** Verified the 8-character Base-34 seed register (`001N4C4M`), harmonic waveform synthesizer, 7-row Flight Recorder seed table, 3D oblique wireframe arena topology projection with 5 extruded monoliths and 5 movement mini-maps (`SCATTER`, `HENGE`, `CITY`, `SPIRAL`, `LANES`), 34-character Base-34 key matrix (`I->1, O->0`), `#` hex palette swatches, and bottom `RECENT SIGNALS //` highlight strip with zero text collisions.
 6. **`docs/assets/phase_sync_diagram.png` (`1600x900`):** Verified the PLL beat-phase oscilloscope with `±65MS` sync windows and unpenalized off-beat zones, the 3D oblique barrel-roll dash trajectory with 5 fading afterimage ghosts, `195U` shockwave ring, and dodged crimson enemy comet bullets, the 4 synergy telemetry cards (`+5.0% FLOW`, `+5.0 RESONANCE`, `-18% RECHARGE`, `0.30S INVULN`), and the bottom HUD Flow Meter readout bar with zero text overlap.
 7. **`docs/assets/choir_phase_choreography.png` (`1600x900`):** Verified the top `BOSS BAR HUD //` replica (`THE CHOIR // PHASE II OF IV // HARMONIC CONVERGENCE`, ghost drain, phase pips, `// PHASE SHIFT //`, `INCOMING VOLLEY`), all 4 progressive Choir phase cards (`10 -> 12 -> 14 -> 16` pillars, `1 -> 2 -> 2 -> 3` halos, `4 -> 6 -> 8 -> 10` shards, `580U` clear ring, starburst lasers), and all 3 bottom mechanic panels with generous border margins and zero text overlap.
+
+
+### Sogni electronic sound layers (2026-11-21)
+
+- Files: `Assets/Audio/kill.wav`, `explosion.wav`, `dash.wav` (145,092 bytes total; 48 kHz mono PCM16).
+- Generator: Sogni AI, `minimax_music3`, seed `2940404251`, project `E0E92CC6-646B-434F-9357-8DC832565BB4`.
+- Receipt: paid by subscription plan, **0 Spark charged**.
+- Exact prompt: `tools/Prompts/nullwave-sound-palette.txt`.
+- Source: `.pane/scratch/audio-preview/sogni-sound-palette.wav` (19.992381 seconds); source hash, slice timestamps, filters, fades and derived hashes: `Assets/Audio/manifest.json`.
+- Reproduce slices: `python tools/prepare_sogni_sfx.py <source.wav>` (requires ffmpeg, retains source).
+- Playback: `SfxSamples` decodes all three layers before audio callbacks; `SoundBank` layers them under procedural effects with existing panning and volume controls. Missing layers fall back to procedural sound.
+- Validation: all layers load and measurably alter output; complete effects suite is finite, audible and below full scale, dense mix bounded at 0.94, all tails decay. Owner listening feedback pending.

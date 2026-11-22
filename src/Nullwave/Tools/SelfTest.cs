@@ -40,6 +40,7 @@ public static partial class SelfTest
             TestSongLasers();
             TestNewEnemies();
             TestSfx();
+            TestElectronicAudio();
             TestRunTelemetry();
             TestRenderStateContract();
             TestAttunementLoadout();
