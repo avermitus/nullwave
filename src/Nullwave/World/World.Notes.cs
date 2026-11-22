@@ -19,6 +19,8 @@ public sealed partial class World
         _harmonyRoot = audio.ChordRoot;
         _harmonyMinor = audio.ChordMinor;
         _keyRoot = audio.Key >= 0 ? audio.Key % 12 : 0;
+        Sfx?.SetHarmony(_harmonyRoot >= 0 ? _harmonyRoot : audio.Key,
+            _harmonyRoot >= 0 ? _harmonyMinor : audio.Key < 0 || audio.Key >= 12, GameSettings.Current.InKeySounds);
         _hitNoteCooldown -= 1f / 60f;
     }
 

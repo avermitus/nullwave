@@ -43,7 +43,7 @@ public static class Ships
 
 /// <summary>Per-shot tweaks so instrument ships can reuse the classic volley (and every attunement).</summary>
 public readonly record struct ShotStyle(float DamageScale = 1f, float SpeedScale = 1f, float RadiusScale = 1f,
-    int ExtraPierce = 0, float AngleOffset = 0f, byte Kind = 0, float Hue = 0.51f, bool Quiet = false)
+    int ExtraPierce = 0, float AngleOffset = 0f, byte Kind = 0, float Hue = 0.51f, bool Quiet = false, SfxType Sound = SfxType.Shot)
 {
     /// <summary>The original volley (use this, not default(ShotStyle), which is all zeros).</summary>
     public static ShotStyle Classic => new(1f);
@@ -60,6 +60,7 @@ public sealed partial class World
     private double _lastOnsetClock = -1;
     private float _drumSilence;
     private float _bassOrbCooldown;
+    private float _leadSoundCooldown;
 
     /// <summary>Fires the selected ship's weapon for this step.</summary>
     private void FireWeapon(InputFrame input, AudioState audio, float dt)
@@ -67,6 +68,7 @@ public sealed partial class World
         var p = Player;
         LeadBeam.Clear();
         LeadBeamPower = 0f;
+        _leadSoundCooldown = MathF.Max(0f, _leadSoundCooldown - dt);
         // onsets are one-frame flags from the audio thread; the sim can step several times per
         // frame, so only the first step of each audio frame acts on them
         bool freshAudio = audio.Time != _lastOnsetClock;
@@ -76,16 +78,16 @@ public sealed partial class World
             case ShipKind.Drums:
                 if (!input.Fire) break;
                 bool hit = false;
-                if (freshAudio && audio.KickHit) { hit = true; Shoot(new ShotStyle(2.6f, 0.92f, 1.7f, 1, 0f, 0, 0.08f)); }
+                if (freshAudio && audio.KickHit) { hit = true; Shoot(new ShotStyle(2.6f, 0.92f, 1.7f, 1, 0f, 0, 0.08f, Sound: SfxType.DrumKick)); }
                 if (freshAudio && audio.SnareHit)
                 {
                     hit = true;
-                    for (int k = -1; k <= 1; k++) Shoot(new ShotStyle(0.9f, 1f, 1.1f, 0, k * 0.2f, 0, 0.92f, k != 0));
+                    for (int k = -1; k <= 1; k++) Shoot(new ShotStyle(0.9f, 1f, 1.1f, 0, k * 0.2f, 0, 0.92f, k != 0, SfxType.DrumSnare));
                 }
-                if (freshAudio && audio.HatHit) { hit = true; Shoot(new ShotStyle(0.5f, 1.35f, 0.7f, 0, 0f, 0, 0.55f)); }
+                if (freshAudio && audio.HatHit) { hit = true; Shoot(new ShotStyle(0.5f, 1.35f, 0.7f, 0, 0f, 0, 0.55f, Sound: SfxType.DrumHat)); }
                 // no drums to play along with (quiet passage, no analysis): keep a light eighth-note pulse
                 _drumSilence = hit ? 0f : _drumSilence + dt;
-                if (_drumSilence > 0.6f && EighthTick && freshAudio) Shoot(new ShotStyle(0.8f, 1.1f, 0.9f));
+                if (_drumSilence > 0.6f && EighthTick && freshAudio) Shoot(new ShotStyle(0.8f, 1.1f, 0.9f, Sound: SfxType.DrumHat));
                 break;
             case ShipKind.Bass:
                 _bassOrbCooldown -= dt;
@@ -95,7 +97,7 @@ public sealed partial class World
                 {
                     _bassOrbCooldown = 0.18f;
                     float weight = 0.7f + M.Clamp01(audio.HarmLow) * 0.6f;
-                    Shoot(new ShotStyle(4.5f * weight, 0.34f, 2.6f * weight, 0, 0f, 4, 0.05f));
+                    Shoot(new ShotStyle(4.5f * weight, 0.34f, 2.6f * weight, 0, 0f, 4, 0.05f, Sound: SfxType.BassShot));
                 }
                 break;
             case ShipKind.Lead:
@@ -148,7 +150,11 @@ public sealed partial class World
                 }
             }
         }
-        if (FxRng.Chance(dt * 9f)) Sfx?.Trigger(SfxType.Shot, 0.06f, 0f);
+        if (_leadSoundCooldown <= 0f)
+        {
+            _leadSoundCooldown = 0.1f;
+            Sfx?.Trigger(SfxType.LeadShot, 0.09f, 0f);
+        }
     }
 
     /// <summary>Bass orbs burst where they land (or when they run out).</summary>

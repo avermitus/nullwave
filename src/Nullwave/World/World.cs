@@ -307,12 +307,12 @@ public sealed partial class World
 
         if (Phase != GamePhase.Playing) return;
 
+        CacheHarmony(audio);
         UpdatePlayer(dt, input, audio);
         UpdateRails(dt, audio);
         UpdateTracks(dt, audio);
         if (Phase != GamePhase.Playing) return;   // a new stage opened its upgrade pick
         Timeline.Sample(this, audio, dt);
-        CacheHarmony(audio);
         UpdateHype(dt);
         UpdateDirector(dt, audio);
         UpdateEnemies(dt, audio);

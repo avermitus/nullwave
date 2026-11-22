@@ -1,0 +1,57 @@
+{
+  "generator": "Sogni AI",
+  "model": "minimax_music3",
+  "seed": 2940404251,
+  "projectId": "E0E92CC6-646B-434F-9357-8DC832565BB4",
+  "promptFile": "tools/Prompts/nullwave-sound-palette.txt",
+  "sourceSha256": "7f0dd67487ea9bc19d05e0d0453009f06b8675e68d98ef0b2aa279dd4e49cbd3",
+  "sourceDurationSeconds": 19.992381,
+  "billing": {
+    "paidBy": "plan",
+    "sparkCharged": 0
+  },
+  "format": "48000 Hz mono PCM16 WAV",
+  "usage": "Generated texture layers mixed with procedural effects",
+  "listeningReview": "Owner listening feedback pending",
+  "effects": [
+    {
+      "effect": "kill",
+      "file": "kill.wav",
+      "sourceStartSeconds": 4.41,
+      "durationSeconds": 0.26,
+      "filters": "highpass=f=1100,lowpass=f=10000",
+      "reversed": false,
+      "attackMs": 2,
+      "releaseMs": 60,
+      "peak": 0.75,
+      "rms": 0.099095,
+      "sha256": "06553460843828894104058b4976239c738dfbcf3e93513f64ffc58cd59ed2b2"
+    },
+    {
+      "effect": "explosion",
+      "file": "explosion.wav",
+      "sourceStartSeconds": 1.08,
+      "durationSeconds": 0.95,
+      "filters": "highpass=f=45,lowpass=f=2200",
+      "reversed": false,
+      "attackMs": 2,
+      "releaseMs": 60,
+      "peak": 0.75,
+      "rms": 0.070227,
+      "sha256": "933d2d4a5690e4aa4fa06617e2113beb3148eda3c8e7e71750620ccff53d681f"
+    },
+    {
+      "effect": "dash",
+      "file": "dash.wav",
+      "sourceStartSeconds": 8.55,
+      "durationSeconds": 0.3,
+      "filters": "highpass=f=1600,lowpass=f=9000",
+      "reversed": true,
+      "attackMs": 2,
+      "releaseMs": 60,
+      "peak": 0.75,
+      "rms": 0.117687,
+      "sha256": "4d93cc42df043cfcbeec19a7e0a55f87deb19f7e5c078e280a5bd87e486dcb35"
+    }
+  ]
+}

@@ -16,7 +16,7 @@ You fly a fast, momentum-heavy interceptor through an open arena, dashing throug
 - **Every enemy plays its own part of the beat.** A crowded wave moves like a drum pattern: the Juggernaut lurches on the downbeat, the Pouncer lunges on the backbeat, the Hunter darts on the off-beats, the Pack skitters on the sixteenths, the Hopper leaps on every beat, and the Blinker teleports on 1 and 3. Each one pulses as it hits its part, so you can read the rhythm and dodge to it.
 - **The music becomes the arena.** A sustained bass note opens a **gravity well** that bends bullets and lets you **slingshot** off it. A melody draws a **rail** across the map that boosts your speed while you ride it. On the drop, every well detonates.
 - **The song's structure shapes the run.** Build-ups, breakdowns and drops are detected live. A drop triggers **Drop Overdrive**, and every song section gets its own 3D world beneath the arena, which comes back when the chorus does.
-- **Your guns play along.** Kills and hits play notes from the current chord, timed to the beat.
+- **Your guns play along.** Kills and hits play notes from the current chord, timed to the beat. Each ship has its own electronic weapon voice: electro stabs, kick/snare/hat percussion, a bass growl or a smooth lead ribbon. Shattering kills, sub drops and a reese boss horn give the fight its own sound, with Sogni-generated textures layered into kills, explosions and dashes.
 - **The song can be the boss.** **THE DROP** is built from the track itself: rings on the kick, fans on the snare, needles on the hats, a laser that follows the melody, and a new phase every section. **THE CHOIR** is the other boss.
 
 | The build-up and the drop | THE DROP, the boss made from the song |

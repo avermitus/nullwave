@@ -4,7 +4,19 @@ All notable gameplay, rendering, audio-intelligence, and UI updates to **NULLWAV
 
 ---
 
-## Latest Updates — Higher Motion & Effect Settings, Installer
+## Latest Updates — Electronic Sound Redesign
+
+- Redesigned the effects as electro stabs, shattered digital glass, formant bass, sub drops, gated laser charges and a reese boss horn.
+- Each ship has its own weapon voice: Classic's tight stab, Drums' separate kick/snare/hat, Bass' growl and Lead's smooth ribbon. The Lead sound pulses regularly while firing.
+- Tonal effects snapshot the current chord root; Cascade and unlock sounds also follow its major/minor third. Existing voices keep their tuning when the chord changes. Turning off IN-KEY SOUNDS uses a fixed palette.
+- Added **Sogni-generated texture layers** for kills, explosions and dashes, trimmed to immediate one-shots with click-free fades. Layers are decoded before playback; procedural synthesis remains available if an asset is missing.
+- Matched effect levels against the previous set, reduced reverb wash, smoothed voice endings, and bounded the effects bus for dense battles.
+- `--sfxdump --out <folder>` exports all 21 effects plus an 18-second `showcase.wav` preview.
+- Verified: Release build without warnings, **79,128 self-test assertions**, and a five-second live OpenGL/audio smoke run. Automated checks cover chord snapshots, disabled tuning, callback sizes, dense mixes and stable decaying tails. Owner listening feedback remains pending.
+
+---
+
+## Higher Motion & Effect Settings, Installer
 
 ### Settings
 - **Every motion and effect slider goes higher:** `BEAT MOTION` 150 → **300 %**, `CAMERA FX` 150 → **300 %**, `MUSIC FX` 150 → **300 %**, `BACKGROUND INTENSITY` 150 → **250 %**, `BACKGROUND MOTION` 200 → **400 %**, `BLOOM` 150 → **300 %**, `SCREEN SHAKE` 150 → **300 %**, `CHROMATIC ABERRATION` 100 → **250 %**.

@@ -137,13 +137,15 @@ internal static class Program
         }
         if (args.Contains("--sfxdump"))
         {
-            string dir = Path.Combine("capture", "sfx");
+            string dir = string.IsNullOrEmpty(_captureOut) ? Path.Combine("capture", "sfx") : _captureOut;
             Directory.CreateDirectory(dir);
             foreach (SfxType type in Enum.GetValues<SfxType>())
             {
                 var (peak, rms, finite) = SfxProbe.Render(type, Path.Combine(dir, type.ToString().ToLowerInvariant() + ".wav"));
                 Console.WriteLine($"  {type,-10} peak {peak:0.000} rms {rms:0.0000} {(finite ? "" : "NON-FINITE")}");
             }
+            SfxProbe.RenderShowcase(Path.Combine(dir, "showcase.wav"));
+            Console.WriteLine($"  Preview: {Path.Combine(dir, "showcase.wav")}");
             return;
         }
         if (_mode == "beatbench")
