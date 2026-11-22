@@ -77,7 +77,12 @@ public sealed partial class World
                 if (b.Pierce > 0)
                 {
                     b.Pierce--;
+                    Vector2 from = b.Pos;
                     b.Pos += M.SafeNorm(b.Vel) * (rr + 5f);
+                    // piercing through a body never carries the shot through a wall behind it
+                    if (Map != null && Map.SegmentHit(from, b.Pos, out _, out Vector2 wallHit, out Vector2 wallN))
+                        b.Pos = wallHit + wallN * (b.Radius + 1f);
+                    b.PrevPos = b.Pos;
                 }
                 else
                 {
@@ -92,8 +97,9 @@ public sealed partial class World
         // Beams.
         foreach (var l in Lasers)
         {
-            if (!l.Active || l.HitPlayer || p.Invuln > 0 || p.IsDashing) continue;
-            if (M.DistanceToSegment(p.Pos, l.Origin, l.End) < l.Width * 0.46f + p.Radius * 0.72f)
+            if (!l.Active || l.HitPlayer || p.Invuln > 0 || p.IsDashing || l.BeamLength < 1f) continue;
+            // only the part of the beam in front of the first wall can hurt (see ClipLaser)
+            if (M.DistanceToSegment(p.Pos, l.BeamStart, l.BeamEnd) < l.Width * 0.46f + p.Radius * 0.72f)
             {
                 l.HitPlayer = true;
                 HurtPlayer();
@@ -158,7 +164,8 @@ public sealed partial class World
             if (!p.IsDashing)
             {
                 Vector2 n = d > 0.01f ? delta / d : new Vector2(1, 0);
-                p.Pos = e.Pos + n * rr;
+                // the shove stops at a wall rather than snapping the ship through it
+                p.Pos = ShiftBody(p.Pos, e.Pos + n * rr, p.Radius);
                 p.Vel += n * 220f;
             }
             if (p.Invuln <= 0 && StartGrace <= 0 && !p.IsDashing)

@@ -3,6 +3,7 @@ using Nullwave.Audio;
 using Nullwave.Core;
 using Nullwave.Render;
 using Nullwave.Tools;
+using Nullwave.World;
 using Silk.NET.Input;
 using Silk.NET.Maths;
 using Silk.NET.OpenGL;
@@ -52,6 +53,16 @@ internal static class Program
         {
             string a = args[i];
             if (a == "--selftest") { _mode = "selftest"; }
+            else if (a == "--map")
+            {
+                if (i + 1 >= args.Length || !MapCatalog.TryParse(args[++i], out var map))
+                {
+                    Console.Error.WriteLine("Invalid --map. Choose arena, halo or cathedral.");
+                    Environment.ExitCode = 2;
+                    return;
+                }
+                Game.MapOverride = map;
+            }
             else if (a == "--audiotest") { _mode = "audiotest"; }
             else if (a == "--capture")
             {
@@ -62,6 +73,7 @@ internal static class Program
             else if (a == "--smoke")
             {
                 _mode = "smoke";
+                Game.SmokeMode = true;
                 if (i + 1 < args.Length && float.TryParse(args[i + 1], out float s)) { _smokeSeconds = s; i++; }
             }
             else if (a == "--record")

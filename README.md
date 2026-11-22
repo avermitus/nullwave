@@ -56,6 +56,22 @@ It's written in pure C#: OpenGL through Silk.NET and audio through NAudio, with 
 | **Pause / Back** | `P` / `Esc` | `Start` / `B` |
 | **Diagnostics / Fullscreen / Audio Source** | `F1` / `F2` / `F3` | — |
 
+## Experimental room maps
+
+The title menu's **MAP** row cycles **OPEN ARENA** (default), **HALO CIRCUIT** and **CATHEDRAL**. Select the row with Up/Down, then use Left/Right, Enter/A, or click it. Choose NEW SIGNAL to play. Selection lasts for this application session and carries through retries, daily signals and the live title demo. These experiments use the existing score/archive system; map choice is not encoded in shareable seed codes.
+
+HALO CIRCUIT has a four-room outer loop and a central shortcut. CATHEDRAL has a pillared nave, chapels, an apse and a cloister loop. Their permanent walls replace destructible arena monoliths. The music backdrop, wells, rails, bosses and minimap remain active. Movement changes keep the selected footprint stable.
+
+For repeatable testing, pass `--map halo`, `--map cathedral`, or `--map arena` to the game (including `--smoke`, `--capture`, and recording). With a .NET 8 SDK:
+
+```powershell
+dotnet run --project src/Nullwave -c Release -- --map halo
+dotnet run --project src/Nullwave -c Release -- --map cathedral --capture map --out screenshots/cathedral-map.png
+dotnet run --project src/Nullwave -c Release -- --map halo --capture mapplay --out screenshots/halo-play.png
+```
+
+`--capture map` frames the whole footprint; `--capture mapplay` uses the gameplay camera. Normal movement, dash, aim and weapon controls are unchanged. This is an opt-in playable experiment; human balance/feel testing remains useful, particularly for tight boss encounters. Scores currently share the arena's records.
+
 ## Download and play
 
 **[Download the latest release](https://github.com/avermitus/nullwave/releases/latest)**: grab `NULLWAVE-…-win-x64.zip`, unzip it anywhere and run `Nullwave.exe`. Nothing else to install, because the .NET runtime is included. Windows may warn that the game isn't code-signed; click **More info → Run anyway**.

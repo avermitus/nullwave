@@ -27,9 +27,16 @@ public sealed partial class World
     public static readonly string[] LayoutNames = { "SCATTER", "HENGE", "CITY", "SPIRAL", "LANES" };
     public int Layout;
     public string LayoutName => LayoutNames[Layout];
+    /// <summary>Minimap caption: the map's name in a map run, else the monolith layout.</summary>
+    public string PlayfieldName => Map != null ? Map.Name + " // " + LayoutName : LayoutName;
 
+    /// <summary>
+    /// The nearest place inside the playfield with <paramref name="margin"/> of room. In a map
+    /// that means on the floor and clear of the walls (see <see cref="MapGeometry.ProjectToFloor"/>).
+    /// </summary>
     public Vector2 ClampToArena(Vector2 p, float margin)
     {
+        if (Map != null) return Map.ProjectToFloor(p, margin);
         return new Vector2(
             M.Clamp(p.X, -ArenaW * 0.5f + margin, ArenaW * 0.5f - margin),
             M.Clamp(p.Y, -ArenaH * 0.5f + margin, ArenaH * 0.5f - margin));
@@ -43,6 +50,9 @@ public sealed partial class World
     {
         Obstacles.Clear();
         Layout = Movement < 5 ? Movement % LayoutNames.Length : Rng.Range(0, LayoutNames.Length);
+        // Permanent map pillars supply cover. Keep navigation and live movement transitions
+        // independent of destructible arena monoliths in this experiment.
+        if (Map != null) return;
         float area = ArenaW * ArenaH / (3000f * 2000f);
         int budget = (int)MathF.Round((7 + Math.Min(5, Movement)) * MathF.Min(2.6f, area * 0.8f));
         var candidates = new List<(Vector2 pos, float radius)>();
@@ -95,7 +105,8 @@ public sealed partial class World
             TryPlaceObstacle(pos, radius);
         // scatter fills whatever the layout left of the budget (and is the whole SCATTER layout)
         int tries = 0;
-        while (Obstacles.Count < Math.Max(budget, candidates.Count / 2 + 6) && tries++ < 400)
+        int target = Math.Max(budget, candidates.Count / 2 + 6);
+        while (Obstacles.Count < target && tries++ < 400)
         {
             Vector2 pos = new(Rng.Range(-hw * 0.9f, hw * 0.9f), Rng.Range(-hh * 0.9f, hh * 0.9f));
             TryPlaceObstacle(pos, Rng.Range(64f, 140f));
@@ -226,7 +237,7 @@ public sealed partial class World
         var role = _spawnQueue.Dequeue();
         _waveSpawned++;
         Vector2 pos = role == EnemyRole.Boss
-            ? ClampToArena(Player.Pos + new Vector2(0f, -560f), 300f)
+            ? (Map != null ? BossSpawnPoint(Player.Pos + new Vector2(0f, -560f)) : ClampToArena(Player.Pos + new Vector2(0f, -560f), 300f))
             : EdgeSpawnPoint();
         // every second boss wave brings THE DROP instead of THE CHOIR
         if (role == EnemyRole.Boss && Wave % 10 == 0) SpawnSongBoss();
@@ -239,6 +250,8 @@ public sealed partial class World
     /// </summary>
     private Vector2 EdgeSpawnPoint()
     {
+        // maps: arrive along a real route (path distance), in a node any enemy body fits
+        if (Map != null) return MapSpawnPoint(27f * 1.28f * 1.3f);
         Vector2 fallback = ClampToArena(-Player.Pos * 0.55f, 120f);
         for (int attempt = 0; attempt < 12; attempt++)
         {

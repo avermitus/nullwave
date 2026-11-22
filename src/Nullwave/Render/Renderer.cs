@@ -920,6 +920,11 @@ public sealed class Renderer : IDisposable
         FillCircle(b, radius, color, 12, glow);
     }
 
+    public void UiQuad(Vector2 a, Vector2 b, Vector2 c, Vector2 d, Vector4 color)
+    {
+        _uiAlpha.AddQuad(a, b, c, d, color);
+    }
+
     public void UiRect(float x, float y, float w, float h, Vector4 color, bool glow = false)
     {
         (glow ? _uiGlow : _uiAlpha).AddQuad(new Vector2(x, y), new Vector2(x + w, y), new Vector2(x + w, y + h), new Vector2(x, y + h), color);

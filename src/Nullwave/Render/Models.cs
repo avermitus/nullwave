@@ -31,6 +31,8 @@ public static class Models
     public static readonly Mesh Pylon = AtlasAssets.LoadMesh("pylon");
     public static readonly Mesh Crystal = BuildCrystal();
     public static readonly Mesh Column = BuildColumn();
+    /// <summary>Unit wall block (centred, 1 x 1 x 1) stretched along each map wall segment.</summary>
+    public static readonly Mesh WallBlock = BuildWallBlock();
     public static readonly Mesh Ico = BuildIco();
     public static readonly Mesh Octa = BuildOcta();
     public static readonly Mesh Ring = BuildRing();
@@ -369,6 +371,15 @@ public static class Models
     // ---------------------------------------------------------------- backdrop
 
     /// <summary>Unit-height equaliser column for the backdrop skyline.</summary>
+    private static Mesh BuildWallBlock()
+    {
+        var b = new MeshBuilder();
+        b.Box(new Vector3(1f, 1f, 0.86f), Mat.Hull, Mat.Trim);
+        b.At(new Vector3(0, 0, 0.45f));
+        b.Box(new Vector3(1f, 0.36f, 0.1f), Mat.Glow, Mat.Core);
+        return b.Build();
+    }
+
     private static Mesh BuildColumn()
     {
         var b = new MeshBuilder();

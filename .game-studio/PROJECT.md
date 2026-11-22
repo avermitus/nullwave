@@ -101,3 +101,8 @@
    - Never use `pkill -f` or broad pattern kills on Windows; always let `--selftest` and `--smoke` terminate naturally or kill by exact PID if ever needed.
 5. **Static Framebuffer Rule:**
    - `Program.cs` uses a static `_frameBuffer` for `--record`; never allocate per-frame pixel buffers on hot paths.
+
+
+## Opt-in map experiment (2026-11-21)
+
+HALO CIRCUIT and CATHEDRAL implemented on experiment/maps; arena remains default. Shared polygon geometry drives rendering, movement, navigation, spawning and minimap. Title MAP selection and --map support are available. See [TASK-MAPS-EXPERIMENT](tasks/TASK-MAPS-EXPERIMENT.md) for evidence and scope. Parent independent review/integration is pending; human balance testing remains follow-up.

@@ -86,8 +86,9 @@ public static class WorldRenderer
             float alpha = l.Alpha;
             if (alpha <= 0.05f) continue;
             Vector2 dir = l.Direction;
-            float t = Math.Clamp(Vector2.Dot(pl.Pos - l.Origin, dir), 0f, l.Length);
-            Vector2 pt = l.Origin + dir * t;
+            if (l.BeamLength < 1f) continue;
+            float t = Math.Clamp(Vector2.Dot(pl.Pos - l.BeamStart, dir), 0f, l.BeamLength);
+            Vector2 pt = l.BeamStart + dir * t;
             r.AddBackdropLight(pt, 240f + l.Width * 3f, Rgb(M.Hsv(l.Hue, 0.75f, 1f)), (l.Active ? 0.95f : 0.45f) * alpha);
             laserAdded++;
         }
@@ -128,8 +129,89 @@ public static class WorldRenderer
 
     // ------------------------------------------------------------------ arena
 
+    private static readonly List<float> GridCrossings = new();
+
+    /// <summary>
+    /// An experimental map: the floor plate, floor grid, glowing edges, wall blocks and spectrum
+    /// pylons all come from the same wall segments the simulation collides with, so nothing that
+    /// looks like floor is ever solid. Outside the footprint the music-shaped backdrop shows through.
+    /// </summary>
+    private static void DrawMapArena(Renderer r, GameWorld w, MapGeometry map, Palette p, AudioState audio, float time)
+    {
+        bool abyssal = GameSettings.Current.IsAbyssal;
+        var floorCol = abyssal
+            ? new Vector4(0.002f, 0.003f, 0.008f, 0.58f)
+            : new Vector4(0.006f, 0.008f, 0.02f, 0.50f);
+        Vector2 cam = r.Camera;
+        Vector2 view = r.ViewExtents + new Vector2(80f);
+        Vector2 vmin = cam - view, vmax = cam + view;
+        foreach (var q in map.FloorQuads)
+        {
+            if (q.A.Y > vmax.Y || q.D.Y < vmin.Y) continue;
+            if (MathF.Min(q.A.X, q.D.X) > vmax.X || MathF.Max(q.B.X, q.C.X) < vmin.X) continue;
+            r.Quad(q.A, q.B, q.C, q.D, floorCol);
+        }
+
+        // floor grid, clipped to the footprint (each grid line is cut where it crosses a wall)
+        const float cell = 200f;
+        var line = M.WithAlpha(p.Primary, abyssal ? 0.032f + audio.BeatPulse * 0.038f : 0.05f + audio.BeatPulse * 0.03f);
+        void GridLine(Vector2 a, Vector2 b)
+        {
+            map.SegmentCrossings(a, b, GridCrossings);
+            bool inside = map.IsFloor(a);
+            float t0 = 0f;
+            foreach (float t in GridCrossings)
+            {
+                if (inside) r.Line(Vector2.Lerp(a, b, t0), Vector2.Lerp(a, b, t), 1f, line);
+                inside = !inside;
+                t0 = t;
+            }
+            if (inside) r.Line(Vector2.Lerp(a, b, t0), b, 1f, line);
+        }
+        for (float x = MathF.Floor(vmin.X / cell) * cell; x <= vmax.X; x += cell) GridLine(new Vector2(x, vmin.Y), new Vector2(x, vmax.Y));
+        for (float y = MathF.Floor(vmin.Y / cell) * cell; y <= vmax.Y; y += cell) GridLine(new Vector2(vmin.X, y), new Vector2(vmax.X, y));
+        float ripple = w.BeatPhase;
+        r.Circle(w.Player.Pos, 80f + ripple * 900f, abyssal ? 2.4f : 2f, M.WithAlpha(p.Primary, (abyssal ? 0.11f : 0.05f) * (1f - ripple)), 64, true);
+
+        // edges and wall blocks
+        var edge = new Vector4(p.Primary.X, p.Primary.Y, p.Primary.Z, 0.5f);
+        var edgeGlow = new Vector4(p.Primary.X, p.Primary.Y, p.Primary.Z, 0.09f + audio.Bass * 0.07f);
+        const float wallT = 26f, wallH = 30f;
+        var wallMats = MaterialSet.ForHue(M.Hsv(p.BaseHue, 0.55f, 0.9f), 0.35f + audio.Bass * 0.6f + audio.BeatPulse * 0.3f);
+        for (int s = 0; s < map.SegmentCount; s++)
+        {
+            Vector2 a = map.SegA[s], b = map.SegB[s];
+            if (MathF.Max(a.X, b.X) < vmin.X || MathF.Min(a.X, b.X) > vmax.X || MathF.Max(a.Y, b.Y) < vmin.Y || MathF.Min(a.Y, b.Y) > vmax.Y) continue;
+            r.Line(a, b, 2f, edge, true);
+            r.Line(a, b, 14f, edgeGlow, true);
+            float len = Vector2.Distance(a, b);
+            if (len < 0.5f) continue;
+            Vector2 mid = (a + b) * 0.5f - map.SegN[s] * (wallT * 0.5f);
+            var xf = Matrix4x4.CreateScale(len + wallT * 0.35f, wallT, wallH)
+                     * Matrix4x4.CreateRotationZ(M.AngleOf(b - a))
+                     * Matrix4x4.CreateTranslation(mid.X, mid.Y, wallH * 0.43f);
+            r.Meshes.Add(Models.WallBlock, xf, wallMats);
+        }
+
+        // spectrum pylons along the walls, exactly as on the arena border
+        for (int i = 0; i < map.PylonSpots.Count; i++)
+        {
+            Vector2 pos = map.PylonSpots[i];
+            if (!r.InView(pos, 200)) continue;
+            float wave = 0.5f + 0.5f * MathF.Sin(i * 0.22f - time * 2.4f);
+            float v = M.Clamp01(audio.Bass * (0.35f + wave * 0.65f) + audio.BeatPulse * 0.3f);
+            float h = 46f + v * 70f;
+            float hue = (p.BaseHue + wave * 0.08f) % 1f;
+            var mats = MaterialSet.ForHue(M.Hsv(hue, 0.7f, 1f), 0.4f + v * 1.3f);
+            var xf = Matrix4x4.CreateScale(1f, 1f, h) * Matrix4x4.CreateRotationZ(i * 0.37f) * Matrix4x4.CreateTranslation(pos.X, pos.Y, 0f);
+            r.Meshes.Add(Models.Pylon, xf, mats);
+            r.FillCircle(pos + new Vector2(10, 14), 18f, Shadow, 10);
+        }
+    }
+
     private static void DrawArena(Renderer r, GameWorld w, Palette p, AudioState audio, float time)
     {
+        if (w.Map != null) { DrawMapArena(r, w, w.Map, p, audio, time); return; }
         float hw = w.ArenaW * 0.5f;
         float hh = w.ArenaH * 0.5f;
 
@@ -345,50 +427,54 @@ public static class WorldRenderer
         {
             float a = l.Alpha;
             if (a <= 0.01f) continue;
+            // the beam as the world sees it: cut at the first wall (see World.ClipLaser)
+            float len = l.BeamLength;
+            if (len < 1f) continue;
+            Vector2 origin = l.BeamStart;
             var col = M.Hsv(l.Hue, l.BossLaser ? 0.75f : 0.60f, 1f);
             Vector2 dir = l.Direction;
             Vector2 perp = M.Perp(dir);
-            Vector2 end = l.Origin + dir * l.Length;
+            Vector2 end = origin + dir * len;
             if (l.Age < l.Warmup)
             {
                 float progress = M.Clamp01(l.Age / MathF.Max(0.01f, l.Warmup));
                 float pulse = 0.55f + 0.45f * MathF.Sin(l.Age * 26f);
                 float halfW = l.Width * (0.58f - progress * 0.14f);
                 var railCol = M.WithAlpha(col, a * (0.18f + progress * 0.34f));
-                r.Line(l.Origin + perp * halfW, end + perp * halfW, 1.1f, railCol, true);
-                r.Line(l.Origin - perp * halfW, end - perp * halfW, 1.1f, railCol, true);
+                r.Line(origin + perp * halfW, end + perp * halfW, 1.1f, railCol, true);
+                r.Line(origin - perp * halfW, end - perp * halfW, 1.1f, railCol, true);
                 var warn = M.WithAlpha(col, a * (0.30f + pulse * 0.24f));
-                r.Line(l.Origin, end, 1.4f, warn, true);
+                r.Line(origin, end, 1.4f, warn, true);
                 int dashes = 20;
                 for (int i = 0; i < dashes; i++)
                 {
                     float t0 = i / (float)dashes;
                     float t1 = MathF.Min(1f, t0 + 0.03f);
-                    Vector2 a0 = l.Origin + dir * (l.Length * t0);
-                    Vector2 a1 = l.Origin + dir * (l.Length * t1);
+                    Vector2 a0 = origin + dir * (len * t0);
+                    Vector2 a1 = origin + dir * (len * t1);
                     r.Line(a0, a1, 2.2f + l.Width * 0.04f, M.WithAlpha(col, a * (0.55f + progress * 0.4f)), true);
                 }
                 float lockR = 14f + (1f - progress) * 14f + MathF.Sin(l.Age * 18f) * 2.5f;
-                r.Circle(l.Origin, lockR, 1.4f, M.WithAlpha(col, a * 0.9f), 20, true);
-                r.Arc(l.Origin, lockR * 1.35f, l.Age * 5f, 1.6f, 1.4f, new Vector4(1f, 1f, 1f, a * 0.7f), 10, true);
+                r.Circle(origin, lockR, 1.4f, M.WithAlpha(col, a * 0.9f), 20, true);
+                r.Arc(origin, lockR * 1.35f, l.Age * 5f, 1.6f, 1.4f, new Vector4(1f, 1f, 1f, a * 0.7f), 10, true);
             }
             else
             {
                 // 4-layer HDR beam: outer bloom sheath, saturated mid body, beat-pulsing side rails, white-hot core
-                r.Line(l.Origin, end, l.Width * 3.4f, M.WithAlpha(col, 0.06f * a), true);
-                r.Line(l.Origin, end, l.Width * 1.25f, M.WithAlpha(col, 0.26f * a), true);
+                r.Line(origin, end, l.Width * 3.4f, M.WithAlpha(col, 0.06f * a), true);
+                r.Line(origin, end, l.Width * 1.25f, M.WithAlpha(col, 0.26f * a), true);
                 float railOff = l.Width * 0.36f * (1f + w.BeatPulse * 0.35f);
                 var railCol = M.WithAlpha(Vector4.Lerp(col, Vector4.One, 0.28f), 0.52f * a);
-                r.Line(l.Origin + perp * railOff, end + perp * railOff, MathF.Max(1.4f, l.Width * 0.09f), railCol, true);
-                r.Line(l.Origin - perp * railOff, end - perp * railOff, MathF.Max(1.4f, l.Width * 0.09f), railCol, true);
-                r.Line(l.Origin, end, MathF.Max(2.5f, l.Width * 0.18f), new Vector4(1f, 1f, 1f, 0.98f * a), true);
+                r.Line(origin + perp * railOff, end + perp * railOff, MathF.Max(1.4f, l.Width * 0.09f), railCol, true);
+                r.Line(origin - perp * railOff, end - perp * railOff, MathF.Max(1.4f, l.Width * 0.09f), railCol, true);
+                r.Line(origin, end, MathF.Max(2.5f, l.Width * 0.18f), new Vector4(1f, 1f, 1f, 0.98f * a), true);
 
                 // Travelling directional energy chevrons along the beam
                 float chevW = MathF.Max(6f, l.Width * 0.32f);
                 for (int i = 0; i < 8; i++)
                 {
-                    float d = (l.Age * 1250f + i * (l.Length / 8f)) % l.Length;
-                    Vector2 tip = l.Origin + dir * d;
+                    float d = (l.Age * 1250f + i * (len / 8f)) % len;
+                    Vector2 tip = origin + dir * d;
                     Vector2 back = tip - dir * (chevW * 1.15f);
                     r.Line(tip, back + perp * chevW, 1.7f, new Vector4(1f, 1f, 1f, a * 0.78f), true);
                     r.Line(tip, back - perp * chevW, 1.7f, new Vector4(1f, 1f, 1f, a * 0.78f), true);
@@ -397,8 +483,8 @@ public static class WorldRenderer
 
                 // Emitter and endpoint flares
                 float flareR = l.Width * (0.65f + w.BeatPulse * 0.25f);
-                r.FillCircle(l.Origin, flareR * 1.4f, M.WithAlpha(col, 0.35f * a), 16, true);
-                r.Circle(l.Origin, flareR * 1.75f, 1.8f, new Vector4(1f, 1f, 1f, 0.72f * a), 20, true);
+                r.FillCircle(origin, flareR * 1.4f, M.WithAlpha(col, 0.35f * a), 16, true);
+                r.Circle(origin, flareR * 1.75f, 1.8f, new Vector4(1f, 1f, 1f, 0.72f * a), 20, true);
                 r.FillCircle(end, flareR * 1.15f, M.WithAlpha(col, 0.30f * a), 14, true);
                 r.Line(end - perp * flareR * 1.6f, end + perp * flareR * 1.6f, 2.2f, new Vector4(1f, 1f, 1f, 0.75f * a), true);
             }

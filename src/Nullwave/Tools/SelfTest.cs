@@ -20,6 +20,7 @@ public static partial class SelfTest
         var sw = Stopwatch.StartNew();
         try
         {
+            TestExperimentalMaps();
             TestMeta();
             TestSeeds();
             TestDamageAndBurst();
