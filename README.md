@@ -62,6 +62,13 @@ It's written in pure C#: OpenGL through Silk.NET and audio through NAudio, with 
 
 Requires Windows 10 (build 20348+) or Windows 11 and an OpenGL 4.1 graphics card.
 
+## RELEASE workspace
+
+`RELEASE` is the combined integration branch for the NULLWAVE Pane workspaces.
+Open the pinned **RELEASE** Pane for the consolidated game, or check out
+[the RELEASE branch](https://github.com/avermitus/nullwave/tree/RELEASE).
+See [the release handoff](docs/RELEASE.md) for what is included and how to bring future work into it.
+
 ## Install from source
 
 You need the .NET 8 SDK to build the game, but not to play it.
