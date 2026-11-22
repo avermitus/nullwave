@@ -34,7 +34,7 @@ $desktopLink = Join-Path ([Environment]::GetFolderPath('Desktop')) 'NULLWAVE.lnk
 
 function Stop-IfRunning {
     $running = Get-Process -Name 'Nullwave' -ErrorAction SilentlyContinue |
-        Where-Object { $_.Path -and $_.Path.StartsWith($InstallDir, [StringComparison]::OrdinalIgnoreCase) }
+        Where-Object { $_.Path -and (Split-Path -Parent $_.Path).Equals($InstallDir.TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase) }
     if ($running) {
         throw "NULLWAVE is running from $InstallDir. Close the game and run this again."
     }
@@ -60,10 +60,12 @@ if ($Uninstall) {
     return
 }
 
-# find a .NET 8 SDK: -Dotnet, then the repo's private copy, then PATH
+# Find a .NET 8+ SDK: explicit path, worktree copy, shared worktree SDK, PATH.
 if (-not $Dotnet) {
     $local = Join-Path $repo '.dotnet\dotnet.exe'
+    $shared = [IO.Path]::GetFullPath((Join-Path $repo '..\..\.dotnet\dotnet.exe'))
     if (Test-Path $local) { $Dotnet = $local }
+    elseif (Test-Path $shared) { $Dotnet = $shared }
     else {
         $cmd = Get-Command dotnet -ErrorAction SilentlyContinue
         if ($cmd) { $Dotnet = $cmd.Source }
@@ -80,18 +82,49 @@ if (-not ($sdks | Where-Object { $_ -match '^(8|9|1\d)\.' })) {
 Stop-IfRunning
 
 $project = Join-Path $repo 'src\Nullwave\Nullwave.csproj'
-$staging = Join-Path $repo 'build\install'
-if (Test-Path $staging) { Remove-Item $staging -Recurse -Force }
+$InstallDir = [IO.Path]::GetFullPath($InstallDir).TrimEnd('\')
+$saves = [IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'Nullwave'))
+if ($InstallDir -eq $saves -or $saves.StartsWith($InstallDir + '\', [StringComparison]::OrdinalIgnoreCase) -or $InstallDir.StartsWith($saves + '\', [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'InstallDir must be separate from the save/settings directory.'
+}
+$parent = Split-Path -Parent $InstallDir
+New-Item -ItemType Directory -Force -Path $parent | Out-Null
+$staging = Join-Path $parent ('.NULLWAVE-stage-' + [Guid]::NewGuid().ToString('N'))
+$backup = Join-Path $parent ('.NULLWAVE-backup-' + [Guid]::NewGuid().ToString('N'))
 
+try {
 Write-Host 'Building NULLWAVE (self-contained, win-x64)...'
 & $Dotnet publish $project -c Release -r win-x64 --self-contained true -p:OutputType=WinExe -o $staging --nologo -v quiet
 if ($LASTEXITCODE -ne 0) { throw "Build failed (dotnet publish exit code $LASTEXITCODE)." }
 if (-not (Test-Path (Join-Path $staging $exeName))) { throw "Build produced no $exeName." }
 
-# replace the old install
-if (Test-Path $InstallDir) { Remove-Item $InstallDir -Recurse -Force }
-New-Item -ItemType Directory -Force -Path (Split-Path -Parent $InstallDir) | Out-Null
-Move-Item $staging $InstallDir
+# Validate the staged binary before touching the working installation.
+$test = Start-Process -FilePath (Join-Path $staging $exeName) -ArgumentList '--selftest' -WorkingDirectory $staging -WindowStyle Hidden -Wait -PassThru
+if ($test.ExitCode -ne 0) { throw "Staged selftest failed ($($test.ExitCode)); installation kept. Stage: $staging" }
+$manifest = @(Get-ChildItem -LiteralPath $staging -Recurse -File | ForEach-Object {
+    [pscustomobject]@{ Path = $_.FullName.Substring($staging.Length + 1); Hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
+})
+Stop-IfRunning
+try {
+    if (Test-Path -LiteralPath $InstallDir) { Move-Item -LiteralPath $InstallDir -Destination $backup }
+    Move-Item -LiteralPath $staging -Destination $InstallDir
+    foreach ($file in $manifest) {
+        if ((Get-FileHash -LiteralPath (Join-Path $InstallDir $file.Path) -Algorithm SHA256).Hash -ne $file.Hash) { throw "Installed file verification failed: $($file.Path)" }
+    }
+} catch {
+    if (Test-Path -LiteralPath $backup) {
+        # Move the failed candidate aside; never delete the working backup on failure.
+        if (Test-Path -LiteralPath $InstallDir) { Move-Item -LiteralPath $InstallDir -Destination ($staging + '-failed') }
+        Move-Item -LiteralPath $backup -Destination $InstallDir
+    }
+    throw
+}
+if (Test-Path -LiteralPath $backup) {
+    if ((Split-Path -Parent ([IO.Path]::GetFullPath($backup))) -ne $parent -or (Split-Path -Leaf $backup) -notlike '.NULLWAVE-backup-*') { throw 'Unsafe backup cleanup path.' }
+    Remove-Item -LiteralPath $backup -Recurse -Force
+}
+$manifest | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath (Join-Path $InstallDir 'install-manifest.json') -Encoding UTF8
+Write-Host "Verified $($manifest.Count) installed files (SHA256); staged selftest passed."
 
 $exe = Join-Path $InstallDir $exeName
 New-Shortcut $startMenuLink $exe
@@ -104,3 +137,9 @@ if ($NoDesktopShortcut) {
 Write-Host ''
 Write-Host "Installed NULLWAVE to $InstallDir"
 Write-Host 'Start it from the Start Menu or the Desktop shortcut (NULLWAVE).'
+} finally {
+    if (Test-Path -LiteralPath $staging) {
+        if ((Split-Path -Parent ([IO.Path]::GetFullPath($staging))) -ne $parent -or (Split-Path -Leaf $staging) -notlike '.NULLWAVE-stage-*') { throw 'Unsafe staging cleanup path.' }
+        Remove-Item -LiteralPath $staging -Recurse -Force
+    }
+}

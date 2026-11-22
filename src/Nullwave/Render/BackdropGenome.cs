@@ -5,24 +5,26 @@ namespace Nullwave.Render;
 /// <summary>
 /// A map-anchored 3D backdrop genome. Every backdrop is an organic 3D world lying *underneath*
 /// the arena floor, viewed through the same camera as the fight, so it is fixed to the map. One of
-/// six worlds (sea, molten crust, dunes, gyroid cavern, volumetric storm nebula, aurora curtains)
+/// eighteen worlds
 /// is picked with every structural, motion and colour parameter rolled fresh, plus an atmosphere.
-/// Nothing is laid out on a grid. The shapes are driven by the music's spectrum (bass, mids and
+/// The shapes are driven by the music's spectrum (bass, mids and
 /// highs each move their own part of the world), the beat clock, onsets and world shockwaves.
 /// </summary>
 public sealed class BackdropGenome
 {
     public const int OpCount = 0;          // no 2D screen-space warps: the world is real 3D
-    public const int GeneratorCount = 6;   // scenes 0..5
+    public const int GeneratorCount = 18;
     public const int AtmosphereCount = 4;  // atmospheres 0..3 (0 = clear air)
     public const int MaxLayers = 1;
 
     public static readonly string[] OpNames = { "-" };
     public static readonly string[] GeneratorNames =
-        { "SPECTRAL SEA", "MOLTEN CRUST", "SOUND DUNES", "GYROID CAVERN", "STORM NEBULA", "AURORA ABYSS" };
+        { "SPECTRAL SEA", "MOLTEN CRUST", "SOUND DUNES", "GYROID CAVERN", "STORM NEBULA", "AURORA ABYSS",
+          "ORBITAL CHOIR", "MAGNETIC FLUX", "PRISM LOOM", "ECHO BASIN", "PULSE FOUNDRY", "CHROMA REEF",
+          "SIGNAL RAIN", "PHASE PORTRAIT", "SPECTRAL BLOOM", "TECTONIC PRINT", "BINARY TIDES", "GLASS VAULT" };
     public static readonly string[] AtmosphereNames = { "CLEAR", "MOTES", "FOG BANKS", "EMBERS" };
 
-    /// <summary>Every scene is a raymarched 3D world.</summary>
+    /// <summary>Every scene uses the world camera.</summary>
     public static bool IsExpensive(int gen) => gen is >= 0 and < GeneratorCount;
 
     /// <summary>True iff the genome is one map-anchored 3D scene with no 2D warp ops.</summary>

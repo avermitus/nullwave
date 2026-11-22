@@ -94,6 +94,7 @@ public sealed class Renderer : IDisposable
     private readonly Vector4[] _focus = new Vector4[MaxBackdropFocus];
     private int _focusCount;
     private readonly float[] _spec = new float[16];
+    private readonly Vector2[] _spectrumTails = new Vector2[16];
     private readonly float[] _specAvg = new float[16];
     public int BackdropFocusCount => _focusCount;
     /// <summary>Last 16-band spectrum sent to the backdrop (diagnostics / tests).</summary>
@@ -677,7 +678,15 @@ public sealed class Renderer : IDisposable
         // the music's spectrum shapes the world; focus pools keep the fight readable
         ComputeBackdropSpectrum(audio.Spectrum, _specAvg, _spec, frameDt);
         float specScale = Math.Clamp(0.6f + fx * 0.5f, 0.4f, 1.4f);
-        for (int i = 0; i < 16; i++) _background.SetFloat(SpecNames[i], _spec[i] * specScale);
+        for (int i = 0; i < 16; i++)
+        {
+            float level = _spec[i];
+            var previous = _spectrumTails[i];
+            float body = M.ExpSmooth(previous.X, level, 6f, frameDt);
+            float tail = M.ExpSmooth(previous.Y, body, 2.5f, frameDt);
+            _spectrumTails[i] = new Vector2(body, tail);
+            _background.SetVec3(SpecNames[i], new Vector3(level, body, tail) * specScale);
+        }
         float musicFx = Math.Clamp(fx, 0f, 1.4f);
         _background.SetVec3("uPerc", new Vector3(audio.PercLow, audio.PercMid, audio.PercHigh) * musicFx);
         _background.SetVec3("uHarm", new Vector3(audio.HarmLow, audio.HarmMid, audio.HarmHigh) * MathF.Min(1f, 0.4f + musicFx * 0.6f));

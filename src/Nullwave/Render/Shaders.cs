@@ -100,7 +100,7 @@ uniform vec4 uWaves[6];
 uniform int uAtmoA;
 uniform int uAtmoB;
 // the music's spectrum, 16 log bands low -> high, each normalised against its own recent level
-uniform float uSpec[16];
+uniform vec3 uSpec[16];
 // readability: the backdrop darkens under the ship and enemies (screenPos xy, radius, strength)
 uniform int uFocusCount;
 uniform vec4 uFocus[16];
@@ -166,7 +166,7 @@ float spec(float x) {
     float f = clamp(x, 0.0, 1.0) * 15.0;
     int i = int(floor(f));
     int j = min(i + 1, 15);
-    return mix(uSpec[i], uSpec[j], f - float(i));
+    return mix(uSpec[i].x, uSpec[j].x, f - float(i));
 }
 
 // Shockwaves from beats, drops and big hits roll outward through the world from where they began.
@@ -459,13 +459,94 @@ vec3 atmosphere(int kind, vec3 ro, vec3 rd, float tHit) {
     return acc;
 }
 
+// Each sheet occupies a different depth below the arena. Its contour, fill
+// and colour are sampled in world coordinates, giving close marks more parallax.
+vec3 resonantSheet(int g, vec2 p, float depth) {
+    float time = uFlow * MOT;
+    p = rot2(GA.x * 2.5) * p * (0.48 + GA.y * 0.4) + GB.xy * 19.0;
+    vec2 tile = floor(p / 4.0);
+    vec2 q = mod(p, 4.0) - 2.0;
+    float key = hash21(tile);
+    float level = spec(key);
+    float d, phase = key;
+    float fill = 0.0;
+    if (g == 6) { // Orbital Choir: eccentric resonators, one band per cell
+        q = rot2(key * 6.28 + time * 0.08) * q;
+        d = abs(length(q * vec2(0.78, 1.25)) - 0.7 - level * 0.5);
+    } else if (g == 7) { // Magnetic Flux: nested field lines bend around bass poles
+        float flux = p.y + sin(p.x * 0.65 + time * 0.2) * (0.7 + SB)
+                   + sin(p.x * 1.2 - p.y * 0.6) * HARM.y;
+        d = abs(fract(flux * 0.85) - 0.5);
+        phase = flux * 0.07;
+    } else if (g == 8) { // Prism Loom: two diagonal threads, alternating over and under
+        vec2 thread = abs(fract(vec2(p.x+p.y, p.x-p.y) * 0.6 + vec2(SM, SH)*0.25) - 0.5);
+        d = min(thread.x, thread.y);
+        phase = thread.x < thread.y ? 0.2 : 0.72;
+        fill = 0.09 * step(0.0, sin(p.x*3.77)*cos(p.y*3.77));
+    } else if (g == 9) { // Echo Basin: expanding circular wavefronts
+        float ripple = length(q) * 1.8 - time * 0.6 - HOP * 0.22;
+        d = abs(fract(ripple) - 0.5);
+        fill = exp(-length(q)*2.0) * SB;
+    } else if (g == 10) { // Pulse Foundry: segmented stereo meter towers
+        level = spec(0.5 + 0.5*sin(floor(p.x*1.7)*0.47));
+        vec2 led = abs(fract(p*vec2(1.7,4.0))-0.5);
+        float lit = step(abs(q.y), 0.12+level*1.65);
+        d = max(led.x-0.32, led.y-0.28) + (1.0-lit);
+        phase = abs(q.y)*0.38;
+    } else if (g == 11) { // Chroma Reef: soft membranes fuse on sustained notes
+        float membrane = sin(p.x+time*0.12)+cos(p.y*1.2)+sin(p.x*0.7+p.y-HARM.y);
+        d = abs(membrane - 0.4);
+        fill = smoothstep(0.5,2.2,membrane)*0.32;
+        phase = membrane*0.24;
+    } else if (g == 12) { // Signal Rain: treble lights the tips of falling streaks
+        float lane = hash21(vec2(floor(p.x*2.0),depth));
+        float head = fract(p.y*0.22 + lane + time*(0.15+lane*0.2));
+        d = abs(fract(p.x*2.0)-0.5) + head*(1.8-SH*0.5);
+        level = spec(0.55+lane*0.45);
+    } else if (g == 13) { // Phase Portrait: paired oscillators trace interference nodes
+        float a = sin(p.x*1.6+time*0.15)*cos(p.y);
+        float b = sin(p.y*1.45-HARM.y)*cos(p.x+SB*0.4);
+        d = abs(a-b);
+        phase = a*0.45;
+    } else if (g == 14) { // Spectral Bloom: band-driven petal silhouettes
+        float angle = atan(q.y,q.x+0.00001);
+        float petal = cos(angle*(4.0+floor(GA.z*4.0))+time*0.15);
+        d = abs(length(q)-0.8-petal*(0.22+level*0.34));
+        phase = petal*0.32;
+    } else if (g == 15) { // Tectonic Print: stacked contour lines emerge from noise
+        float relief = fbm2(p*0.28+GB.xy) * 4.0;
+        d = abs(fract(relief*2.0 + SB*0.35)-0.5);
+        phase = relief*0.25;
+        fill = relief*0.055;
+    } else if (g == 16) { // Binary Tides: two coherent sources create nodal fringes
+        float a = length(p-vec2(3.0,1.0)), b = length(p+vec2(2.0,3.0));
+        float wave = sin(a*2.6-time*0.65)+sin(b*2.6-time*0.65+SM);
+        d = abs(wave)*0.65;
+        phase = wave*0.21;
+    } else { // Glass Vault: bass flexes the radius of pointed arches
+        float arch = max(length(q-vec2(0.8,-1.6)),length(q-vec2(-0.8,-1.6)));
+        d = abs(arch-2.55-SB*0.23);
+        fill = 0.14*(1.0-smoothstep(0.18,0.55,d));
+    }
+    float core = 1.0-smoothstep(0.016,0.075,d);
+    float glow = exp(-max(d,0.0)*7.0);
+    return pal(phase + GB.w + depth*0.13) *
+           (core*0.52 + glow*0.28 + fill) * (0.38 + min(level,1.2)*0.62);
+}
 vec3 renderWorld(int g, int atmo, vec4 a, vec4 b, vec3 po, vec3 pf, vec4 glob, vec3 ro, vec3 rd) {
     PO = po; PF = pf; GA = a; GB = b; GG = glob;
     vec3 fogC = vec3(0.018, 0.033, 0.067) + pal(0.7 + GB.w) * (0.022 + SB * 0.042 + uDrop * 0.05);
     float tMax = (-12.0 - ro.z) / rd.z;
     vec3 col;
     float t = tMax;
-    if (g == 4) col = renderNebula(ro, rd, fogC);
+    if (g >= 6) {
+        col = fogC;
+        for (int sheet = 0; sheet < 3; sheet++) {
+            float depth = float(sheet);
+            float hit = (-2.0 - depth * 3.5 - ro.z) / rd.z;
+            col += resonantSheet(g, (ro + rd * hit).xy, depth) / (1.0 + depth * 1.8);
+        }
+    } else if (g == 4) col = renderNebula(ro, rd, fogC);
     else if (g == 5) col = renderAurora(ro, rd, fogC);
     else {
         // start each march just above the highest point that world can reach
@@ -507,6 +588,24 @@ uniform int uCountB;
 uniform vec4 uGlobA;
 uniform vec4 uGlobB;
 
+// The sharp front ridge follows attacks. Two slower envelopes form the foothills.
+vec3 spectrumBanks(vec2 uv) {
+    float edge = min(uv.y, 1.0 - uv.y);
+    if (edge > 0.35) return vec3(0.0);
+    float band = (uv.y < 0.5 ? uv.x : 1.0 - uv.x) * 15.0;
+    int i = int(floor(band));
+    vec3 levels = mix(uSpec[i], uSpec[min(i + 1, 15)], smoothstep(0.0, 1.0, fract(band)));
+    float contour = 0.014 * sin(band * 0.8 + uSeed);
+    vec3 height = vec3(0.085, 0.055, 0.025) + contour
+                + min(levels, vec3(1.5)) * vec3(0.145, 0.12, 0.09) * mix(0.4, 1.0, min(MOT, 1.0));
+    vec3 dist = edge - height;
+    float pixel = 1.0 / max(1.0, uResolution.y);
+    vec3 crest = 1.0 - smoothstep(vec3(pixel), vec3(pixel * 3.0 + 0.001), abs(dist));
+    vec3 veil = exp(-abs(dist) * 80.0) * (1.0 - smoothstep(vec3(-0.002), vec3(0.014), dist));
+    vec3 light = (crest + veil * 0.48) * min(levels, vec3(1.0));
+    vec3 tint = mix(uColA, uColC, smoothstep(0.0, 15.0, band));
+    return tint * (light.x * 0.68 + light.z * 0.24) + uColB * light.y * 0.42;
+}
 void main() {
     MOT = clamp(uMotionScale, 0.0, 1.5);
     BEAT_I = floor(uBeatPos);
@@ -518,9 +617,9 @@ void main() {
     PERC = clamp(uPerc, 0.0, 1.5);
     HARM = clamp(uHarm, 0.0, 1.5);
     CHORD = uChordShift + uHueStep;
-    SB = (uSpec[0] + uSpec[1] + uSpec[2] + uSpec[3]) * 0.25;
-    SM = (uSpec[5] + uSpec[6] + uSpec[7] + uSpec[8] + uSpec[9]) * 0.2;
-    SH = (uSpec[11] + uSpec[12] + uSpec[13] + uSpec[14]) * 0.25;
+    SB = (uSpec[0].x + uSpec[1].x + uSpec[2].x + uSpec[3].x) * 0.25;
+    SM = (uSpec[5].x + uSpec[6].x + uSpec[7].x + uSpec[8].x + uSpec[9].x) * 0.2;
+    SH = (uSpec[11].x + uSpec[12].x + uSpec[13].x + uSpec[14].x) * 0.25;
 
     // Camera ray through the arena plane: z = 0 maps exactly onto the 2D world camera, so the
     // world below scrolls and parallaxes with the map. Scene units are game units / 100.
@@ -556,6 +655,8 @@ void main() {
         float wipe = smoothstep(front - 0.25, front, r * 0.9);
         col = mix(next, col, wipe) + pal(0.5) * exp(-abs(r * 0.9 - front + 0.12) * 18.0) * (1.0 - uMix) * 0.4;
     }
+
+    col += spectrumBanks(vUv);
 
     // music punch: exposure follows the loudness and pumps on hits
     col *= 0.72 + uEnergy * 0.35 + (HARM.x + HARM.y) * 0.08 + max(min(uKick, 1.5), PERC.x) * 0.18 + PERC.y * 0.08

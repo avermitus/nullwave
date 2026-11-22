@@ -1826,12 +1826,12 @@ public static partial class SelfTest
     /// <summary>TASK-014: 100% stationary 3D-only backdrops, zero 2D generators/ops, zero camera/aim UV panning, and combat readability contracts.</summary>
     private static void Test3DBackdropAndReadability()
     {
-        Check(BackdropGenome.GeneratorCount == 6 && BackdropGenome.MaxLayers == 1 && BackdropGenome.OpCount == 0, "BackdropGenome: six single-layer 3D worlds");
+        Check(BackdropGenome.GeneratorCount == BackdropGenome.GeneratorNames.Length && BackdropGenome.MaxLayers == 1 && BackdropGenome.OpCount == 0, "BackdropGenome: named single-layer 3D worlds");
 
         var rng = new Random(14014);
         var seen = new HashSet<int>();
         BackdropGenome? prev = null;
-        for (int i = 0; i < 60; i++)
+        for (int i = 0; i < 300; i++)
         {
             var g = BackdropGenome.Random(rng, prev);
             Check(BackdropGenome.Is3DOnly(g), $"genome {i} is one 3D world with zero 2D ops");
@@ -1839,7 +1839,7 @@ public static partial class SelfTest
             seen.Add(g.Layers[0].Generator);
             prev = g;
         }
-        Check(seen.Count == BackdropGenome.GeneratorCount, "all 3D worlds reachable within 60 rolls");
+        Check(seen.Count == BackdropGenome.GeneratorCount, "all 3D worlds reachable in seeded rotation");
 
         var badOps = BackdropGenome.Random(new Random(7));
         badOps.Layers[0].Ops[0] = 2;
@@ -1856,7 +1856,7 @@ public static partial class SelfTest
             "uniform vec2 uCam;", "uniform vec2 uView;", "uniform float uOblique;",
             "uniform float uBeatPos;", "uniform vec4 uWaves[6];", "vec3 onFloor = vec3((uCam",
             "mapSea", "mapCrust", "mapDunes", "mapGyroid", "renderNebula", "renderAurora", "atmosphere(",
-            "uniform float uSpec[16];", "uniform vec4 uFocus[16];",
+            "uniform vec3 uSpec[16];", "col += spectrumBanks(vUv);", "uniform vec4 uFocus[16];",
             "uniform float uDarkTheme;", "uniform vec4 uLights[12];", "uniform float uOverdrive;", "uniform float uAnticipation;",
         })
         {
