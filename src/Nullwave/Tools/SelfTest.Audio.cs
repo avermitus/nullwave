@@ -1,4 +1,4 @@
-﻿using Nullwave.Audio;
+using Nullwave.Audio;
 
 namespace Nullwave.Tools;
 
@@ -23,8 +23,8 @@ public static partial class SelfTest
         static double Difference(float[] a, float[] b) => a.Zip(b, (x, y) => Math.Abs(x-y)).Average();
 
         var generated = new SoundBank();
-        Check(generated.GeneratedSampleCount == 3, "all three shipped Sogni layers are decoded");
-        foreach (var type in new[] { SfxType.Kill, SfxType.Explosion, SfxType.Dash })
+        Check(generated.GeneratedSampleCount == Enum.GetValues<SfxType>().Length, "every effect has a decoded fal layer");
+        foreach (var type in Enum.GetValues<SfxType>())
         {
             var withSample = new SoundBank();
             var fallback = new SoundBank(useGeneratedSamples: false);

@@ -43,12 +43,26 @@ public sealed class SoundBank
     private long _seed = 0x9E3779B9;
     private float[] _dry = new float[4096];
     private readonly Reverb _reverb = new();
-    private readonly IReadOnlyDictionary<SfxType, float[]> _samples;
+    private readonly IReadOnlyDictionary<SfxType, SfxSample> _samples;
     public int GeneratedSampleCount => _samples.Count;
 
     public SoundBank(bool useGeneratedSamples = true)
     {
-        _samples = useGeneratedSamples ? SfxSamples.All : new Dictionary<SfxType, float[]>();
+        _samples = useGeneratedSamples ? SfxSamples.All : new Dictionary<SfxType, SfxSample>();
+    }
+
+    /// <summary>
+    /// Playback rate for a sample layer. Pitched layers move to the voice's note (nearest octave, so the
+    /// sample never shifts more than a tritone); unpitched ones keep the per-trigger variation.
+    /// </summary>
+    private static float PlayRateOf(SfxSample? sample, float targetHz, float variation)
+    {
+        if (sample is null) return 1f;
+        if (sample.RootHz <= 0f || targetHz <= 0f) return variation;
+        float ratio = targetHz / sample.RootHz;
+        while (ratio > 1.41421356f) ratio *= 0.5f;
+        while (ratio < 0.70710678f) ratio *= 2f;
+        return ratio;
     }
     private float _rootHz = 130.8128f; // C3 until music is known
     private float _thirdRatio = 1.1892071f;
@@ -68,6 +82,7 @@ public sealed class SoundBank
     {
         public SfxType Type;
         public float[]? Sample;
+        public float PlayRate;     // playback rate of the sample layer (pitch)
         public double Age;
         public double Life;
         public float Gain;
@@ -94,16 +109,20 @@ public sealed class SoundBank
                 Array.Copy(_voices, 1, _voices, 0, MaxVoices - 1);
                 _voiceCount = MaxVoices - 1;
             }
+            float hz = 440f * MathF.Pow(2f, (midi - 69f) / 12f);
+            var sample = _samples.GetValueOrDefault(SfxType.Note);
             _voices[_voiceCount++] = new Voice
             {
                 Type = SfxType.Note,
+                Sample = sample?.Data,
+                PlayRate = PlayRateOf(sample, hz, 1f),
                 Life = timbre == 0 ? 0.9 : 0.35,
                 Age = -Math.Clamp(delay, 0f, 0.5f),
                 Gain = gain,
                 Pan = Math.Clamp(pan, -1f, 1f),
                 Seed = 1,
                 Pitch = 1f,
-                Freq = 440f * MathF.Pow(2f, (midi - 69f) / 12f),
+                Freq = hz,
                 Timbre = timbre,
             };
         }
@@ -119,16 +138,20 @@ public sealed class SoundBank
                 _voiceCount = MaxVoices - 1;
             }
             uint seed = (uint)(_seed = _seed * 6364136223846793005L + 1442695040888963407L >> 1);
+            float pitch = 1f + ((seed >> 8) % 1000 / 1000f - 0.5f) * 0.12f;
+            float freq = type == SfxType.Note ? _rootHz * 4f : _rootHz;
+            var sample = _samples.GetValueOrDefault(type);
             _voices[_voiceCount++] = new Voice
             {
                 Type = type,
                 Life = LifeOf(type),
-                Sample = _samples.GetValueOrDefault(type),
+                Sample = sample?.Data,
+                PlayRate = PlayRateOf(sample, freq, pitch),
                 Gain = gain * LevelOf(type),
                 Pan = Math.Clamp(pan, -1f, 1f),
                 Seed = seed,
-                Pitch = 1f + ((seed >> 8) % 1000 / 1000f - 0.5f) * 0.12f,
-                Freq = type == SfxType.Note ? _rootHz * 4f : _rootHz,
+                Pitch = pitch,
+                Freq = freq,
                 ThirdRatio = _thirdRatio,
             };
         }
@@ -287,10 +310,15 @@ public sealed class SoundBank
         float dry = RenderVoice(ref v, t, u, p, f);
         if (v.Sample is { } sample)
         {
-            int frame = (int)(v.Age * SampleRate);
-            dry *= 0.8f;
-            if (frame < sample.Length)
-                dry += sample[frame] * 0.35f;
+            // The recorded fal layer leads; the procedural voice stays underneath for its transient punch.
+            double pos = v.Age * SampleRate * v.PlayRate;
+            int frame = (int)pos;
+            dry *= 0.3f;
+            if (frame + 1 < sample.Length)
+            {
+                float frac = (float)(pos - frame);
+                dry += (sample[frame] + (sample[frame + 1] - sample[frame]) * frac) * 1.1f;
+            }
         }
         return dry * end;
     }

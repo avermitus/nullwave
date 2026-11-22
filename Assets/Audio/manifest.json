@@ -1,9 +1,9 @@
 {
   "generator": "fal: ElevenLabs Sound Effects v3",
   "format": "48000 Hz mono PCM16 WAV",
-  "usage": "Sampled layers mixed with procedural effects",
+  "usage": "Sample layers that lead every effect; the procedural voice stays underneath for punch",
   "theme": "biblically accurate angels / marble / liquid chrome",
-  "source": "Assets/Source/fal/sfx/*.mp3 (trimmed, faded, peak-normalised)",
+  "source": "Assets/Source/fal/sfx/*.mp3 (prepare_sfx.py: trimmed to voice life, faded, peak-matched)",
   "effects": [
     {
       "effect": "kill",
@@ -28,6 +28,171 @@
       "durationSeconds": 0.34,
       "peak": 0.75,
       "sha256": "7059dec396ab7d9d7e2f81312f090085e272074203a55e9f2b0afb29860a840e"
+    },
+    {
+      "effect": "shot",
+      "file": "shot.wav",
+      "prompt": "one single tiny crisp liquid-chrome plink, a short glassy energy bolt shot with a faint metallic ring, very short and dry, game weapon sound",
+      "durationSeconds": 0.12,
+      "peak": 0.4578,
+      "matchedProceduralPeak": 0.5316,
+      "sha256": "e98e03d4f14f63154816a75f5dba27571ebc63d0457c09b0c0ecc6fb9528394d"
+    },
+    {
+      "effect": "hit",
+      "file": "hit.wav",
+      "prompt": "one small sharp impact of a glass pellet striking a marble statue, short ceramic chip tick, dry, single hit",
+      "durationSeconds": 0.12,
+      "peak": 0.5534,
+      "matchedProceduralPeak": 0.3926,
+      "sha256": "23c537d7ecba5cf5cae2096876023f75f534126891183bf15c67fed81c2c2ed6"
+    },
+    {
+      "effect": "graze",
+      "file": "graze.wav",
+      "prompt": "a very quick airy silver shimmer, a bullet brushing past a feathered wing, soft glassy whisper, very short",
+      "durationSeconds": 0.14,
+      "peak": 0.1751,
+      "matchedProceduralPeak": 0.214,
+      "sha256": "e0226e71b961ee6a0a7039ed4bd92b92a8afdfe7f07b9b2f6fc2bfda34c1d39f"
+    },
+    {
+      "effect": "pickup",
+      "file": "pickup.wav",
+      "prompt": "a bright quick rising three-note celestial chime on crystal bells, sparkling holy reward, short",
+      "durationSeconds": 0.55,
+      "peak": 0.5489,
+      "matchedProceduralPeak": 0.2684,
+      "sha256": "cefd845cff16347bf122f7248742e3b652fff04f3b114bb4e796e17f010a6932"
+    },
+    {
+      "effect": "laserwarn",
+      "file": "laserwarn.wav",
+      "prompt": "an ominous rising charge of a holy choir and electric hum gathering energy, building tension right before a light beam fires",
+      "durationSeconds": 0.6,
+      "peak": 0.3835,
+      "matchedProceduralPeak": 0.4031,
+      "sha256": "b0d59d454d96797a3772e9d32d232ced68ee6d47a59f9cf19a03be7ba32564d1"
+    },
+    {
+      "effect": "laserfire",
+      "file": "laserfire.wav",
+      "prompt": "a searing divine light beam blast, a bright burning ray of holy plasma with a short angelic shriek",
+      "durationSeconds": 0.6,
+      "peak": 0.4904,
+      "matchedProceduralPeak": 0.5095,
+      "sha256": "084994012645f70cae438085ecfdd3b18e407049ff9e491d8a937ba754acefea"
+    },
+    {
+      "effect": "burst",
+      "file": "burst.wav",
+      "prompt": "a huge heavenly impact with a soaring angelic choir chord, cathedral reverb and shimmering liquid chrome debris",
+      "durationSeconds": 1.6,
+      "peak": 0.554,
+      "matchedProceduralPeak": 0.8803,
+      "sha256": "9bec1c0690464f1185420a973414b986d7f6b3996a8d71086b0d10571295a800"
+    },
+    {
+      "effect": "hurt",
+      "file": "hurt.wav",
+      "prompt": "a harsh painful glitchy impact, cracking stone and a dissonant low pipe organ stab, an alarming damage warning",
+      "durationSeconds": 0.5,
+      "peak": 0.871,
+      "matchedProceduralPeak": 0.6049,
+      "sha256": "0c4d369291355d83520f4b0d309cec2f25db92fd7ce27b106a7d37c888c92a85"
+    },
+    {
+      "effect": "boss",
+      "file": "boss.wav",
+      "prompt": "a terrifying colossal angelic roar, many choir voices in dissonance with deep brass and grinding stone, an ancient being awakening",
+      "durationSeconds": 1.8,
+      "peak": 0.775,
+      "matchedProceduralPeak": 0.4088,
+      "sha256": "6c6ac7cb481ab1482cb6091cfee3cb274114b72e0bf54a6a28f58735a7b50448"
+    },
+    {
+      "effect": "menu",
+      "file": "menu.wav",
+      "prompt": "one tiny soft chrome click, a delicate glass UI select tick, extremely short",
+      "durationSeconds": 0.06,
+      "peak": 0.4084,
+      "matchedProceduralPeak": 0.1417,
+      "sha256": "72a7efc1ea0904aeff060c720622a92e38896c2039c4fb16be500ea1d98a5677"
+    },
+    {
+      "effect": "unlock",
+      "file": "unlock.wav",
+      "prompt": "a triumphant shimmering choir ah swell with golden bells, a short heavenly reward fanfare",
+      "durationSeconds": 1.0,
+      "peak": 0.6009,
+      "matchedProceduralPeak": 0.2428,
+      "sha256": "c92ccc48dbd09f2d7da282bd63bc8954c8f68ee2187fbf2447b4c433b271544e"
+    },
+    {
+      "effect": "wave",
+      "file": "wave.wav",
+      "prompt": "a solemn deep cathedral bell toll with a chrome shimmer, a single strike announcing a new wave",
+      "durationSeconds": 0.7,
+      "peak": 0.4725,
+      "matchedProceduralPeak": 0.6352,
+      "sha256": "94fde2c311eec412a65752c061848ee54bb74a804e3eca945e517e25543a8054"
+    },
+    {
+      "effect": "note",
+      "file": "note.wav",
+      "prompt": "a single pure crystal glass bell note, one clear sustained tone ringing out, clean and steady pitch",
+      "durationSeconds": 0.9,
+      "peak": 0.6189,
+      "matchedProceduralPeak": 0.3264,
+      "rootHz": 937.5,
+      "sha256": "1e78fdbc589e28ce963c905b36cd1ecb3188009c8355cf459bc4d6387081d15d"
+    },
+    {
+      "effect": "drumkick",
+      "file": "drumkick.wav",
+      "prompt": "one deep punchy electronic kick drum hit with a heavy stone thud, single dry hit",
+      "durationSeconds": 0.25,
+      "peak": 0.549,
+      "matchedProceduralPeak": 0.671,
+      "sha256": "0c290e8de154ed74aee414bc1444ef52cdd536c53b2ef8b73323d52d4640330f"
+    },
+    {
+      "effect": "drumsnare",
+      "file": "drumsnare.wav",
+      "prompt": "one crisp electronic snare hit made of a cracking marble slab with a chrome rattle, single dry hit",
+      "durationSeconds": 0.18,
+      "peak": 0.9448,
+      "matchedProceduralPeak": 0.6419,
+      "sha256": "ad4674aeed8b31cc564bd4c7cf621f2c665c491a325c27e546f46b1a29ff35f6"
+    },
+    {
+      "effect": "drumhat",
+      "file": "drumhat.wav",
+      "prompt": "one very short closed hi-hat tick like a tiny chrome bell shaker, single dry hit",
+      "durationSeconds": 0.07,
+      "peak": 0.4775,
+      "matchedProceduralPeak": 0.3856,
+      "sha256": "4b7c9dceabd370b34ea6386212d1f92f6e6f6571efec2ef369d37482ddbc952e"
+    },
+    {
+      "effect": "bassshot",
+      "file": "bassshot.wav",
+      "prompt": "one short deep growling distorted synth bass pluck with a metallic chrome edge, a single sustained low note, steady pitch",
+      "durationSeconds": 0.42,
+      "peak": 0.2995,
+      "matchedProceduralPeak": 0.366,
+      "rootHz": 73.24,
+      "sha256": "f4b8c8e37f5b2cec77e1dc32169ade073157321da4df86132a1271ad72394e52"
+    },
+    {
+      "effect": "leadshot",
+      "file": "leadshot.wav",
+      "prompt": "one short bright shimmering glass harp pluck with chrome sparkle, a single clear note, steady pitch",
+      "durationSeconds": 0.15,
+      "peak": 0.6412,
+      "matchedProceduralPeak": 0.5118,
+      "rootHz": 1036.38,
+      "sha256": "3df31ee333271e8ad0b3be28757a4ee8d2a4d3a551c68ddebe3fb08151d60f84"
     }
   ]
 }
