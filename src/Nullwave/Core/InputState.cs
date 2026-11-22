@@ -1,10 +1,31 @@
 using System.Numerics;
+using Nullwave.World;
 using Silk.NET.Input;
 #if DEBUG
 using System.Collections.Concurrent;
 #endif
 
 namespace Nullwave.Core;
+
+internal struct PlayerActionBuffer
+{
+    private bool _dash;
+    private bool _burst;
+
+    public void Sample(InputFrame frame)
+    {
+        _dash |= frame.Dash;
+        _burst |= frame.Burst;
+    }
+
+    public InputFrame ForTick(InputFrame frame, bool updatesPlayer)
+    {
+        var input = new InputFrame(frame.Move, frame.Aim, frame.Fire,
+            updatesPlayer && _dash, frame.Focus, updatesPlayer && _burst);
+        if (updatesPlayer) this = default;
+        return input;
+    }
+}
 
 public sealed class InputState
 {

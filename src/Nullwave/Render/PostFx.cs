@@ -74,8 +74,9 @@ public sealed class PostFx : IDisposable
         _downs[0].Bind();
         _bright.Use();
         _bright.SetInt("uScene", 0);
-        _bright.SetFloat("uThreshold", abyssal ? 0.72f : 0.62f);
-        _bright.SetFloat("uKnee", abyssal ? 0.32f : 0.42f);
+        // Keep broad lit surfaces out of the bloom pyramid while retaining a soft onset for emitters.
+        _bright.SetFloat("uThreshold", abyssal ? 0.79f : 0.72f);
+        _bright.SetFloat("uKnee", abyssal ? 0.30f : 0.33f);
         _gl.ActiveTexture(TextureUnit.Texture0);
         _gl.BindTexture(TextureTarget.Texture2D, sceneTexture);
         DrawFullscreen();

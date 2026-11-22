@@ -80,6 +80,11 @@ public static class Models
                 ? new Vector2[] { new(7f, 3f), new(-6f, 21f), new(-12.5f, 22.5f), new(-11f, 3.5f) }
                 : new Vector2[] { new(-11f, -3.5f), new(-12.5f, -22.5f), new(-6f, -21f), new(7f, -3f) },
                 1.7f, Mat.Trim, Mat.Hull);
+            // Inset livery follows the wing sweep. The dark panel separates it from the engine pod.
+            b.Prism(new Vector2[] { new(2.7f, s * 7f), new(-7.3f, s * 19.5f),
+                new(-10.3f, s * 20f), new(-4.2f, s * 9.5f) }, 0.86f, 1.16f, Mat.Hull, Mat.Trim);
+            b.Prism(new Vector2[] { new(-4.5f, s * 12.5f), new(-8.6f, s * 18.3f),
+                new(-10f, s * 18.5f), new(-6.6f, s * 13f) }, 1.17f, 1.34f, Mat.Trim, Mat.Glow);
             // wingtip emitters
             b.At(new Vector3(-9.5f, s * 21.5f, 1.4f));
             b.Box(new Vector3(6.5f, 1.6f, 2.2f), Mat.Glow, Mat.Core);

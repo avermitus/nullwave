@@ -11,55 +11,79 @@ public static class Screens
 {
     private static readonly string[] TitleItems = ["NEW SIGNAL", "SETLIST", "DAILY SIGNAL", "ARCHIVE", "SETTINGS", "QUIT"];
     private static readonly string[] PauseItems = ["RESUME", "ARCHIVE", "SETTINGS", "ABANDON SIGNAL"];
+    // Only the first three IDs and count affect the displayed caption. The list itself is mutable.
+    private static int _captionCount = -1;
+    private static string? _captionFirst, _captionSecond, _captionThird;
+    private static string _modifierCaption = "";
+
+    private static string ModifierCaption(GameWorld world)
+    {
+        var active = world.Mods.Active;
+        int count = active.Count;
+        string? first = count > 0 ? active[0] : null;
+        string? second = count > 1 ? active[1] : null;
+        string? third = count == 3 ? active[2] : null;
+        if (count != _captionCount || first != _captionFirst || second != _captionSecond || third != _captionThird)
+        {
+            static string Name(string id) => ModifierCatalog.Get(id)?.Name ?? id;
+            _modifierCaption = count == 0 ? "" : "SIGNAL " + Name(first!);
+            if (count > 1) _modifierCaption += "  " + Name(second!);
+            if (count == 3) _modifierCaption += "  " + Name(third!);
+            if (count > 3) _modifierCaption += "  +" + (count - 2);
+            _captionCount = count;
+            _captionFirst = first;
+            _captionSecond = second;
+            _captionThird = third;
+        }
+        return _modifierCaption;
+    }
+
     private static bool Abyssal => GameSettings.Current.IsAbyssal;
     private static Vector4 PanelFill(Vector4 standard, float abyssalAlpha = 0.94f) =>
         Abyssal ? new Vector4(0.002f, 0.003f, 0.007f, abyssalAlpha) : standard;
 
+    // Shared with title mouse hit testing in Game.
+    public const float TitleMenuX = 74f, TitleMenuY = 296f, TitleMenuWidth = 480f, TitleMenuRowHeight = 52f, TitleMenuRowHeightVisible = 46f;
+    public const float TitleShipLeftX = 76f, TitleShipRightX = 318f, TitleShipY = 664f, TitleShipButtonWidth = 42f, TitleShipButtonHeight = 30f;
+
     public static void DrawTitle(Renderer r, Palette p, MetaProgress meta, ulong seed, bool dailySeed, int menuIndex, float time, AudioState audio)
     {
-        r.UiRect(0, 0, 1600, 900, PanelFill(new Vector4(0.002f, 0.004f, 0.016f, 0.86f), 0.90f));
-        DrawFrameDecor(r, p, 38, 38, 1524, 824);
-
-        r.UiText("SIGNAL // " + SeedCode.ToCode(seed), 64, 62, 1.8f, M.WithAlpha(p.Accent, 0.9f));
-        r.UiTextRight("ARCHIVE " + meta.UnlockedModifiers.Count.ToString("00") + " / " + ModifierCatalog.All.Length.ToString("00"), 1536, 62, 1.8f, M.WithAlpha(p.Dim, 0.9f));
-
-        float y = 178;
-        r.UiTextCentered("NULLWAVE", 800 + 5, y + 4, 15f, M.WithAlpha(p.Secondary, 0.2f), true);
-        r.UiTextCentered("NULLWAVE", 800 - 4, y - 2, 15f, M.WithAlpha(p.Danger, 0.18f), true);
-        r.UiTextCentered("NULLWAVE", 800, y, 15f, p.Text, true);
-        r.UiTextCentered("THE MUSIC BUILDS THE ENEMY", 800, y + 130, 2.3f, M.WithAlpha(p.Accent, 0.94f), true);
-        r.UiLine(540, y + 165, 1060, y + 165, 1f, M.WithAlpha(p.Primary, 0.34f), true);
-        r.UiTextCentered("AN ENDLESS AUDIO-DRIVEN BULLET HELL", 800, y + 184, 1.65f, p.Dim);
-
-        float menuY = 436;
+        // Keep the live demo visible across the open right side of the console.
+        r.UiRect(0, 0, 1600, 900, new Vector4(0.002f, 0.004f, 0.016f, 0.30f));
+        r.UiRect(40, 38, 550, 824, PanelFill(new Vector4(0.004f, 0.008f, 0.020f, 0.92f), 0.95f));
+        DrawFrameDecor(r, p, 40, 38, 1520, 824);
+        r.UiRect(40, 38, 5, 824, M.WithAlpha(p.Accent, 0.9f), true);
+        r.UiText("SIGNAL // " + SeedCode.ToCode(seed), 74, 66, 1.6f, M.WithAlpha(p.Accent, 0.95f), true);
+        r.UiText("NULLWAVE", 70, 112, 9.4f, p.Text, true);
+        r.UiText("THE MUSIC BUILDS THE ENEMY", 76, 196, 1.85f, M.WithAlpha(p.Text, 0.92f));
+        r.UiLine(74, 237, 554, 237, 1f, M.WithAlpha(p.Primary, 0.65f));
+        r.UiText("AN ENDLESS AUDIO-DRIVEN BULLET HELL", 76, 257, 1.4f, M.WithAlpha(p.Text, 0.8f));
         for (int i = 0; i < TitleItems.Length; i++)
         {
+            float y = TitleMenuY + i * TitleMenuRowHeight;
             bool selected = i == menuIndex;
-            float x = 580;
-            float w = 440;
+            r.UiRect(TitleMenuX, y, TitleMenuWidth, TitleMenuRowHeightVisible, selected
+                ? M.WithAlpha(p.Primary, 0.28f) : new Vector4(0.025f, 0.035f, 0.065f, 0.70f));
             if (selected)
             {
-                r.UiRect(x, menuY - 12, w, 47, M.WithAlpha(p.Primary, 0.075f));
-                r.UiFrame(x, menuY - 12, w, 47, 1f, M.WithAlpha(p.Primary, 0.55f), true);
-                r.UiText(">", x + 18, menuY + 2, 3f, p.Accent, true);
-                r.UiText("<", x + w - 42, menuY + 2, 3f, p.Accent, true);
+                r.UiFrame(TitleMenuX, y, TitleMenuWidth, TitleMenuRowHeightVisible, 1.5f, M.WithAlpha(p.Accent, 0.95f), true);
+                r.UiRect(TitleMenuX, y, 5, TitleMenuRowHeightVisible, p.Accent, true);
             }
-            r.UiTextCentered(TitleItems[i], 800, menuY + 2, selected ? 3.2f : 2.9f, selected ? p.Text : M.WithAlpha(p.Dim, 0.9f), selected);
-            menuY += 48;
+            r.UiText(TitleItems[i], 96, y + 10, selected ? 2.7f : 2.45f,
+                selected ? p.Text : M.WithAlpha(p.Text, 0.82f), selected);
+            if (selected) r.UiTextRight(">", 530, y + 10, 2.5f, p.Accent, true);
         }
-
-        r.UiText("BEST WAVE " + meta.BestWave.ToString("00") + "   //   BEST SCORE " + FormatScore(meta.BestScore), 64, 760, 1.75f, M.WithAlpha(p.Dim, 0.85f));
-        r.UiText("MOVE  WASD / STICK     AIM  MOUSE / STICK     FIRE  LMB / RT", 64, 794, 1.55f, M.WithAlpha(p.Dim, 0.68f));
-        r.UiText("DASH  SPACE / A     RESONANCE  E / X     FOCUS  SHIFT / LB", 64, 818, 1.55f, M.WithAlpha(p.Dim, 0.68f));
+        r.UiText("BEST WAVE " + meta.BestWave.ToString("00") + "  //  " + FormatScore(meta.BestScore), 76, 803, 1.55f, M.WithAlpha(p.Text, 0.85f));
+        r.UiText("MOVE WASD / STICK   AIM MOUSE / STICK   FIRE LMB / RT", 76, 829, 1.25f, M.WithAlpha(p.Text, 0.72f));
+        r.UiText("DASH SPACE / A   RESONANCE E / X   FOCUS SHIFT / LB", 76, 847, 1.25f, M.WithAlpha(p.Text, 0.72f));
+        r.UiTextRight("ARCHIVE " + meta.UnlockedModifiers.Count.ToString("00") + " / " + ModifierCatalog.All.Length.ToString("00"), 1532, 64, 1.5f, M.WithAlpha(p.Text, 0.9f));
         if (audio.LocalTrackActive && !string.IsNullOrEmpty(audio.LocalTrackName))
-            r.UiTextRight("TRACK // " + FormatTrack(audio.LocalTrackName, 38), 1536, 748, 1.4f, M.WithAlpha(p.Accent, 0.9f), true);
+            r.UiTextRight("TRACK // " + FormatTrack(audio.LocalTrackName, 38), 1532, 774, 1.4f, p.Text, true);
         else if (!string.IsNullOrEmpty(audio.SpotifyTrack))
-            r.UiTextRight("SPOTIFY // " + FormatTrack(audio.SpotifyTrack, 38), 1536, 748, 1.4f, M.WithAlpha(p.Accent, 0.9f), true);
-        r.UiTextRight("AUDIO // " + SourceLabel(audio), 1536, 774, 1.55f, M.WithAlpha(audio.External || audio.LocalTrackActive ? p.Accent : p.Dim, 0.9f));
-
-        DrawSpectrum(r, p, audio, 1090, 850, 420, 44);
-        if (dailySeed)
-            r.UiTextCentered("DAILY SIGNAL // " + SeedCode.DailyLabel(DateTime.Now), 800, 420, 1.6f, M.WithAlpha(p.Accent, 0.9f));
+            r.UiTextRight("SPOTIFY // " + FormatTrack(audio.SpotifyTrack, 38), 1532, 774, 1.4f, p.Text, true);
+        r.UiTextRight("AUDIO // " + SourceLabel(audio), 1532, 797, 1.4f, M.WithAlpha(p.Text, 0.85f));
+        DrawSpectrum(r, p, audio, 1110, 850, 420, 40);
+        if (dailySeed) r.UiTextRight("DAILY // " + SeedCode.DailyLabel(DateTime.Now), 1532, 90, 1.4f, p.Accent);
     }
 
     public static void DrawArchive(Renderer r, Palette p, MetaProgress meta, int selected, float time, bool fromPause, bool fromGameOver, string selectedSeed = "", bool editingSeed = false, string editBuffer = "")
@@ -173,16 +197,27 @@ public static class Screens
     /// <summary>Title: the instrument ship (left / right) and what SETLIST means.</summary>
     public static void DrawShipSelect(Renderer r, Palette p, ShipKind ship, int setlistTracks, int menuIndex)
     {
-        float y = 726;
-        r.UiTextCentered("<   SHIP // " + Ships.Name(ship) + "   >", 800, y, 2.2f, M.WithAlpha(p.Accent, 0.95f), true);
-        r.UiTextCentered(Ships.Blurb(ship), 800, y + 26, 1.35f, M.WithAlpha(p.Dim, 0.85f));
+        r.UiLine(74, 624, 554, 624, 1f, M.WithAlpha(p.Primary, 0.55f));
+        r.UiText("SHIP", 76, 646, 1.4f, M.WithAlpha(p.Text, 0.8f));
+        r.UiFrame(TitleShipLeftX, TitleShipY, TitleShipButtonWidth, TitleShipButtonHeight, 1f, M.WithAlpha(p.Accent, 0.65f));
+        r.UiFrame(TitleShipRightX, TitleShipY, TitleShipButtonWidth, TitleShipButtonHeight, 1f, M.WithAlpha(p.Accent, 0.65f));
+        r.UiTextCentered("<", TitleShipLeftX + TitleShipButtonWidth / 2, TitleShipY + 5, 2f, p.Accent, true);
+        r.UiTextCentered(Ships.Name(ship), 218, TitleShipY + 5, 2.1f, p.Text, true);
+        r.UiTextCentered(">", TitleShipRightX + TitleShipButtonWidth / 2, TitleShipY + 5, 2f, p.Accent, true);
+        r.UiText(Ships.Blurb(ship), 76, 701, 1.45f, M.WithAlpha(p.Text, 0.85f));
         if (menuIndex == 1)
-            r.UiTextCentered("A RUN THROUGH YOUR NEXT " + Math.Clamp(setlistTracks, 2, 8) + " TRACKS // EACH TRACK IS A STAGE // THE LAST ONE ENDS WITH THE DROP", 800, 408, 1.4f, M.WithAlpha(p.Accent, 0.85f));
+            r.UiText("SETLIST // " + Math.Clamp(setlistTracks, 2, 8) + " TRACKS", 76, 735, 1.4f, M.WithAlpha(p.Accent, 0.95f));
+        r.UiText("UP / DOWN SELECT   LEFT / RIGHT SHIP   ENTER / A CONFIRM", 76, 770, 1.25f, M.WithAlpha(p.Text, 0.75f));
     }
 
     public static void DrawHud(Renderer r, GameWorld w, Palette p, AudioState audio, MetaProgress meta, float time, float fps, bool debug, bool showEvent = true)
     {
         var player = w.Player;
+        // Instrument plates keep critical readings legible over bright arena effects.
+        r.UiRect(40, 26, 300, 180, PanelFill(new Vector4(0.004f, 0.008f, 0.020f, 0.76f), 0.88f));
+        r.UiRect(40, 26, 3, 180, M.WithAlpha(p.Accent, 0.8f));
+        r.UiRect(1210, 26, 346, 91, PanelFill(new Vector4(0.004f, 0.008f, 0.020f, 0.76f), 0.88f));
+        r.UiRect(1210, 26, 346, 2, M.WithAlpha(p.Accent, 0.75f));
         DrawStageAndSong(r, w, p, meta, time);
         r.UiText("WAVE " + w.Wave.ToString("00"), 56, 38, 3.1f, p.Text, true);
         r.UiText("MOVEMENT " + Roman(w.Movement + 1) + " // " + w.Rules.Name, 58, 78, 1.65f, M.WithAlpha(p.Accent, 0.9f));
@@ -190,25 +225,21 @@ public static class Screens
         if (w.Combo > 0)
         {
             float alpha = M.Clamp01(w.ComboTimer / 1.2f);
-            r.UiText("x" + w.ComboMultiplier.ToString("0.00") + "  //  " + w.Combo + " CHAIN", 58, 164, 1.9f, M.WithAlpha(p.Accent, 0.55f + alpha * 0.45f), true);
+            r.UiText("x" + w.ComboMultiplier.ToString("0.00") + "  //  " + w.Combo + " CHAIN", 58, 164, 1.9f, M.WithAlpha(p.Accent, 0.7f + alpha * 0.3f), true);
+            r.UiRect(58, 184, 180, 4, PanelFill(new Vector4(0.01f, 0.015f, 0.03f, 0.9f)));
+            r.UiRect(58, 184, 180 * M.Clamp01(w.ComboTimer / GameWorld.ComboDuration), 4, M.WithAlpha(p.Accent, 0.95f));
         }
         if (w.HypeLevel > 0)
         {
             var hc = M.Hsv((0.85f - w.HypeLevel * 0.1f + 1f) % 1f, 0.6f, 1f, 0.6f + w.Hype * 0.4f);
             r.UiTextRight("HYPE " + new string('|', w.HypeLevel + 1), 520, 116, 2.2f, hc, true);
         }
-        if (w.Mods.Active.Count > 0)
-        {
-            string mods;
-            if (w.Mods.Active.Count <= 3)
-                mods = string.Join("  ", w.Mods.Active.Select(id => ModifierCatalog.Get(id)?.Name ?? id));
-            else
-                mods = string.Join("  ", w.Mods.Active.Take(2).Select(id => ModifierCatalog.Get(id)?.Name ?? id)) + "  +" + (w.Mods.Active.Count - 2);
-            r.UiText("SIGNAL " + mods, 58, 190, 1.3f, M.WithAlpha(p.Dim, 0.65f));
-        }
+        string modifierCaption = ModifierCaption(w);
+        if (modifierCaption.Length > 0)
+            r.UiText(modifierCaption, 58, 195, 1.3f, M.WithAlpha(p.Text, 0.85f));
 
         r.UiTextRight("BPM " + audio.Bpm.ToString("000"), 1542, 40, 2.2f, M.WithAlpha(p.Accent, 0.85f));
-        r.UiTextRight("AUDIO // " + SourceLabel(audio), 1542, 72, 1.45f, M.WithAlpha(audio.LocalTrackActive ? p.Accent : p.Dim, 0.85f));
+        r.UiTextRight("AUDIO // " + SourceLabel(audio), 1542, 72, 1.45f, M.WithAlpha(audio.LocalTrackActive ? p.Accent : p.Text, 0.9f));
         if (audio.LocalTrackActive && !string.IsNullOrEmpty(audio.LocalTrackName))
             r.UiTextRight("TRACK // " + FormatTrack(audio.LocalTrackName, 28), 1542, 93, 1.25f, M.WithAlpha(p.Accent, 0.9f), true);
         else if (!string.IsNullOrEmpty(audio.SpotifyTrack))
@@ -218,13 +249,14 @@ public static class Screens
         if (w.BossEnemy is { Dead: false } boss)
             DrawBossBar(r, w, p, boss, time);
 
+        DrawDashIndicator(r, p, player);
         DrawHealthBar(r, p, player, time);
         var settings = GameSettings.Current;
         if (settings.ShowAttunements && player.AttunementCount > 0) DrawHudAttunements(r, p, player, time);
         if (settings.Minimap) DrawMinimap(r, p, w, time);
         if (settings.ThreatArrows) DrawThreatIndicators(r, p, w, time);
         if (settings.ShowFps) r.UiTextRight("FPS " + fps.ToString("0"), 1542, 790, 1.4f, M.WithAlpha(p.Dim, 0.85f));
-        r.UiText("RESONANCE", 56, 836, 1.4f, M.WithAlpha(p.Dim, 0.9f));
+        r.UiText("RESONANCE", 56, 836, 1.4f, M.WithAlpha(p.Text, 0.9f));
         float resFrac = M.Clamp01(player.Resonance / player.ResonanceMax);
         Vector4 resColor = resFrac >= 1f ? p.Accent : p.Primary;
         r.UiRect(56, 856, 370, 8, new Vector4(0.02f, 0.02f, 0.04f, 0.85f));
@@ -343,6 +375,20 @@ public static class Screens
             r.UiTextRight("INCOMING VOLLEY", bx + bw, 57f, 1.3f, M.WithAlpha(p.Danger, pulse), true);
     }
 
+    private static void DrawDashIndicator(Renderer r, Palette p, World.Player player)
+    {
+        // Above both attunement rows and the optional synergy badges (top edge y=688).
+        const float x = 56f, y = 650f, width = 150f;
+        bool ready = player.DashCooldown <= 0f && !player.IsDashing;
+        float fraction = player.DashCooldownMax > 0f
+            ? 1f - M.Clamp01(player.DashCooldown / player.DashCooldownMax) : 1f;
+        r.UiRect(x - 4f, y - 4f, 230f, 25f, PanelFill(new Vector4(0.01f, 0.012f, 0.03f, 0.88f)));
+        r.UiText(ready ? "DASH // READY" : "DASH // RECHARGING", x, y, 1.3f,
+            M.WithAlpha(ready ? p.Accent : p.Text, 0.95f), ready);
+        r.UiRect(x, y + 15f, width, 4f, new Vector4(0.06f, 0.07f, 0.10f, 0.95f));
+        r.UiRect(x, y + 15f, width * fraction, 4f, M.WithAlpha(ready ? p.Accent : p.Primary, 0.95f));
+    }
+
     /// <summary>
     /// Segmented integrity bar. Lost health drains out of the bar as a bright "ghost" chunk so a
     /// hit is legible at a glance; at one point left the frame pulses red.
@@ -359,7 +405,7 @@ public static class Screens
         float frac = player.Health / (float)max;
         Vector4 fill = frac > 0.5f ? Vector4.Lerp(hurt, healthy, (frac - 0.5f) * 2f) : Vector4.Lerp(danger, hurt, frac * 2f);
 
-        r.UiText("INTEGRITY", 56, 770, 1.4f, critical ? M.WithAlpha(danger, 0.7f + pulse * 0.3f) : M.WithAlpha(p.Dim, 0.9f), critical);
+        r.UiText("INTEGRITY", 56, 770, 1.4f, critical ? M.WithAlpha(danger, 0.7f + pulse * 0.3f) : M.WithAlpha(p.Text, 0.9f), critical);
         r.UiTextRight(player.Health + " / " + max, x + w, 770, 1.4f, M.WithAlpha(fill, 0.9f), true);
         r.UiRect(x - 2, y - 2, w + 4, h + 4, PanelFill(new Vector4(0.01f, 0.012f, 0.03f, 0.88f), 0.94f));
         r.UiFrame(x - 2, y - 2, w + 4, h + 4, 1f, critical ? M.WithAlpha(danger, 0.35f + pulse * 0.6f) : M.WithAlpha(p.Primary, Abyssal ? 0.30f : 0.35f), critical);
@@ -528,10 +574,11 @@ public static class Screens
             float y = 380 + i * 56;
             if (sel)
             {
-                r.UiRect(610, y - 7, 380, 44, M.WithAlpha(p.Primary, 0.08f));
+                r.UiRect(610, y - 7, 380, 44, M.WithAlpha(p.Primary, 0.28f));
+                r.UiRect(610, y - 7, 5, 44, p.Accent, true);
                 r.UiFrame(610, y - 7, 380, 44, 1f, M.WithAlpha(p.Primary, 0.6f), true);
             }
-            r.UiTextCentered(PauseItems[i], 800, y, sel ? 2.9f : 2.5f, sel ? p.Text : M.WithAlpha(p.Dim, 0.9f), sel);
+            r.UiTextCentered(PauseItems[i], 800, y, sel ? 2.9f : 2.5f, sel ? p.Text : M.WithAlpha(p.Text, 0.8f), sel);
         }
         r.UiLine(546, 602, 1054, 602, 1f, M.WithAlpha(p.Primary, 0.24f));
         DrawPauseAttunements(r, p, w.Player);
@@ -851,8 +898,8 @@ public static class Screens
     private static void DrawCard(Renderer r, Palette p, float x, float y, float w, float h, Vector4 accent)
     {
         r.UiRect(x, y, w, h, PanelFill(new Vector4(0.006f, 0.009f, 0.021f, 0.9f), 0.94f));
-        r.UiFrame(x, y, w, h, 1f, M.WithAlpha(accent, Abyssal ? 0.38f : 0.5f));
-        r.UiRect(x, y, w, 2, M.WithAlpha(accent, Abyssal ? 0.62f : 0.55f), true);
+        r.UiFrame(x, y, w, h, 1f, M.WithAlpha(accent, Abyssal ? 0.58f : 0.7f));
+        r.UiRect(x, y, w, 3, M.WithAlpha(accent, 0.85f), true);
         r.UiRect(x, y + h - 2, w, 2, M.WithAlpha(accent, 0.18f));
     }
 

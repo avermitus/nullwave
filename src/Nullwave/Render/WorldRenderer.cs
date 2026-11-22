@@ -814,12 +814,15 @@ public static class WorldRenderer
         if (strength > 0.02f && _trailCount > 2)
         {
             int len = (int)(_trailCount * (0.35f + 0.65f * MathF.Min(1f, strength)));
+            var hot = new Vector4(0.20f, 0.91f, 1f, 1f);
+            var cool = Vector4.Lerp(p.Accent, new Vector4(0.35f, 0.24f, 0.82f, 1f), 0.65f);
             for (int i = 0; i < len - 1; i++)
             {
-                float t = i / (float)len;
-                float width = (7f + w.Flow * 6f) * (1f - t);
-                var c0 = M.Hsv((p.BaseHue + t * 0.35f + time * 0.1f) % 1f, 0.6f, 1f, strength * (1f - t) * 0.55f);
-                var c1 = M.Hsv((p.BaseHue + (t + 1f / len) * 0.35f + time * 0.1f) % 1f, 0.6f, 1f, strength * (1f - t - 1f / len) * 0.55f);
+                float t = i / (float)(len - 1);
+                float next = (i + 1f) / (len - 1);
+                float width = (5f + w.Flow * 4f) * (1f - t);
+                var c0 = M.WithAlpha(Vector4.Lerp(hot, cool, t), strength * (1f - t) * 0.48f);
+                var c1 = M.WithAlpha(Vector4.Lerp(hot, cool, next), strength * (1f - next) * 0.48f);
                 r.GradientLine(TrailL[i], TrailL[i + 1], width, c0, c1, true);
                 r.GradientLine(TrailR[i], TrailR[i + 1], width, c0, c1, true);
                 if (i < len / 3)
@@ -845,8 +848,8 @@ public static class WorldRenderer
         }
         for (int i = 1; i < _ghostCount; i++)
         {
-            float a = (1f - i / (float)Ghosts.Length) * 0.35f;
-            var gm = MaterialSet.ForHue(M.Hsv((p.BaseHue + i * 0.08f) % 1f, 0.7f, 1f), 1.4f, 0.6f, a);
+            float a = (1f - i / (float)Ghosts.Length) * 0.22f;
+            var gm = MaterialSet.ForHue(p.Accent, 0.85f, 0f, a);
             r.Meshes.Add(Models.Player, Ghosts[i], gm);
         }
     }
@@ -879,14 +882,16 @@ public static class WorldRenderer
         r.Circle(pos, 31f, 1.6f, new Vector4(0.85f, 1f, 1f, 0.42f * flicker), 32, true);
 
         var mats = MaterialSet.ForHue(col, (1f + (player.IsDashing ? 1f : 0f) + w.BeatPulse * 0.3f + player.PhaseSyncFlash * 0.65f) * flicker, player.HitFlash, 1f);
-        mats.Trim = new Vector4(0.85f, 0.92f, 1f, 1f);
-        mats.Hull = new Vector4(0.42f, 0.47f, 0.58f, 1f);
+        mats.Hull = Vector4.Lerp(new Vector4(0.12f, 0.23f, 0.34f, 1f), Vector4.One, player.HitFlash);
+        mats.Trim = Vector4.Lerp(new Vector4(0.53f, 0.72f, 0.80f, 1f), Vector4.One, player.HitFlash);
+        mats.Glow = Vector4.Lerp(new Vector4(0.08f, 0.85f, 0.94f, 1f), Vector4.One, player.HitFlash);
         var ship = Xf(pos, z, aim, 1.35f, roll);
         DrawSpeedFx(r, w, p, time, ship, aim);
         r.Meshes.Add(Models.Player, ship, mats);
 
         float thrust = 0.35f + M.Clamp01(speed / 312f) * 0.9f + (player.IsDashing ? 1.4f : 0f) + player.PhaseSyncFlash * 0.45f;
-        var flame = MaterialSet.ForHue(p.Secondary, 1.6f * flicker);
+        var flame = MaterialSet.ForHue(col, 1.15f * flicker);
+        flame.Core = new Vector4(0.25f, 0.90f, 1f, 1f);
         for (int s = -1; s <= 1; s += 2)
         {
             float flick = 0.85f + 0.15f * MathF.Sin(time * 47f + s);
@@ -1061,18 +1066,30 @@ public static class WorldRenderer
             r.AddBackdropFocus(g.Pos, g.Radius * 0.7f, 0.55f * s);
             // influence edge
             r.Circle(g.Pos, g.Radius, 1.2f, M.WithAlpha(hue, 0.07f + s * 0.06f), 64, true);
-            // the lens: a dark core
-            r.FillCircle(g.Pos, g.Core * 2.2f, new Vector4(0f, 0f, 0.01f, 0.55f + s * 0.3f), 32);
-            r.FillCircle(g.Pos, g.Core, new Vector4(0f, 0f, 0f, 0.95f), 24);
-            // accretion rings spinning faster with the bass
-            for (int k = 0; k < 3; k++)
+            // The black lens is face-on. The accretion disk tilts independently around it.
+            r.FillCircle(g.Pos, g.Core, new Vector4(0.006f, 0.009f, 0.025f, 0.97f), 32);
+            Vector2 major = M.FromAngle(-0.42f + (g.Hue - 0.5f) * 0.7f);
+            Vector2 minor = M.Perp(major) * 0.62f;
+            var ember = Vector4.Lerp(hue, new Vector4(1f, 0.76f, 0.40f, 1f), 0.55f);
+            for (int arm = 0; arm < 3; arm++)
             {
-                float rad = g.Core * (1.35f + k * 0.55f);
-                float a0 = g.Spin * (1.4f - k * 0.3f) + k * 2.1f;
-                r.Arc(g.Pos, rad, a0, 2.2f + s, 2.2f + s * 2f, M.WithAlpha(hue, 0.35f + s * 0.45f), 20, true);
-                r.Arc(g.Pos, rad, a0 + MathF.PI, 1.2f, 1.4f + s, M.WithAlpha(hue, 0.2f + s * 0.3f), 14, true);
+                Vector2 prev = default;
+                Vector4 prevColor = default;
+                for (int j = 0; j <= 28; j++)
+                {
+                    float t = j / 28f;
+                    float angle = g.Spin + arm * M.Tau / 3f + t * 3.7f;
+                    float radius = g.Core * (2.85f - 1.32f * t);
+                    Vector2 pos = g.Pos + radius * (major * MathF.Cos(angle) + minor * MathF.Sin(angle));
+                    float taper = MathF.Sin(t * MathF.PI);
+                    var color = M.WithAlpha(Vector4.Lerp(hue, ember, t), taper * (0.46f + 0.36f * s));
+                    if (j > 0)
+                        r.GradientLine(prev, pos, 1.2f + taper * (2.8f + 1.8f * s), prevColor, color, true);
+                    prev = pos;
+                    prevColor = color;
+                }
             }
-            r.Circle(g.Pos, g.Core * 1.05f, 2f, new Vector4(1f, 1f, 1f, 0.35f + s * 0.4f), 32, true);
+            r.Circle(g.Pos, g.Core * 1.05f, 1.8f, M.WithAlpha(ember, 0.50f + s * 0.3f), 32, true);
             // sparks falling in
             for (int k = 0; k < 10; k++)
             {

@@ -31,11 +31,12 @@ public sealed class Palette
             BackC = M.HsvToRgb((baseHue + spread * 1.7f + 0.08f) % 1f, 0.58f, 0.52f),
             Primary = M.Hsv(baseHue, 0.72f, 1f),
             Secondary = M.Hsv((baseHue + 0.46f) % 1f, 0.78f, 1f),
-            Accent = M.Hsv((baseHue + 0.11f) % 1f, 0.58f, 1f),
+            Accent = M.Hsv((baseHue + 0.11f) % 1f, 0.42f, 1f),
             Player = M.Hsv((baseHue + 0.01f) % 1f, 0.38f, 1f),
-            Danger = M.Hsv((baseHue + 0.93f) % 1f, 0.84f, 1f),
+            // Keep warnings warm even when the seeded arena and player colors rotate.
+            Danger = new Vector4(1f, 0.46f, 0.35f, 1f),
             Text = new Vector4(0.90f, 0.96f, 1f, 1f),
-            Dim = new Vector4(0.44f, 0.50f, 0.62f, 1f),
+            Dim = new Vector4(0.57f, 0.65f, 0.74f, 1f),
         };
         return p;
     }
