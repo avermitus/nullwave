@@ -287,6 +287,25 @@ public sealed partial class World
         // the first waves ease in (72 % speed on wave 1, full speed from wave 5)
         float speed = EnemyBaseSpeed * GetDifficultySpeedScale() * Mods.EnemySpeed * EarlyWaveEase(Wave);
         float pursuit = ChaseBoost(dist);
+        // pack steering: from range, lead the ship and fan out across its path, each enemy in its own
+        // lane, instead of everyone queueing in one line behind you. Fades out by ~260 units, so close
+        // attacks (lunges, rams, orbits) are unchanged. Facing above still points at the ship.
+        float flankU = M.Clamp01((dist - 260f) / 440f);
+        float flank = e.Boss ? 0f : flankU * flankU * (3f - 2f * flankU);
+        if (flank > 0f)
+        {
+            float lead = M.Clamp(dist / MathF.Max(240f, speed * pursuit * 1.4f), 0f, 0.75f) * flank;
+            Vector2 predicted = Player.Pos + Player.Vel * lead;
+            float lane = (e.MovePhase - 0.5f) * 2.2f * flank;
+            Vector2 away = M.SafeNorm(e.Pos - predicted);
+            float standoff = MathF.Min((dist - 260f) * 0.55f, 320f) * flank;
+            Vector2 to = predicted + M.FromAngle(M.AngleOf(away) + lane, standoff) - e.Pos;
+            if (to.LengthSquared() > 1f)
+            {
+                dir = Vector2.Normalize(to);
+                perp = M.Perp(dir);
+            }
+        }
         float spin = e.MovePhase < 0.5f ? 1f : -1f;
         float t = e.Age + e.MovePhase * 10f;
         int beatInBar = Math.Clamp((int)BarPos, 0, 3);
@@ -433,6 +452,14 @@ public sealed partial class World
         }
         e.Groove = groove;
 
+        // the wave's last enemies stop keeping their distance and come straight for you
+        float hunt = e.Boss || e.Spawning ? 0f : StragglerHunt;
+        if (hunt > 0f)
+        {
+            Vector2 rush = (dir * 1.5f * pursuit + perp * spin * 0.25f) * speed;
+            if (direct) e.Vel = M.Lerp(e.Vel, rush, hunt * (1f - MathF.Exp(-dt * 4f)));
+            else desired = M.Lerp(desired, rush, hunt);
+        }
         if (!direct)
         {
             // personal space so the chase reads as a pack, not a blob
@@ -441,7 +468,8 @@ public sealed partial class World
                 if (o == e || o.Dead || o.Spawning || o.Boss) continue;
                 Vector2 d = e.Pos - o.Pos;
                 float l = d.Length();
-                float room = e.Radius + o.Radius + 30f;
+                // a looser formation while chasing from range, the usual personal space up close
+                float room = e.Radius + o.Radius + 30f + 40f * flank;
                 if (l < room && l > 0.01f) desired += d / l * (room - l) * 5f;
             }
             if (e.Role != EnemyRole.Dasher || e.State != 2)
@@ -514,12 +542,14 @@ public sealed partial class World
             {
                 float beat = 60f / MathF.Max(60f, Bpm);
                 float spin = Rng.Chance(0.5f) ? 1.15f : -1.15f;
+                _laserSource = "SENTINEL BEAM";
                 SpawnLaser(e.Pos, Player.Pos, beat, beat * 2.5f, 15f, hue, spin, false, 560f);
                 if (Wave >= 3 || e.Elite)
                 {
                     Vector2 opp = e.Pos - (Player.Pos - e.Pos);
                     SpawnLaser(e.Pos, opp, beat, beat * 2.5f, 15f, (hue + 0.08f) % 1f, spin, false, 560f);
                 }
+                _laserSource = null;
                 break;
             }
         }
@@ -879,7 +909,9 @@ public sealed partial class World
                     o.FireBeats -= 1f;
                     if (o.FireBeats <= 0f)
                     {
+                        _laserSource = "PYLON BEAM";
                         SpawnLaser(o.Pos, Player.Pos, 0.95f, 0.45f, 20f, o.Hue, 0f, false);
+                        _laserSource = null;
                         o.FireBeats = Rng.Range(4f, 7f) / MathF.Max(0.6f, Mods.ObstacleRate * (Rules.DoubleTime ? 1.3f : 1f));
                         o.RegenDelay = 0f;
                     }

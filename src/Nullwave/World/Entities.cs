@@ -260,6 +260,8 @@ public sealed class LaserBeam
     public bool HitPlayer;
     public bool PlayedFire;
     public bool BossLaser;
+    /// <summary>What fired it, as the player reads it ("LASER CROSS", "SENTINEL BEAM", "THE CHOIR").</summary>
+    public string Source = "";
     public bool Done;
     public float Fade = 0.16f;
 

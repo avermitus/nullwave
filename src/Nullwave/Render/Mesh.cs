@@ -73,6 +73,12 @@ public sealed class Mesh
     public readonly Mat[] Materials;
     public readonly Vector2[]? UV;
     public int VertexCount => Positions.Length;
+    /// <summary>
+    /// High-detail model (the fal enemy models): uploaded to the GPU once and drawn per instance with a
+    /// transform and the instance's trim colour, instead of being copied into the per-frame batch.
+    /// </summary>
+    public bool GpuStatic { get; init; }
+    internal uint GpuVao, GpuVbo;
 
     public Mesh(Vector3[] positions, Vector3[] normals, Mat[] materials, Vector2[]? uv = null)
     {
@@ -316,7 +322,9 @@ public sealed class MeshBatch : IDisposable
     private readonly uint _vbo;
     private Vertex3D[] _vertices;
     private int _count;
-    public int Count => _count;
+    private readonly List<(Mesh Mesh, Matrix4x4 Transform, Vector4 Color, float Glow)> _instances = new();
+    private readonly HashSet<Mesh> _uploaded = new();
+    public int Count => _count + _instances.Count;
 
     public MeshBatch(GL gl, int capacity = 131072)
     {
@@ -339,7 +347,11 @@ public sealed class MeshBatch : IDisposable
         _gl.BindVertexArray(0);
     }
 
-    public void Clear() => _count = 0;
+    public void Clear()
+    {
+        _count = 0;
+        _instances.Clear();
+    }
 
     private void Ensure(int extra)
     {
@@ -349,6 +361,11 @@ public sealed class MeshBatch : IDisposable
 
     public void Add(Mesh mesh, in Matrix4x4 transform, in MaterialSet mats)
     {
+        if (mesh.GpuStatic)
+        {
+            _instances.Add((mesh, transform, mats.Trim, mats.TrimGlow));
+            return;
+        }
         int n = mesh.VertexCount;
         Ensure(n);
         Span<Vector4> colors = stackalloc Vector4[4] { mats.Hull, mats.Trim, mats.Glow, mats.Core };
@@ -381,8 +398,58 @@ public sealed class MeshBatch : IDisposable
         _gl.BindVertexArray(0);
     }
 
+    /// <summary>Draws the queued high-detail model instances (call with the mesh shader bound, after <see cref="Draw"/>).</summary>
+    public unsafe void DrawInstances(Shader shader)
+    {
+        if (_instances.Count == 0) return;
+        shader.SetInt("uInstance", 1);
+        foreach (var (mesh, transform, color, glow) in _instances)
+        {
+            if (!_uploaded.Contains(mesh)) Upload(mesh);
+            shader.SetMatrix("uModel", transform);
+            shader.SetVec4("uInstColor", color);
+            shader.SetFloat("uInstGlow", glow);
+            _gl.BindVertexArray(mesh.GpuVao);
+            _gl.DrawArrays(PrimitiveType.Triangles, 0, (uint)mesh.VertexCount);
+        }
+        _gl.BindVertexArray(0);
+        shader.SetInt("uInstance", 0);
+    }
+
+    private unsafe void Upload(Mesh mesh)
+    {
+        var verts = new Vertex3D[mesh.VertexCount];
+        for (int i = 0; i < verts.Length; i++)
+        {
+            verts[i].Position = mesh.Positions[i];
+            verts[i].Normal = mesh.Normals[i];
+            verts[i].Color = Vector4.One;
+            verts[i].UV = mesh.UV == null ? new Vector2(-1f) : mesh.UV[i];
+        }
+        mesh.GpuVao = _gl.GenVertexArray();
+        _gl.BindVertexArray(mesh.GpuVao);
+        mesh.GpuVbo = _gl.GenBuffer();
+        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, mesh.GpuVbo);
+        fixed (Vertex3D* ptr = verts)
+            _gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(verts.Length * sizeof(Vertex3D)), ptr, BufferUsageARB.StaticDraw);
+        uint stride = (uint)sizeof(Vertex3D);
+        _gl.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, stride, (void*)0);
+        _gl.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, stride, (void*)(3 * sizeof(float)));
+        _gl.VertexAttribPointer(2, 4, VertexAttribPointerType.Float, false, stride, (void*)(6 * sizeof(float)));
+        _gl.VertexAttribPointer(3, 1, VertexAttribPointerType.Float, false, stride, (void*)(10 * sizeof(float)));
+        _gl.VertexAttribPointer(4, 2, VertexAttribPointerType.Float, false, stride, (void*)(11 * sizeof(float)));
+        for (uint i = 0; i < 5; i++) _gl.EnableVertexAttribArray(i);
+        _gl.BindVertexArray(0);
+        _uploaded.Add(mesh);
+    }
+
     public void Dispose()
     {
+        foreach (var mesh in _uploaded)
+        {
+            _gl.DeleteVertexArray(mesh.GpuVao);
+            _gl.DeleteBuffer(mesh.GpuVbo);
+        }
         _gl.DeleteVertexArray(_vao);
         _gl.DeleteBuffer(_vbo);
     }

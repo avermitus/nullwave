@@ -48,6 +48,10 @@ last_health = None
 last_screen = None
 max_bullets = 0
 min_fps = 999.0
+prev_enemies = []   # (dx, dy, time) from the last poll, to estimate how each enemy moves
+prev_t = None
+BULLET_SPEED = 1550.0   # player bolt speed, world units/s (lead the shot by its flight time)
+hit_log = []
 while time.time() - t0 < seconds:
     s = state()
     el = time.time() - t0
@@ -78,8 +82,23 @@ while time.time() - t0 < seconds:
     if screen != "Playing":
         time.sleep(0.3)
         continue
-    if last_health is not None and p.get("health", 0) < last_health:
-        events.append(f"{el:5.1f}s hit: health {last_health}->{p['health']}")
+    if w.get("wave") != globals().get("last_wave"):
+        events.append(f"{el:5.1f}s wave {w.get('wave')} (phase {w.get('phase')}, score {w.get('score')})")
+        globals()["last_wave"] = w.get("wave")
+    boss_now = bool(w.get("boss"))
+    if boss_now != globals().get("last_boss", False):
+        events.append(f"{el:5.1f}s boss {'up: ' + json.dumps(w.get('boss'))[:120] if boss_now else 'down'}")
+        globals()["last_boss"] = boss_now
+    hits_now = p.get("hitsTaken", 0)
+    took_hit = (last_health is not None and p.get("health", 0) < last_health) or hits_now > globals().get("last_hits", hits_now)
+    globals()["last_hits"] = hits_now
+    if took_hit:
+        cause = p.get("lastHit", "?")
+        hdx, hdy = p.get("lastHitDx", 0), p.get("lastHitDy", 0)
+        zoom = (w.get("camera") or {}).get("zoom", 1.0) or 1.0
+        onscreen = abs(hdx) < 800 / zoom and abs(hdy) < 450 / zoom
+        events.append(f"{el:5.1f}s hit #{hits_now}: health {last_health}->{p['health']} by {cause} from ({hdx},{hdy}) {'on' if onscreen else 'OFF'}-screen wave={w.get('wave')}")
+        hit_log.append((cause, onscreen, w.get("wave")))
     last_health = p.get("health")
     if w.get("phase") != "Playing":
         pass
@@ -92,11 +111,25 @@ while time.time() - t0 < seconds:
                if not e["spawning"] and 0 <= e["mouseX"] <= win["mouseWidth"] and 0 <= e["mouseY"] <= win["mouseHeight"]]
     threats = w.get("nearestEnemies") or []
     # aim at the nearest enemy (or straight ahead) and keep the trigger held
+    now = time.time()
     if enemies:
         e = enemies[0]
         mx, my = e["mouseX"], e["mouseY"]
+        # lead the target: match it to its position last poll, estimate its motion relative to the ship
+        if prev_enemies and prev_t is not None and now - prev_t < 0.5:
+            best = min(prev_enemies, key=lambda q: (q[0] - e["dx"]) ** 2 + (q[1] - e["dy"]) ** 2)
+            if (best[0] - e["dx"]) ** 2 + (best[1] - e["dy"]) ** 2 < 150 ** 2:
+                ddt = max(0.02, now - prev_t)
+                vx, vy = (e["dx"] - best[0]) / ddt, (e["dy"] - best[1]) / ddt
+                flight = math.hypot(e["dx"], e["dy"]) / BULLET_SPEED
+                zoom = (w.get("camera") or {}).get("zoom", 1.0) or 1.0
+                scale = win["mouseHeight"] * zoom / 900.0
+                mx += vx * flight * scale
+                my += vy * flight * scale
     else:
         mx, my = win["mouseWidth"] * 0.75, win["mouseHeight"] * 0.5
+    prev_enemies = [(q["dx"], q["dy"]) for q in (w.get("nearestEnemies") or [])]
+    prev_t = now
     # circle-strafe: move perpendicular to the nearest threat, drifting away when it is close
     keys = []
     if threats:
@@ -131,4 +164,7 @@ print("events:")
 for e in events:
     print("  ", e)
 print(f"minFps(after 3s)={min_fps} maxEnemyBullets={max_bullets}")
+from collections import Counter
+print("hits by cause:", dict(Counter(c.split(" ")[0] for c, _, _ in hit_log)))
+print("off-screen hits:", sum(1 for _, on, _ in hit_log if not on), "of", len(hit_log))
 print("exceptions:", json.dumps(s.get("recentExceptions", []), indent=1))

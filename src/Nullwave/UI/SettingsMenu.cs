@@ -20,6 +20,9 @@ public sealed class SettingsMenu
 
     private const float PanelX = 330, PanelW = 940, Top = 104, RowH = 24, HeaderH = 28;
     private const float BarX = 800, BarW = 300;
+    // the list scrolls inside the panel so it never runs into the help line or off the panel
+    private const float ListTop = Top - 30, ListBottom = 796;
+    private float _scroll;
 
     private readonly List<Row> _rows = new();
     private readonly float[] _rowY;
@@ -49,6 +52,7 @@ public sealed class SettingsMenu
         Slider("AUDIO", "BEAT MOTION", s => s.BeatMotion, (s, v) => s.BeatMotion = v, 0, GameSettings.MaxBeatMotion, 10, "%", "How hard bullets and enemies surge forward on each beat. 0 = steady speed, same difficulty.");
         Toggle("VIDEO", "FULLSCREEN", s => s.Fullscreen, (s, v) => s.Fullscreen = v, "Also F2.");
         Toggle("VIDEO", "VISUAL THEME", s => s.IsAbyssal, (s, v) => s.Theme = v ? VisualTheme.Abyssal : VisualTheme.Standard, "STANDARD NEON OR ABYSSAL OLED-BLACK VOID WITH DYNAMIC COMBAT LIGHTING.");
+        Slider("VIDEO", "READABILITY GUARD", s => s.ReadabilityGuard, (s, v) => s.ReadabilityGuard = v, 0, 100, 10, "%", "Keeps the background's brightness under a soft ceiling, so your ship, bullets and enemies always stand out, even at max effects. Colour and motion are untouched. 0% turns it off.");
         Slider("VIDEO", "BACKGROUND INTENSITY", s => s.BackgroundIntensity, (s, v) => s.BackgroundIntensity = v, 0, GameSettings.MaxBackgroundIntensity, 10, "%", "Brightness of the liquid backdrop. Lower it if the fight is hard to read.");
         Slider("VIDEO", "BACKGROUND MOTION", s => s.BackgroundMotion, (s, v) => s.BackgroundMotion = v, 0, GameSettings.MaxBackgroundMotion, 10, "%", "How fast the backdrop flows with the music. 0 freezes it.");
         Slider("VIDEO", "BLOOM", s => s.Bloom, (s, v) => s.Bloom = v, 0, GameSettings.MaxBloom, 10, "%", "Glow around bright shots and lights.");
@@ -57,6 +61,7 @@ public sealed class SettingsMenu
         Slider("VIDEO", "CAMERA FX", s => s.CameraFx, (s, v) => s.CameraFx = v, 0, GameSettings.MaxCameraFx, 10, "%", "EDM camera moves: a bounce on every kick, a slam, roll and dive on drops, a pull back and letterbox bars through build-ups. 0% turns them off.");
         Slider("VIDEO", "MUSIC FX", s => s.MusicFx, (s, v) => s.MusicFx = v, 0, GameSettings.MaxMusicFx, 10, "%", "Colour mood, kick thump, camera punch, build-ups and drops driven by the song.");
         Toggle("VIDEO", "REDUCE FLASHING", s => s.ReduceFlashing, (s, v) => s.ReduceFlashing = v, "Softens full-screen flashes and turns off glitch effects.");
+        Slider("VIDEO", "FRAME RATE CAP", s => s.FrameRateCap, (s, v) => s.FrameRateCap = v, 60, 240, 12, " FPS", "The frame rate the game aims for. 120 matches a 120 Hz screen; raise it for faster screens. VSync still applies.");
         Toggle("VIDEO", "SHOW FPS", s => s.ShowFps, (s, v) => s.ShowFps = v, "Frame rate counter in the corner of the HUD.");
         Slider("INTERFACE", "CONTROLLER RUMBLE", s => s.Rumble, (s, v) => s.Rumble = v, 0, 150, 10, "%", "Gamepad rumble that hits with the kick and hums with the bass.");
         Toggle("INTERFACE", "TUTORIAL & TIPS", s => s.TutorialTips, (s, v) => s.TutorialTips = v, "The first-run tutorial and one-time tips for wells, rails, bosses and ships.");
@@ -85,6 +90,15 @@ public sealed class SettingsMenu
         }
     }
 
+    /// <summary>Capture "settingsend": the menu scrolled to its last rows.</summary>
+    public void SelectLastForCapture()
+    {
+        _index = _rows.Count - 1;
+        _scroll = MaxScroll;
+    }
+
+    private float MaxScroll => MathF.Max(0f, _rowY[^1] + RowH + 8 - ListBottom);
+
     private void Slider(string section, string label, Func<GameSettings, int> get, Action<GameSettings, int> set, int min, int max, int step, string unit, string hint)
         => _rows.Add(new Row(section, label, Kind.Slider, get, set, min, max, step, unit, hint));
 
@@ -95,6 +109,7 @@ public sealed class SettingsMenu
     {
         _index = 0;
         _dragRow = -1;
+        _scroll = 0f;
     }
 
     /// <summary>Returns true when the player leaves the menu.</summary>
@@ -198,7 +213,11 @@ public sealed class SettingsMenu
     {
         if (m.X < PanelX || m.X > PanelX + PanelW) return -1;
         for (int i = 0; i < _rows.Count; i++)
-            if (m.Y >= _rowY[i] - 4 && m.Y < _rowY[i] + RowH - 4) return i;
+        {
+            float y = _rowY[i] - _scroll;
+            if (y < ListTop + 26 || y > ListBottom - RowH) continue;
+            if (m.Y >= y - 4 && m.Y < y + RowH - 4) return i;
+        }
         return -1;
     }
 
@@ -213,15 +232,24 @@ public sealed class SettingsMenu
         r.UiRect(PanelX - 30, 40, PanelW + 60, 2, M.WithAlpha(p.Primary, 0.55f), true);
         r.UiTextCentered("SETTINGS", 800, 60, 4.0f, p.Text, true);
 
+        // keep the selected row inside the visible list
+        float selY = _rowY[_index];
+        float want = Math.Clamp(_scroll, selY - (ListBottom - RowH - 8), selY - (ListTop + 34));
+        want = Math.Clamp(want, 0f, MaxScroll);
+        _scroll = M.ExpSmooth(_scroll, want, 14f, dt);
+        if (MathF.Abs(_scroll - want) < 0.5f) _scroll = want;
+
         string section = "";
         for (int i = 0; i < _rows.Count; i++)
         {
             var row = _rows[i];
-            float y = _rowY[i];
-            if (row.Section != section)
+            float y = _rowY[i] - _scroll;
+            bool newSection = row.Section != section;
+            if (newSection) section = row.Section;
+            if (y < ListTop + 26 || y > ListBottom - RowH) continue;
+            if (newSection)
             {
-                section = row.Section;
-                if (section.Length > 0)
+                if (section.Length > 0 && y - 26 >= ListTop)
                 {
                     r.UiText(section, PanelX, y - 26, 1.6f, M.WithAlpha(p.Accent, 0.9f), true);
                     r.UiLine(PanelX + r.UiTextWidth(section, 1.6f) + 14, y - 19, PanelX + PanelW, y - 19, 1f, M.WithAlpha(p.Primary, 0.22f));
@@ -286,6 +314,12 @@ public sealed class SettingsMenu
                     break;
             }
         }
+
+        // more rows above or below
+        if (_scroll > 1f)
+            r.UiTextRight("^ MORE", PanelX + PanelW, ListTop + 8, 1.2f, M.WithAlpha(p.Dim, 0.7f));
+        if (_scroll < MaxScroll - 1f)
+            r.UiTextCentered("v MORE v", 800, ListBottom - 6, 1.2f, M.WithAlpha(p.Dim, 0.7f));
 
         var cur = _rows[_index];
         string hint = _sourceToastTime > 0 && cur.Label == "AUDIO SOURCE" ? "NOW LISTENING TO // " + _sourceToast : cur.Hint;

@@ -376,6 +376,16 @@ public sealed class Renderer : IDisposable
             Breakdown: Clamp((mood?.Breakdown ?? 0f) * scale));
     }
 
+    /// <summary>
+    /// Background brightness ceiling for READABILITY GUARD: 100 % holds the world under a soft luma
+    /// ceiling of 0.30 (bullets and ships sit near 1.0), 0 % leaves it uncapped.
+    /// </summary>
+    public static float ReadabilityCeiling(int guardPercent)
+    {
+        float g = Math.Clamp(guardPercent, 0, 100) / 100f;
+        return g <= 0f ? 10f : 0.30f / g;
+    }
+
     public static Vector2 ClampAimTilt(Vector2 raw) => new(
         float.IsFinite(raw.X) ? Math.Clamp(raw.X, -1f, 1f) : 0f,
         float.IsFinite(raw.Y) ? Math.Clamp(raw.Y, -1f, 1f) : 0f);
@@ -589,6 +599,7 @@ public sealed class Renderer : IDisposable
         _background.SetVec2("uResolution", Width, Height);
         _background.SetFloat("uTime", time);
         _background.SetFloat("uFlow", _flow);
+        _background.SetFloat("uLumaCap", ReadabilityCeiling(settings.ReadabilityGuard));
         _background.SetFloat("uIntensity", settings.BackgroundIntensity / 100f * Math.Clamp(1f - drives.Breakdown * 0.35f + (mood?.DropGlow ?? 0f) * fx * 0.10f + overdriveEff * 0.05f, 0.2f, 1.05f));
         _background.SetFloat("uDrop", punchDrop);
         _background.SetFloat("uBuild", drives.Build);
@@ -759,6 +770,7 @@ public sealed class Renderer : IDisposable
             _meshShader.SetFloat("uGlowScale", 1f);
             _meshShader.SetFloat("uDarkTheme", darkTheme);
             _worldMeshes.Draw();
+            _worldMeshes.DrawInstances(_meshShader);
             _gl.Disable(EnableCap.DepthTest);
             _worldShader.Use();
         }

@@ -20,6 +20,24 @@ internal static class Program
     private static Stopwatch _clock = new();
     private static double _lastTime;
     private static double _lastFrameEnd;
+
+    // Windows' default timer only wakes a sleeping thread every ~15.6 ms, which capped the game at
+    // about 64 fps. Ask for 1 ms precision while the game runs.
+    [System.Runtime.InteropServices.DllImport("winmm.dll")] private static extern uint timeBeginPeriod(uint ms);
+    [System.Runtime.InteropServices.DllImport("winmm.dll")] private static extern uint timeEndPeriod(uint ms);
+    private static bool _timerRaised;
+
+    /// <summary>Sleeps most of the wait, then spins the last stretch so frames land on time.</summary>
+    internal static void WaitUntil(Stopwatch clock, double targetSeconds)
+    {
+        while (true)
+        {
+            double remainingMs = (targetSeconds - clock.Elapsed.TotalSeconds) * 1000.0;
+            if (remainingMs <= 0) return;
+            if (remainingMs > 2.0) Thread.Sleep((int)(remainingMs - 1.0));
+            else Thread.SpinWait(200);
+        }
+    }
     private static string _mode = "play";
     private static string _captureScenario = "combat";
     private static string _captureOut = "";
@@ -213,6 +231,10 @@ internal static class Program
 
     private static void OnLoad()
     {
+        if (OperatingSystem.IsWindows())
+        {
+            try { _timerRaised = timeBeginPeriod(1) == 0; } catch { _timerRaised = false; }
+        }
         _gl = GL.GetApi(_window);
         _window!.VSync = _mode == "capture" || _mode == "record" ? false : true;
         _renderer = new Renderer(_gl, _window.FramebufferSize.X, _window.FramebufferSize.Y);
@@ -295,13 +317,10 @@ internal static class Program
         double now = _clock.Elapsed.TotalSeconds;
         if (_mode != "capture" && _lastFrameEnd > 0)
         {
-            double frameTime = now - _lastFrameEnd;
-            double target = 1.0 / 120.0;
-            if (frameTime < target)
+            double target = 1.0 / Math.Clamp(GameSettings.Current.FrameRateCap, 30, 480);
+            if (now - _lastFrameEnd < target)
             {
-                double wait = (target - frameTime) * 1000.0;
-                if (wait >= 1.5) Thread.Sleep((int)wait);
-                else Thread.SpinWait(350);
+                WaitUntil(_clock, _lastFrameEnd + target);
                 now = _clock.Elapsed.TotalSeconds;
             }
         }
@@ -512,6 +531,11 @@ internal static class Program
 
     private static void OnClosing()
     {
+        if (_timerRaised)
+        {
+            try { timeEndPeriod(1); } catch { }
+            _timerRaised = false;
+        }
 #if DEBUG
         _bridge?.Dispose();
 #endif

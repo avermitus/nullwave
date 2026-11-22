@@ -96,7 +96,7 @@ public sealed partial class World
             if (M.DistanceToSegment(p.Pos, l.Origin, l.End) < l.Width * 0.46f + p.Radius * 0.72f)
             {
                 l.HitPlayer = true;
-                HurtPlayer();
+                HurtPlayer(1f, "laser:" + l.Source, l.Origin);
             }
         }
 
@@ -127,8 +127,10 @@ public sealed partial class World
             {
                 if (p.Invuln <= 0f && StartGrace <= 0f)
                 {
+                    string cause = "bullet:" + b.Kind + " " + (int)b.Vel.Length();
+                    Vector2 from = b.Pos;
                     ReturnBullet(EnemyBullets, i);
-                    HurtPlayer();
+                    HurtPlayer(1f, cause, from);
                 }
                 continue;
             }
@@ -162,7 +164,7 @@ public sealed partial class World
                 p.Vel += n * 220f;
             }
             if (p.Invuln <= 0 && StartGrace <= 0 && !p.IsDashing)
-                HurtPlayer();
+                HurtPlayer(1f, "contact:" + (e.SongBoss ? "THE DROP" : e.Role.ToString()), e.Pos);
         }
     }
 }

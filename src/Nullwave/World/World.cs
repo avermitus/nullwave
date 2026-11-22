@@ -32,6 +32,8 @@ public sealed class RunSummary
     public int NoHitWaves;
     public int Movement;
     public string MovementName = "";
+    /// <summary>What landed the last hit of the run ("LASER CROSS", "POUNCER RAM"), "" if unknown.</summary>
+    public string KilledBy = "";
     public ShipKind Ship;
     /// <summary>Every track played this run.</summary>
     public List<TrackStat> Tracks = new();
@@ -307,7 +309,7 @@ public sealed partial class World
 
         if (Phase != GamePhase.Playing) return;
 
-        CacheHarmony(audio);
+        CacheHarmony(audio, dt);
         UpdatePlayer(dt, input, audio);
         UpdateRails(dt, audio);
         UpdateTracks(dt, audio);
@@ -315,6 +317,7 @@ public sealed partial class World
         Timeline.Sample(this, audio, dt);
         UpdateHype(dt);
         UpdateDirector(dt, audio);
+        UpdateStragglers(dt);
         UpdateEnemies(dt, audio);
         UpdateLasers(dt);
         UpdateStrikes(dt);
@@ -534,6 +537,12 @@ public sealed partial class World
     /// </summary>
     private void UpdateSongLasers()
     {
+        try { UpdateSongLaserVolleys(); }
+        finally { _laserSource = null; }
+    }
+
+    private void UpdateSongLaserVolleys()
+    {
         if (!DownbeatTick || Phase != GamePhase.Playing || Demo || Wave < 2) return;
         _songBar++;
         if (Lasers.Count > 24 || _cueBreakdown > 0.5f) { _cueDrop = false; return; }
@@ -547,6 +556,7 @@ public sealed partial class World
             Vector2 c = ClampToArena(p + M.FromAngle(Rng.Range(0, M.Tau), Rng.Range(380f, 520f)), 100f);
             float a0 = Rng.Range(0, M.Tau);
             float spin = Rng.Chance(0.5f) ? 0.32f : -0.32f;
+            _laserSource = "STARBURST";
             for (int i = 0; i < 8; i++)
                 SpawnLaser(c, c + M.FromAngle(a0 + i * M.Tau / 8f, 100f), warm, beat * 3f, 24f, hue, spin, true, 2600f);
             EmitEvent("// STARBURST //", 1.4f);
@@ -559,6 +569,7 @@ public sealed partial class World
             float sweep = (Rng.Chance(0.5f) ? 1f : -1f) * 0.22f;
             Vector2 originA = p + n * 1100f;
             Vector2 originB = p - n * 1100f;
+            _laserSource = "LASER SCAN";
             SpawnLaser(originA, p + M.Perp(n) * 380f * MathF.Sign(sweep), warm, beat * 2.5f, 20f, hue, -sweep, true);
             SpawnLaser(originB, p - M.Perp(n) * 380f * MathF.Sign(sweep), warm, beat * 2.5f, 20f, (hue + 0.08f) % 1f, sweep, true);
             SongLaserVolleys++;
@@ -571,6 +582,7 @@ public sealed partial class World
             if (kind == 0)
             {
                 // GATE: four parallel beams with clear navigable lanes
+                _laserSource = "LASER GATE";
                 Vector2 axis = Rng.Chance(0.5f) ? new Vector2(1, 0) : new Vector2(0, 1);
                 Vector2 across = M.Perp(axis);
                 float shift = Rng.Range(-90f, 90f);
@@ -585,6 +597,7 @@ public sealed partial class World
             else if (kind == 1)
             {
                 // CROSS: 3-beam symmetric star/cross through the player's neighbourhood (60° spacing)
+                _laserSource = "LASER CROSS";
                 Vector2 c = p + M.FromAngle(Rng.Range(0, M.Tau), Rng.Range(60f, 160f));
                 float a = Rng.Range(0, MathF.PI);
                 for (int k = 0; k < 3; k++)
@@ -597,6 +610,7 @@ public sealed partial class World
             else
             {
                 // PRISM CAGE: 4 rotating boundary beams framing an arena box around the player
+                _laserSource = "PRISM CAGE";
                 float spin = (_songBar % 4 == 0 ? 1f : -1f) * 0.16f;
                 float a0 = Rng.Range(0, MathF.PI * 0.5f);
                 for (int k = 0; k < 4; k++)
@@ -627,7 +641,7 @@ public sealed partial class World
             Sfx?.Trigger(SfxType.Explosion, 0.45f);
             for (int k = 0; k < 6; k++)
                 SpawnEnemyBullet(s.Pos, M.FromAngle(k / 6f * M.Tau + s.Hue * 7f, 150f), 5f, s.Hue, BulletKind.Shard, 3f, 1f);
-            if (M.Dist(Player.Pos, s.Pos) < s.Radius + Player.Radius * 0.5f) HurtPlayer();
+            if (M.Dist(Player.Pos, s.Pos) < s.Radius + Player.Radius * 0.5f) HurtPlayer(1f, "strike", s.Pos);
         }
     }
 
@@ -979,10 +993,29 @@ public sealed partial class World
         }
     }
 
-    public void HurtPlayer(float damage = 1f)
+    /// <summary>What hit the ship last ("bullet:Needle 420", "contact:Dasher", "laser", "strike") and where from.</summary>
+    public string LastHitCause { get; private set; } = "";
+    /// <summary>Hits this run, including ones god mode absorbed.</summary>
+    public int HitsTaken { get; private set; }
+    /// <summary>NULLWAVE_PLAYTEST_GOD=1 (Debug playtests only): hits are counted but never cost health.</summary>
+    public bool PlaytestGod;
+    public Vector2 LastHitFrom { get; private set; }
+
+    public void HurtPlayer(float damage = 1f, string cause = "", Vector2? from = null)
     {
         if (Phase != GamePhase.Playing || Player.InvincibleDemo) return;
         if (Player.Invuln > 0f || Player.IsDashing || StartGrace > 0f) return;
+        LastHitCause = cause;
+        LastHitFrom = from ?? Player.Pos;
+        HitsTaken++;
+        LastHitTime = SessionTime;
+        if (PlaytestGod)
+        {
+            // playtest god mode: the hit is counted and logged, but the run goes on
+            Player.Invuln = 1.35f;
+            Player.HitFlash = 1f;
+            return;
+        }
         Player.Health--;
         if (CurrentTrack != null) CurrentTrack.Hits++;
         Timeline.AddHit(SessionTime);
@@ -1024,6 +1057,7 @@ public sealed partial class World
         return new RunSummary
         {
             Ship = Ship,
+            KilledBy = DescribeHit(LastHitCause),
             Tracks = new List<TrackStat>(Tracks),
             Timeline = Timeline,
             Seed = Seed,
@@ -1046,7 +1080,7 @@ public sealed partial class World
         };
     }
 
-    public void ForceDeathForTest() => HurtPlayer(99);
+    public void ForceDeathForTest(string cause = "") => HurtPlayer(99, cause);
 
     public void ForceAttunementForTest()
     {

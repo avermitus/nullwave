@@ -120,7 +120,9 @@ public sealed partial class World
             float offset = M.Clamp((audio.MelodyPitch - _songBossCenter) / 6f, -1f, 1f) * 1.1f;
             if (_melodyLaser == null || _melodyLaser.Done || !Lasers.Contains(_melodyLaser))
             {
+                _laserSource = "THE DROP";
                 SpawnLaser(e.Pos, Player.Pos, 0.9f, 60f, 18f, (e.Hue + 0.12f) % 1f, 0f, true, 1100f);
+                _laserSource = null;
                 _melodyLaser = Lasers[^1];
             }
             _melodyLaser.Origin = e.Pos;

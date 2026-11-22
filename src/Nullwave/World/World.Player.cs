@@ -410,6 +410,7 @@ public sealed partial class World
             Hue = hue,
             Sweep = sweep,
             BossLaser = boss,
+            Source = _laserSource ?? (boss ? "THE CHOIR" : "LASER"),
         });
         Sfx?.Trigger(SfxType.LaserWarn, boss ? 0.55f : 0.25f);
     }
