@@ -322,7 +322,7 @@ public sealed partial class World
         // lane, instead of everyone queueing in one line behind you. Fades out by ~260 units, so close
         // attacks (lunges, rams, orbits) are unchanged. Facing above still points at the ship.
         float flankU = M.Clamp01((dist - 260f) / 440f);
-        float flank = e.Boss ? 0f : flankU * flankU * (3f - 2f * flankU);
+        float flank = (e.Boss || routed) ? 0f : flankU * flankU * (3f - 2f * flankU);
         if (flank > 0f)
         {
             float lead = M.Clamp(dist / MathF.Max(240f, speed * pursuit * 1.4f), 0f, 0.75f) * flank;
